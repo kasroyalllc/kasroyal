@@ -36,7 +36,6 @@ type TttCell = "X" | "O" | null
 
 const CONNECT4_MOVE_SECONDS = 20
 const TTT_MOVE_SECONDS = 10
-const MATCH_START_BLAST_MS = 1000
 
 type PersistedConnect4BoardState = {
   mode: "connect4-live"
@@ -208,107 +207,6 @@ function GameBoardShell({
   )
 }
 
-function MatchStartOverlay({
-  seconds,
-  hostName,
-  challengerName,
-}: {
-  seconds: number
-  hostName: string
-  challengerName: string
-}) {
-  const pulseTone =
-    seconds <= 3
-      ? "border-red-400/30 bg-red-500/10 text-red-200"
-      : seconds <= 6
-      ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
-      : "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-
-  const topLabel =
-    seconds <= 3 ? "Market Lock Imminent" : seconds <= 6 ? "Arena Arming" : "Bidding Is Occurring"
-
-  return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[26px] border border-white/10 bg-[rgba(3,8,7,0.86)] backdrop-blur-md">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.18),transparent_36%),radial-gradient(circle_at_bottom,rgba(251,191,36,0.10),transparent_30%)]" />
-        <div className="absolute inset-0 animate-pulse bg-[linear-gradient(115deg,transparent,rgba(255,255,255,0.04),transparent)]" />
-      </div>
-
-      <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center px-6 text-center">
-        <div className="mb-4 inline-flex animate-pulse rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
-          {topLabel}
-        </div>
-
-        <div className="text-4xl font-black tracking-wide text-white sm:text-5xl">
-          Crowns Up. Bets In.
-        </div>
-
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-white/75 sm:text-base">
-          Spectator bidding is in progress for{" "}
-          <span className="font-black text-amber-300">{hostName}</span> vs{" "}
-          <span className="font-black text-emerald-300">{challengerName}</span>. Arena controls are
-          locked until the market closes and the duel officially begins.
-        </p>
-
-        <div className="mt-8 flex items-center justify-center gap-4">
-          <div
-            className={`flex h-28 w-28 items-center justify-center rounded-full border text-5xl font-black shadow-[0_0_45px_rgba(255,215,0,0.18)] ${pulseTone}`}
-          >
-            {seconds}
-          </div>
-        </div>
-
-        <div className="mt-6 text-sm font-bold uppercase tracking-[0.22em] text-white/60">
-          Stand by • Locking market • Igniting match
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <div className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-300">
-            Betting Active
-          </div>
-          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white/80">
-            Moves Disabled
-          </div>
-          <div className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-300">
-            Match Starts At Zero
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MatchStartBlast({
-  hostName,
-  challengerName,
-}: {
-  hostName: string
-  challengerName: string
-}) {
-  return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[26px] border border-white/10 bg-[rgba(2,7,6,0.92)] backdrop-blur-md">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_26%),radial-gradient(circle_at_center,rgba(16,185,129,0.18),transparent_52%)]" />
-        <div className="absolute inset-0 animate-ping rounded-[26px] border border-emerald-300/10" />
-      </div>
-
-      <div className="relative z-10 px-6 text-center">
-        <div className="mb-5 inline-flex rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
-          Market Locked
-        </div>
-
-        <div className="bg-gradient-to-r from-amber-200 via-white to-emerald-200 bg-clip-text text-5xl font-black tracking-[0.18em] text-transparent sm:text-7xl">
-          MATCH START
-        </div>
-
-        <p className="mt-5 text-sm uppercase tracking-[0.24em] text-white/65 sm:text-base">
-          {hostName} vs {challengerName}
-        </p>
-      </div>
-    </div>
-  )
-}
-
 function makeLiveFeed(match: ArenaMatch) {
   return [
     `${match.host.name} entered the ${match.game} room.`,
@@ -417,14 +315,11 @@ export default function ArenaMatchPage() {
   const [tickets, setTickets] = useState<SpectatorTicket[]>([])
   const [feed, setFeed] = useState<string[]>(makeLiveFeed(initialMatch))
   const [message, setMessage] = useState(
-    "Watch the match live and place a spectator bet on the side you believe will win."
+    "Stay in the room, watch the countdown, and follow the match live."
   )
   const [poolFlash, setPoolFlash] = useState<ArenaSide | null>(null)
-  const [startBlastVisible, setStartBlastVisible] = useState(false)
   const [, setTick] = useState(0)
   const timeoutHandledRef = useRef<string | null>(null)
-  const overlayWasActiveRef = useRef(false)
-  const startBlastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const syncMatch = () => {
@@ -449,14 +344,6 @@ export default function ArenaMatchPage() {
 
     return () => clearInterval(timer)
   }, [matchId])
-
-  useEffect(() => {
-    return () => {
-      if (startBlastTimeoutRef.current) {
-        clearTimeout(startBlastTimeoutRef.current)
-      }
-    }
-  }, [])
 
   const betAmount = clampBetAmount(Number(betAmountInput))
   const challenger = match.challenger
@@ -490,63 +377,28 @@ export default function ArenaMatchPage() {
   const bettingSecondsLeft = getArenaBettingSecondsLeft(match)
   const marketOpen = isArenaBettable(match)
 
-  const preGameOverlayActive =
-    !!challenger &&
-    !isFinished &&
-    !!match.countdownStartedAt &&
-    !match.startedAt
-
-  useEffect(() => {
-    if (preGameOverlayActive) {
-      overlayWasActiveRef.current = true
-    }
-
-    if (overlayWasActiveRef.current && !!match.startedAt && !isFinished) {
-      overlayWasActiveRef.current = false
-      setStartBlastVisible(true)
-      setFeed((prev) => [`🚀 MATCH START: ${match.host.name} vs ${challenger?.name ?? "Challenger"}`, ...prev].slice(0, 12))
-      setMessage("Market locked. Match is live.")
-
-      if (startBlastTimeoutRef.current) {
-        clearTimeout(startBlastTimeoutRef.current)
-      }
-
-      startBlastTimeoutRef.current = setTimeout(() => {
-        setStartBlastVisible(false)
-      }, MATCH_START_BLAST_MS)
-    }
-
-    if (isFinished) {
-      overlayWasActiveRef.current = false
-      setStartBlastVisible(false)
-      if (startBlastTimeoutRef.current) {
-        clearTimeout(startBlastTimeoutRef.current)
-      }
-    }
-  }, [preGameOverlayActive, match.startedAt, isFinished, challenger, match.host.name])
-
-  const boardInteractionLocked = preGameOverlayActive || startBlastVisible
+  const boardInteractionLocked = false
 
   const currentTurnPlayerName = isFinished
     ? "—"
     : match.game === "Connect 4"
-    ? connect4Turn === "host"
-      ? match.host.name
-      : challenger?.name ?? "Challenger"
-    : match.game === "Tic-Tac-Toe"
-    ? tttTurn === "X"
-      ? match.host.name
-      : challenger?.name ?? "Challenger"
-    : "—"
+      ? connect4Turn === "host"
+        ? match.host.name
+        : challenger?.name ?? "Challenger"
+      : match.game === "Tic-Tac-Toe"
+        ? tttTurn === "X"
+          ? match.host.name
+          : challenger?.name ?? "Challenger"
+        : "—"
 
   const activeTurnDeadlineTs =
-    isFinished || boardInteractionLocked
+    isFinished
       ? 0
       : match.game === "Connect 4"
-      ? connect4TurnDeadlineTs
-      : match.game === "Tic-Tac-Toe"
-      ? tttTurnDeadlineTs
-      : 0
+        ? connect4TurnDeadlineTs
+        : match.game === "Tic-Tac-Toe"
+          ? tttTurnDeadlineTs
+          : 0
 
   const moveSecondsLeft =
     match.status === "Live" && activeTurnDeadlineTs > 0
@@ -576,8 +428,8 @@ export default function ArenaMatchPage() {
   const playerRoleLabel = isHostUser
     ? `Player • ${match.hostSideLabel}`
     : isChallengerUser
-    ? `Player • ${match.challengerSideLabel}`
-    : "Spectator Only"
+      ? `Player • ${match.challengerSideLabel}`
+      : "Spectator Only"
 
   const hostProbability = challenger ? getWinProbability(match.host.rating, challenger.rating) : 0.5
   const challengerProbability = challenger ? getWinProbability(challenger.rating, match.host.rating) : 0.5
@@ -627,23 +479,20 @@ export default function ArenaMatchPage() {
   const myExistingSide: ArenaSide | null =
     myHostExposure > 0 ? "host" : myChallengerExposure > 0 ? "challenger" : null
 
-  const oppositeSide: ArenaSide | null =
-    selectedSide === "host" ? "challenger" : selectedSide === "challenger" ? "host" : null
-
   const selectedProjection = selectedSide === "host" ? hostProjection : challengerProjection
   const selectedPlayerName =
     selectedSide === "host"
       ? match.host.name
       : selectedSide === "challenger"
-      ? challenger?.name ?? "Opponent"
-      : "None"
+        ? challenger?.name ?? "Opponent"
+        : "None"
 
   const oppositePoolForSelectedSide =
     selectedSide === "host"
       ? match.spectatorPool.challenger
       : selectedSide === "challenger"
-      ? match.spectatorPool.host
-      : 0
+        ? match.spectatorPool.host
+        : 0
 
   const selectedProjectedProfit =
     selectedSide && oppositePoolForSelectedSide > 0
@@ -717,7 +566,7 @@ export default function ArenaMatchPage() {
     if (myExistingSide && myExistingSide !== side) {
       const lockedSideName = myExistingSide === "host" ? match.host.name : challenger?.name ?? "Opponent"
       setMessage(
-        `You already hold a position on ${lockedSideName}. KasRoyal v1 allows one side per match. Add to that side before lock, but you cannot hedge both sides in the same arena.`
+        `You already hold a position on ${lockedSideName}. KasRoyal v1 allows one side per match.`
       )
       return
     }
@@ -734,7 +583,7 @@ export default function ArenaMatchPage() {
       return
     }
 
-    setMessage(`Selected ${sideName}. Add to your position before market lock if you want more exposure.`)
+    setMessage(`Selected ${sideName}. Add to your position before lock if you want more exposure.`)
   }
 
   function placeBet() {
@@ -830,10 +679,6 @@ export default function ArenaMatchPage() {
   function dropConnect4(col: number) {
     if (match.game !== "Connect 4") return
     if (isFinished) return
-    if (boardInteractionLocked) {
-      setMessage("Arena is still arming. Controls unlock after the start sequence completes.")
-      return
-    }
     if (connect4Winner) return
     if (isConnect4Full(connect4Board)) return
     if (match.status !== "Live") return
@@ -902,10 +747,6 @@ export default function ArenaMatchPage() {
   function playTtt(index: number) {
     if (match.game !== "Tic-Tac-Toe") return
     if (isFinished) return
-    if (boardInteractionLocked) {
-      setMessage("Arena is still arming. Controls unlock after the start sequence completes.")
-      return
-    }
     if (tttWinner) return
     if (tttBoard[index] !== null) return
     if (match.status !== "Live") return
@@ -968,11 +809,6 @@ export default function ArenaMatchPage() {
     }
 
     timeoutHandledRef.current = null
-    setStartBlastVisible(false)
-
-    if (startBlastTimeoutRef.current) {
-      clearTimeout(startBlastTimeoutRef.current)
-    }
 
     if (match.game === "Connect 4") {
       persistConnect4Board(getEmptyConnect4Board(), "host", Date.now() + CONNECT4_MOVE_SECONDS * 1000, {
@@ -1015,7 +851,6 @@ export default function ArenaMatchPage() {
   useEffect(() => {
     if (match.status !== "Live") return
     if (!challenger) return
-    if (boardInteractionLocked) return
 
     if (match.game === "Connect 4" && !hasPersistedConnect4State) {
       persistConnect4Board(getEmptyConnect4Board(), "host", Date.now() + CONNECT4_MOVE_SECONDS * 1000, {
@@ -1036,7 +871,6 @@ export default function ArenaMatchPage() {
   }, [
     match,
     challenger,
-    boardInteractionLocked,
     hasPersistedConnect4State,
     hasPersistedTttState,
   ])
@@ -1047,7 +881,6 @@ export default function ArenaMatchPage() {
       return
     }
 
-    if (boardInteractionLocked) return
     if (!challenger) return
     if (activeTurnDeadlineTs <= 0) return
     if (moveSecondsLeft > 0) return
@@ -1182,7 +1015,6 @@ export default function ArenaMatchPage() {
   }, [
     match,
     challenger,
-    boardInteractionLocked,
     moveSecondsLeft,
     activeTurnDeadlineTs,
     connect4Winner,
@@ -1196,48 +1028,44 @@ export default function ArenaMatchPage() {
 
   const boardTurnLabel = isFinished
     ? "—"
-    : preGameOverlayActive
-    ? "Arena Arming"
-    : startBlastVisible
-    ? "Match Start"
-    : match.game === "Connect 4"
-    ? connect4Turn === "host"
-      ? match.host.name
-      : challenger?.name ?? "Challenger"
-    : match.game === "Tic-Tac-Toe"
-    ? tttTurn === "X"
-      ? match.host.name
-      : challenger?.name ?? "Challenger"
-    : "—"
+    : match.status === "Ready to Start"
+      ? "Countdown"
+      : match.game === "Connect 4"
+        ? connect4Turn === "host"
+          ? match.host.name
+          : challenger?.name ?? "Challenger"
+        : match.game === "Tic-Tac-Toe"
+          ? tttTurn === "X"
+            ? match.host.name
+            : challenger?.name ?? "Challenger"
+          : "—"
 
   const boardClockLabel = isFinished
     ? "—"
-    : preGameOverlayActive
-    ? `${bettingSecondsLeft}s`
-    : startBlastVisible
-    ? "LIVE"
-    : `${moveSecondsLeft}s`
+    : match.status === "Ready to Start"
+      ? `${bettingSecondsLeft}s`
+      : match.status === "Live"
+        ? `${moveSecondsLeft}s`
+        : "—"
 
   const boardStateLabel =
     match.status === "Finished"
       ? "Finished"
-      : preGameOverlayActive
-      ? "Countdown"
-      : startBlastVisible
-      ? "Ignition"
-      : match.game === "Connect 4"
-      ? connect4Winner
-        ? "Win"
-        : isConnect4Full(connect4Board)
-        ? "Draw"
-        : "Live"
-      : match.game === "Tic-Tac-Toe"
-      ? tttWinner
-        ? "Win"
-        : tttBoardFull
-        ? "Draw"
-        : "Live"
-      : "Preview"
+      : match.status === "Ready to Start"
+        ? "Starting Soon"
+        : match.game === "Connect 4"
+          ? connect4Winner
+            ? "Win"
+            : isConnect4Full(connect4Board)
+              ? "Draw"
+              : "Live"
+          : match.game === "Tic-Tac-Toe"
+            ? tttWinner
+              ? "Win"
+              : tttBoardFull
+                ? "Draw"
+                : "Live"
+            : "Preview"
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
@@ -1263,9 +1091,8 @@ export default function ArenaMatchPage() {
               <h1 className="text-4xl font-black leading-none sm:text-5xl xl:text-6xl">{match.game}</h1>
 
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-                Live arena match room with fresh starting boards, persisted turn timers, reconnect-friendly
-                auto-moves on timeout, premium pre-match countdown overlays, cinematic match-start ignition,
-                spectator pools, and real-time betting previews.
+                Stay in the match room from the moment both players are seated. Watch the countdown,
+                see the board, and jump right into the live game when the match starts.
               </p>
             </div>
 
@@ -1279,24 +1106,22 @@ export default function ArenaMatchPage() {
                 accent={isSpectatorOnly ? "text-white" : "text-emerald-300"}
               />
               <StatCard
-                label="Move Clock"
+                label="Timer"
                 value={
-                  match.status === "Live"
-                    ? preGameOverlayActive
-                      ? `${bettingSecondsLeft}s`
-                      : startBlastVisible
-                      ? "LIVE"
-                      : activeTurnDeadlineTs > 0
-                      ? `${moveSecondsLeft}s`
+                  match.status === "Ready to Start"
+                    ? `${bettingSecondsLeft}s`
+                    : match.status === "Live"
+                      ? activeTurnDeadlineTs > 0
+                        ? `${moveSecondsLeft}s`
+                        : "—"
                       : "—"
-                    : "—"
                 }
                 accent={
-                  preGameOverlayActive || startBlastVisible
+                  match.status === "Ready to Start"
                     ? "text-emerald-300"
                     : moveSecondsLeft <= 5 && match.status === "Live"
-                    ? "text-red-300"
-                    : "text-amber-300"
+                      ? "text-red-300"
+                      : "text-amber-300"
                 }
               />
               <Link
@@ -1374,8 +1199,8 @@ export default function ArenaMatchPage() {
                       match.status === "Live"
                         ? "bg-red-500/10 text-red-300"
                         : match.status === "Waiting for Opponent" || match.status === "Ready to Start"
-                        ? "bg-amber-400/10 text-amber-300"
-                        : "bg-emerald-400/10 text-emerald-300"
+                          ? "bg-amber-400/10 text-amber-300"
+                          : "bg-emerald-400/10 text-emerald-300"
                     }`}
                   >
                     {formatArenaPhase(match.status)}
@@ -1387,24 +1212,22 @@ export default function ArenaMatchPage() {
                         : "bg-white/5 text-white/75"
                     }`}
                   >
-                    {marketOpen ? `Betting open • ${bettingSecondsLeft}s` : "Betting closed"}
+                    {marketOpen ? `Betting open • ${bettingSecondsLeft}s left` : "Betting closed"}
                   </div>
                   <div
                     className={`rounded-full px-4 py-3 text-sm font-bold ${
-                      preGameOverlayActive || startBlastVisible
+                      match.status === "Ready to Start"
                         ? "bg-emerald-400/10 text-emerald-300"
                         : match.status === "Live" && moveSecondsLeft <= 5
-                        ? "bg-red-500/10 text-red-300"
-                        : "bg-amber-400/10 text-amber-300"
+                          ? "bg-red-500/10 text-red-300"
+                          : "bg-amber-400/10 text-amber-300"
                     }`}
                   >
-                    {preGameOverlayActive
-                      ? `Match start • ${bettingSecondsLeft}s`
-                      : startBlastVisible
-                      ? "Match start • LIVE"
+                    {match.status === "Ready to Start"
+                      ? `Starts in ${bettingSecondsLeft}s`
                       : match.status === "Live"
-                      ? `Move timer • ${moveSecondsLeft}s`
-                      : "Move timer idle"}
+                        ? `Move timer • ${moveSecondsLeft}s`
+                        : "Move timer idle"}
                   </div>
                   <button
                     type="button"
@@ -1419,38 +1242,21 @@ export default function ArenaMatchPage() {
               <div className="mb-6 rounded-2xl border border-white/8 bg-black/25 p-4 text-sm leading-6 text-white/80">
                 {isFinished
                   ? `Match finished. Final state: ${match.statusText}.`
-                  : preGameOverlayActive
-                  ? "The arena is arming. Spectator bidding is occurring now, and player controls unlock after the market closes."
-                  : startBlastVisible
-                  ? "Market locked. Match ignition sequence in progress."
-                  : isSpectatorOnly
-                  ? "You are spectating this room. You can watch and bet if the official pre-match market is open, but you cannot make moves."
-                  : canCurrentUserMove
-                  ? `Your turn. You are seated as ${playerRoleLabel}. If the clock expires, the system will make a random legal move for you.`
-                  : `You are seated as ${playerRoleLabel}, but it is currently ${currentTurnPlayerName}'s turn.`}
+                  : match.status === "Ready to Start"
+                    ? `Match starts in ${bettingSecondsLeft}s. Stay in the room and get ready.`
+                    : isSpectatorOnly
+                      ? "You are spectating this room. You can watch the countdown and the live game here."
+                      : canCurrentUserMove
+                        ? `Your turn. You are seated as ${playerRoleLabel}. If the clock expires, the system will make a random legal move for you.`
+                        : `You are seated as ${playerRoleLabel}, but it is currently ${currentTurnPlayerName}'s turn.`}
               </div>
 
               {match.game === "Connect 4" ? (
-                <GameBoardShell
-                  title="Playable Connect 4"
-                  subtitle={
-                    preGameOverlayActive
-                      ? "Bidding phase active"
-                      : startBlastVisible
-                      ? "Match ignition"
-                      : match.statusText
-                  }
-                >
-                  {preGameOverlayActive && challenger ? (
-                    <MatchStartOverlay
-                      seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
-                      challengerName={challenger.name}
-                    />
-                  ) : null}
-
-                  {!preGameOverlayActive && startBlastVisible && challenger ? (
-                    <MatchStartBlast hostName={match.host.name} challengerName={challenger.name} />
+                <GameBoardShell title="Playable Connect 4" subtitle={match.statusText}>
+                  {match.status === "Ready to Start" ? (
+                    <div className="mb-6 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-4 text-sm font-semibold text-emerald-200">
+                      Match starts in {bettingSecondsLeft}s. Stay in the room — the board is visible now and the game will begin automatically.
+                    </div>
                   ) : null}
 
                   <div className="mb-5 grid w-full max-w-4xl grid-cols-7 gap-2">
@@ -1460,7 +1266,6 @@ export default function ArenaMatchPage() {
                         type="button"
                         onClick={() => dropConnect4(col)}
                         disabled={
-                          boardInteractionLocked ||
                           match.status !== "Live" ||
                           connect4Winner !== null ||
                           !canCurrentUserMove
@@ -1480,7 +1285,6 @@ export default function ArenaMatchPage() {
                           type="button"
                           onClick={() => dropConnect4(c)}
                           disabled={
-                            boardInteractionLocked ||
                             match.status !== "Live" ||
                             connect4Winner !== null ||
                             !canCurrentUserMove
@@ -1489,8 +1293,8 @@ export default function ArenaMatchPage() {
                             cell === "host"
                               ? "border-amber-200/70 bg-amber-300 shadow-[0_0_14px_rgba(255,215,0,0.18)]"
                               : cell === "challenger"
-                              ? "border-emerald-300/70 bg-emerald-400 shadow-[0_0_14px_rgba(0,255,200,0.18)]"
-                              : "border-white/5 bg-black/45"
+                                ? "border-emerald-300/70 bg-emerald-400 shadow-[0_0_14px_rgba(0,255,200,0.18)]"
+                                : "border-white/5 bg-black/45"
                           } disabled:opacity-90`}
                         />
                       ))
@@ -1502,40 +1306,25 @@ export default function ArenaMatchPage() {
                     <StatCard label="Challenger MMR" value={`${challenger ? challenger.rating : 0}`} />
                     <StatCard label="Turn" value={boardTurnLabel} accent="text-emerald-300" />
                     <StatCard
-                      label="Move Clock"
+                      label="Clock"
                       value={boardClockLabel}
                       accent={
-                        preGameOverlayActive || startBlastVisible
+                        match.status === "Ready to Start"
                           ? "text-emerald-300"
                           : !isFinished && moveSecondsLeft <= 5
-                          ? "text-red-300"
-                          : "text-amber-300"
+                            ? "text-red-300"
+                            : "text-amber-300"
                       }
                     />
                     <StatCard label="State" value={boardStateLabel} accent="text-amber-300" />
                   </div>
                 </GameBoardShell>
               ) : match.game === "Tic-Tac-Toe" ? (
-                <GameBoardShell
-                  title="Playable Tic-Tac-Toe"
-                  subtitle={
-                    preGameOverlayActive
-                      ? "Bidding phase active"
-                      : startBlastVisible
-                      ? "Match ignition"
-                      : match.statusText
-                  }
-                >
-                  {preGameOverlayActive && challenger ? (
-                    <MatchStartOverlay
-                      seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
-                      challengerName={challenger.name}
-                    />
-                  ) : null}
-
-                  {!preGameOverlayActive && startBlastVisible && challenger ? (
-                    <MatchStartBlast hostName={match.host.name} challengerName={challenger.name} />
+                <GameBoardShell title="Playable Tic-Tac-Toe" subtitle={match.statusText}>
+                  {match.status === "Ready to Start" ? (
+                    <div className="mb-6 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-4 text-sm font-semibold text-emerald-200">
+                      Match starts in {bettingSecondsLeft}s. Stay in the room — the board is visible now and the game will begin automatically.
+                    </div>
                   ) : null}
 
                   <div className="grid w-full max-w-[420px] grid-cols-3 gap-3">
@@ -1545,7 +1334,6 @@ export default function ArenaMatchPage() {
                         type="button"
                         onClick={() => playTtt(index)}
                         disabled={
-                          boardInteractionLocked ||
                           cell !== null ||
                           match.status !== "Live" ||
                           tttWinner !== null ||
@@ -1565,40 +1353,25 @@ export default function ArenaMatchPage() {
                     <StatCard label={`Challenger ${match.challengerSideLabel}`} value="O" accent="text-emerald-300" />
                     <StatCard label="Turn" value={boardTurnLabel} accent="text-sky-300" />
                     <StatCard
-                      label="Move Clock"
+                      label="Clock"
                       value={boardClockLabel}
                       accent={
-                        preGameOverlayActive || startBlastVisible
+                        match.status === "Ready to Start"
                           ? "text-emerald-300"
                           : !isFinished && moveSecondsLeft <= 5
-                          ? "text-red-300"
-                          : "text-amber-300"
+                            ? "text-red-300"
+                            : "text-amber-300"
                       }
                     />
                     <StatCard label="State" value={boardStateLabel} accent="text-amber-300" />
                   </div>
                 </GameBoardShell>
               ) : (
-                <GameBoardShell
-                  title="Chess Match Preview"
-                  subtitle={
-                    preGameOverlayActive
-                      ? "Bidding phase active"
-                      : startBlastVisible
-                      ? "Match ignition"
-                      : match.statusText
-                  }
-                >
-                  {preGameOverlayActive && challenger ? (
-                    <MatchStartOverlay
-                      seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
-                      challengerName={challenger.name}
-                    />
-                  ) : null}
-
-                  {!preGameOverlayActive && startBlastVisible && challenger ? (
-                    <MatchStartBlast hostName={match.host.name} challengerName={challenger.name} />
+                <GameBoardShell title="Chess Match Preview" subtitle={match.statusText}>
+                  {match.status === "Ready to Start" ? (
+                    <div className="mb-6 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-4 text-sm font-semibold text-emerald-200">
+                      Match starts in {bettingSecondsLeft}s. Stay in the room and watch the countdown here.
+                    </div>
                   ) : null}
 
                   <div className="grid w-full max-w-[520px] grid-cols-8 gap-1 rounded-[20px] border border-white/8 bg-black/30 p-4">
@@ -1621,11 +1394,9 @@ export default function ArenaMatchPage() {
                       value={
                         match.status === "Finished"
                           ? "Finished"
-                          : preGameOverlayActive
-                          ? "Countdown"
-                          : startBlastVisible
-                          ? "Ignition"
-                          : "Preview"
+                          : match.status === "Ready to Start"
+                            ? "Starting Soon"
+                            : "Preview"
                       }
                       accent="text-amber-300"
                     />
@@ -1676,8 +1447,8 @@ export default function ArenaMatchPage() {
                     {myExistingSide === "host"
                       ? match.host.name
                       : myExistingSide === "challenger"
-                      ? challenger?.name ?? "Opponent"
-                      : "No Position Yet"}
+                        ? challenger?.name ?? "Opponent"
+                        : "No Position Yet"}
                   </div>
                   <div className="mt-2 text-sm leading-6 text-white/65">
                     {myExistingSide
@@ -1866,10 +1637,10 @@ export default function ArenaMatchPage() {
                     {selectedSide === "host"
                       ? match.host.name
                       : selectedSide === "challenger"
-                      ? challenger
-                        ? challenger.name
-                        : "Waiting Opponent"
-                      : "None"}
+                        ? challenger
+                          ? challenger.name
+                          : "Waiting Opponent"
+                        : "None"}
                   </div>
                 </div>
 

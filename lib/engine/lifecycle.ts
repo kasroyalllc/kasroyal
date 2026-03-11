@@ -29,9 +29,9 @@ export function getGameBettingWindowSeconds(game: GameType) {
 }
 
 export function getGameBettingWindowLabel(game: GameType) {
-  if (game === "Chess Duel") return "Pre-match market window: 60s"
-  if (game === "Connect 4") return "Pre-match market window: 25s"
-  return "Pre-match market window: 12s"
+  if (game === "Chess Duel") return "Betting window: 60s before start"
+  if (game === "Connect 4") return "Betting window: 25s before start"
+  return "Betting window: 12s before start"
 }
 
 export function getArenaBettingSecondsLeft(match: ArenaMatch, now = Date.now()) {
@@ -44,7 +44,11 @@ export function getArenaBettingSecondsLeft(match: ArenaMatch, now = Date.now()) 
 }
 
 export function isArenaSpectatable(match: ArenaMatch) {
-  return match.status === "Ready to Start" || match.status === "Live"
+  return (
+    match.status === "Waiting for Opponent" ||
+    match.status === "Ready to Start" ||
+    match.status === "Live"
+  )
 }
 
 export function isArenaBettable(match: ArenaMatch) {
@@ -59,7 +63,7 @@ export function isArenaBettable(match: ArenaMatch) {
 
 export function formatArenaPhase(status: ArenaStatus) {
   if (status === "Waiting for Opponent") return "Waiting for Opponent"
-  if (status === "Ready to Start") return "Pre-Match Countdown"
+  if (status === "Ready to Start") return "Starting Soon"
   if (status === "Live") return "Live Now"
   return "Finished"
 }
@@ -98,13 +102,17 @@ export function normalizeArenaMatches(matches: ArenaMatch[], now = Date.now()) {
 
     if (!match.challenger) {
       match.bettingStatus = "disabled"
+      match.statusText = "Waiting for opponent"
+      match.moveText = "Waiting for join"
       return match
     }
 
     if (match.status === "Ready to Start") {
       const countdownStartedAt = match.countdownStartedAt ?? match.seatedAt ?? now
-      const bettingWindowSeconds = match.bettingWindowSeconds || getGameBettingWindowSeconds(match.game)
-      const bettingClosesAt = match.bettingClosesAt ?? countdownStartedAt + bettingWindowSeconds * 1000
+      const bettingWindowSeconds =
+        match.bettingWindowSeconds || getGameBettingWindowSeconds(match.game)
+      const bettingClosesAt =
+        match.bettingClosesAt ?? countdownStartedAt + bettingWindowSeconds * 1000
       const secondsLeft = Math.max(0, Math.ceil((bettingClosesAt - now) / 1000))
 
       match.countdownStartedAt = countdownStartedAt
@@ -117,22 +125,15 @@ export function normalizeArenaMatches(matches: ArenaMatch[], now = Date.now()) {
         match.statusText = "Match is live"
         match.moveText =
           match.game === "Chess Duel"
-            ? match.moveText && match.moveText !== "Waiting for lock" && match.moveText !== "Countdown live"
-              ? match.moveText
-              : "1. e4"
+            ? "1. e4"
             : match.game === "Connect 4"
-            ? match.moveText && match.moveText !== "Waiting for lock" && match.moveText !== "Countdown live"
-              ? match.moveText
-              : "Opening move"
-            : match.moveText && match.moveText !== "Waiting for lock" && match.moveText !== "Countdown live"
-            ? match.moveText
-            : "Round start"
-
+              ? "Opening move"
+              : "Round start"
         return match
       }
 
       match.bettingStatus = isFeatured ? "open" : "disabled"
-      match.statusText = isFeatured ? "Featured market open" : "Watch-only countdown"
+      match.statusText = "Starting soon"
       match.moveText = `Starts in ${formatTime(secondsLeft)}`
       return match
     }
