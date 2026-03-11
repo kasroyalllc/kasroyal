@@ -70,6 +70,16 @@ export {
   isArenaSpectatable,
 }
 
+export type PersistedBetTicket = {
+  id: string
+  user: string
+  matchId: string
+  game: GameType
+  side: ArenaSide
+  amount: number
+  createdAt: number
+}
+
 export const currentUser: PlayerProfile & {
   walletBalance: number
 } = {
@@ -139,6 +149,9 @@ const now = Date.now()
 
 const ARENA_MATCHES_STORAGE_KEY = "kasroyal_arena_matches"
 const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
+
+const SPECTATOR_TICKETS_STORAGE_KEY = "kasroyal_spectator_tickets"
+const SPECTATOR_TICKETS_EVENT = "kasroyal-spectator-tickets-updated"
 
 export const initialArenaMatches: ArenaMatch[] = [
   {
@@ -454,6 +467,11 @@ function dispatchArenaMatchesUpdated() {
   window.dispatchEvent(new Event(ARENA_MATCHES_EVENT))
 }
 
+function dispatchSpectatorTicketsUpdated() {
+  if (!isBrowser()) return
+  window.dispatchEvent(new Event(SPECTATOR_TICKETS_EVENT))
+}
+
 function hydrateMatches(matches: ArenaMatch[]) {
   return normalizeArenaMatches(cloneArenaMatches(matches))
 }
@@ -464,6 +482,113 @@ function persistArenaMatches(matches: ArenaMatch[], dispatch = true) {
   window.localStorage.setItem(ARENA_MATCHES_STORAGE_KEY, JSON.stringify(normalized))
   if (dispatch) {
     dispatchArenaMatchesUpdated()
+  }
+}
+
+function normalizeTicket(ticket: PersistedBetTicket): PersistedBetTicket {
+  return {
+    id: ticket.id,
+    user: ticket.user,
+    matchId: ticket.matchId,
+    game: ticket.game,
+    side: ticket.side,
+    amount: clampBetAmount(ticket.amount),
+    createdAt: ticket.createdAt,
+  }
+}
+
+function persistSpectatorTickets(tickets: PersistedBetTicket[], dispatch = true) {
+  if (!isBrowser()) return
+  const normalized = tickets.map(normalizeTicket).sort((a, b) => b.createdAt - a.createdAt)
+  window.localStorage.setItem(SPECTATOR_TICKETS_STORAGE_KEY, JSON.stringify(normalized))
+  if (dispatch) {
+    dispatchSpectatorTicketsUpdated()
+  }
+}
+
+export function readSpectatorTickets(): PersistedBetTicket[] {
+  if (!isBrowser()) {
+    return []
+  }
+
+  const stored = window.localStorage.getItem(SPECTATOR_TICKETS_STORAGE_KEY)
+  if (!stored) return []
+
+  try {
+    const parsed = JSON.parse(stored) as PersistedBetTicket[]
+    if (!Array.isArray(parsed)) return []
+    return parsed.map(normalizeTicket).sort((a, b) => b.createdAt - a.createdAt)
+  } catch {
+    return []
+  }
+}
+
+export function readCurrentUserTickets(user = currentUser.name) {
+  return readSpectatorTickets().filter((ticket) => ticket.user === user)
+}
+
+export function writeSpectatorTickets(tickets: PersistedBetTicket[]) {
+  if (!isBrowser()) return
+  persistSpectatorTickets(tickets, true)
+}
+
+export function clearSpectatorTickets() {
+  if (!isBrowser()) return
+  window.localStorage.removeItem(SPECTATOR_TICKETS_STORAGE_KEY)
+  dispatchSpectatorTicketsUpdated()
+}
+
+export function subscribeSpectatorTickets(listener: () => void) {
+  if (!isBrowser()) {
+    return () => {}
+  }
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === SPECTATOR_TICKETS_STORAGE_KEY) {
+      listener()
+    }
+  }
+
+  const handleCustom = () => {
+    listener()
+  }
+
+  window.addEventListener("storage", handleStorage)
+  window.addEventListener(SPECTATOR_TICKETS_EVENT, handleCustom)
+
+  return () => {
+    window.removeEventListener("storage", handleStorage)
+    window.removeEventListener(SPECTATOR_TICKETS_EVENT, handleCustom)
+  }
+}
+
+export function ensureSpectatorTicketsSeeded() {
+  if (!isBrowser()) return
+  const stored = window.localStorage.getItem(SPECTATOR_TICKETS_STORAGE_KEY)
+  if (!stored) {
+    window.localStorage.setItem(SPECTATOR_TICKETS_STORAGE_KEY, JSON.stringify([]))
+  }
+}
+
+export function getTicketsForMatch(matchId: string, user = currentUser.name) {
+  return readCurrentUserTickets(user).filter((ticket) => ticket.matchId === matchId)
+}
+
+export function getTicketExposureByMatch(matchId: string, user = currentUser.name) {
+  const tickets = getTicketsForMatch(matchId, user)
+
+  const host = tickets
+    .filter((ticket) => ticket.side === "host")
+    .reduce((sum, ticket) => sum + ticket.amount, 0)
+
+  const challenger = tickets
+    .filter((ticket) => ticket.side === "challenger")
+    .reduce((sum, ticket) => sum + ticket.amount, 0)
+
+  return {
+    host,
+    challenger,
+    total: host + challenger,
   }
 }
 
@@ -830,8 +955,23 @@ export function updateArenaMatch(matchId: string, updater: (match: ArenaMatch) =
 
 export function placeArenaSpectatorBet(matchId: string, side: ArenaSide, amount: number) {
   const safeAmount = clampBetAmount(amount)
+  const currentMatch = readArenaById(matchId)
 
-  return updateArenaMatch(matchId, (match) => {
+  if (!currentMatch) {
+    throw new Error("Arena not found.")
+  }
+
+  const ticket: PersistedBetTicket = {
+    id: `${matchId}-${Date.now()}`,
+    user: currentUser.name,
+    matchId,
+    game: currentMatch.game,
+    side,
+    amount: safeAmount,
+    createdAt: Date.now(),
+  }
+
+  const updatedMatch = updateArenaMatch(matchId, (match) => {
     const normalizedMatch = normalizeArenaMatches([match])[0]
 
     if (!isArenaBettable(normalizedMatch)) {
@@ -853,6 +993,14 @@ export function placeArenaSpectatorBet(matchId: string, side: ArenaSide, amount:
       },
     }
   })
+
+  const existingTickets = readSpectatorTickets()
+  writeSpectatorTickets([ticket, ...existingTickets])
+
+  return {
+    match: updatedMatch,
+    ticket,
+  }
 }
 
 export function buildLeaderboardFromArena(matches: ArenaMatch[] = readArenaMatches()): LeaderboardEntry[] {

@@ -10,6 +10,7 @@ import {
   WHALE_BET_THRESHOLD,
   arenaFeedSeed,
   buildFeaturedSpectateMarkets,
+  currentUser,
   formatTime,
   gameDisplayOrder,
   gameMeta,
@@ -23,23 +24,19 @@ import {
   getProjectedState,
   getRankColors,
   getSideShare,
+  getTicketExposureByMatch,
+  getTicketsForMatch,
   getWinProbability,
   isArenaBettable,
   placeArenaSpectatorBet,
   readArenaMatches,
   subscribeArenaMatches,
+  subscribeSpectatorTickets,
   type ArenaMatch,
   type GameType,
+  type PersistedBetTicket,
   type RankTier,
 } from "@/lib/mock/arena-data"
-
-type Ticket = {
-  id: string
-  matchId: string
-  side: "host" | "challenger"
-  amount: number
-  createdAt: number
-}
 
 type SpectateFilter = "All" | GameType
 
@@ -406,7 +403,7 @@ export default function SpectatePage() {
     "Watch any featured live game without betting, or place a spectator bet during the official pre-match window."
   )
   const [feed, setFeed] = useState<string[]>(arenaFeedSeed)
-  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [tickets, setTickets] = useState<PersistedBetTicket[]>([])
   const [poolFlash, setPoolFlash] = useState<"host" | "challenger" | null>(null)
   const [, setTick] = useState(0)
 
@@ -425,20 +422,31 @@ export default function SpectatePage() {
       })
     }
 
-    syncMatches()
-    const unsubscribe = subscribeArenaMatches(syncMatches)
+    const syncTickets = () => {
+      setTickets(getTicketsForMatch(activeMatchId, currentUser.name))
+    }
 
-    return unsubscribe
-  }, [])
+    syncMatches()
+    syncTickets()
+
+    const unsubscribeMatches = subscribeArenaMatches(syncMatches)
+    const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
+
+    return () => {
+      unsubscribeMatches()
+      unsubscribeTickets()
+    }
+  }, [activeMatchId])
 
   useEffect(() => {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
       setFeaturedMatches(buildFeaturedSpectateMarkets(readArenaMatches()))
+      setTickets(getTicketsForMatch(activeMatchId, currentUser.name))
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [])
+  }, [activeMatchId])
 
   const filteredMatches = useMemo(() => {
     if (selectedFilter === "All") return featuredMatches
@@ -487,15 +495,13 @@ export default function SpectatePage() {
     [tickets, activeMatch?.id]
   )
 
-  const myHostExposure = activeTickets
-    .filter((t) => t.side === "host")
-    .reduce((sum, t) => sum + t.amount, 0)
+  const exposure = activeMatch
+    ? getTicketExposureByMatch(activeMatch.id, currentUser.name)
+    : { host: 0, challenger: 0, total: 0 }
 
-  const myChallengerExposure = activeTickets
-    .filter((t) => t.side === "challenger")
-    .reduce((sum, t) => sum + t.amount, 0)
-
-  const myTotalExposure = myHostExposure + myChallengerExposure
+  const myHostExposure = exposure.host
+  const myChallengerExposure = exposure.challenger
+  const myTotalExposure = exposure.total
 
   const recentTickets = [...activeTickets].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5)
 
@@ -568,20 +574,11 @@ export default function SpectatePage() {
       selectedSide === "host" ? activeMatch.host.name : activeMatch.challenger.name
     const projection = selectedSide === "host" ? hostProjection : challengerProjection
 
-    const newTicket: Ticket = {
-      id: `${activeMatch.id}-${Date.now()}`,
-      matchId: activeMatch.id,
-      side: selectedSide,
-      amount: safeAmount,
-      createdAt: Date.now(),
-    }
-
-    setTickets((prev) => [...prev, newTicket])
-
     try {
       placeArenaSpectatorBet(activeMatch.id, selectedSide, safeAmount)
       const refreshed = buildFeaturedSpectateMarkets(readArenaMatches())
       setFeaturedMatches(refreshed)
+      setTickets(getTicketsForMatch(activeMatch.id, currentUser.name))
     } catch {
       setBetMessage("Failed to place spectator bet.")
       return
@@ -616,12 +613,18 @@ export default function SpectatePage() {
             <p className="mt-4 text-white/60">
               No live or ready matches yet. Launch a match from the arena lobby first.
             </p>
-            <div className="mt-6">
+            <div className="mt-6 flex items-center justify-center gap-3">
               <Link
                 href="/arena"
                 className="inline-flex items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 px-5 py-4 text-sm font-bold text-amber-300 transition hover:bg-amber-300/15"
               >
                 Back to Arena
+              </Link>
+              <Link
+                href="/bets"
+                className="inline-flex items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/15"
+              >
+                My Bets
               </Link>
             </div>
           </div>
@@ -658,15 +661,16 @@ export default function SpectatePage() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-5">
             <HeaderStat label="Featured Markets" value={`${featuredMatches.length}`} tone="gold" />
             <HeaderStat label="Active Pool" value={`${totalSpectatorPool.toFixed(0)} KAS`} tone="green" />
             <HeaderStat label="Live Viewers" value={`${activeMatch.spectators}`} tone="sky" />
+            <HeaderStat label="My Tickets" value={`${activeTickets.length}`} />
             <Link
-              href="/arena"
-              className="flex items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 px-5 py-4 text-sm font-bold text-amber-300 transition hover:bg-amber-300/15"
+              href="/bets"
+              className="flex items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/15"
             >
-              Back to Arena
+              My Bets
             </Link>
           </div>
         </div>
@@ -1026,12 +1030,20 @@ export default function SpectatePage() {
                   {marketOpen && activeMatch.challenger ? "Place Spectator Bet" : "Betting Closed"}
                 </button>
 
-                <Link
-                  href={`/arena/match/${activeMatch.id}`}
-                  className="flex w-full items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-base font-black text-emerald-300 transition hover:bg-emerald-400/15"
-                >
-                  Spectate Without Betting
-                </Link>
+                <div className="grid grid-cols-2 gap-3">
+                  <Link
+                    href={`/arena/match/${activeMatch.id}`}
+                    className="flex w-full items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-base font-black text-emerald-300 transition hover:bg-emerald-400/15"
+                  >
+                    Spectate
+                  </Link>
+                  <Link
+                    href="/bets"
+                    className="flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-base font-black text-white transition hover:bg-white/10"
+                  >
+                    My Bets
+                  </Link>
+                </div>
 
                 <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">Bet Slip Status</div>
