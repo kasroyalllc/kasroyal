@@ -1,40 +1,72 @@
 # KasRoyal
 
-KasRoyal is a Kaspa-based competitive gaming and spectator betting platform built with Next.js, React, TailwindCSS, and TypeScript.
+KasRoyal is a **Kaspa-based competitive skill arena platform** where players compete and spectators bet on outcomes.
 
-## Current Product Direction
+Think:
 
-KasRoyal is a premium dark-theme skill arena platform featuring:
+Chess.com + DraftKings + Twitch
 
-- Arena Lobby
-- Spectator betting
-- Leaderboard
-- Live match rooms
+Built using:
 
-Games currently in scope:
+• Next.js  
+• TypeScript  
+• Tailwind  
+• Vercel  
+• Kaspa ecosystem  
+• IgraLabs RPC  
 
-- Chess Duel
+---
+
+## Features
+
+### Skill Arenas
+Players can create and join competitive matches.
+
+Current games:
+
+- Chess
 - Connect 4
 - Tic-Tac-Toe
 
-## Current Stack
+### Spectator Betting
+
+Spectators can:
+
+- watch matches live
+- bet on players
+- receive payouts based on pool odds
+
+### Wallet Integration
+
+Supports Kaspa wallets such as:
+
+- Kasware
+- Kaspium (future)
+
+---
+
+## Tech Stack
+
+Frontend:
 
 - Next.js
 - React
-- TailwindCSS
+- Tailwind
 - TypeScript
-- localStorage mock backend
 
-## Future Stack
+Infrastructure:
 
-- Kaspa wallets
-- Kaspa RPC
-- IgraLabs smart contracts
-- on-chain escrow / settlement
-- Supabase backend
+- Vercel deployment
+- GitHub CI
+- Supabase (planned)
 
-## Deployment
+Blockchain:
 
-- GitHub
-- Vercel
-- Supabase
+- Kaspa
+- IgraLabs smart contracts (future)
+
+---
+
+## Development
+
+Install dependencies:
