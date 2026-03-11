@@ -167,7 +167,7 @@ function ensureEvenHex(value: Hex): Hex {
 }
 
 function bigintToHex(value: bigint): Hex {
-  if (value < 0n) {
+  if (value < BigInt(0)) {
     throw new Error("Negative bigint is not allowed for hex encoding")
   }
   return `0x${value.toString(16)}` as Hex
@@ -198,17 +198,17 @@ function parseDecimalToUnits(value: string | number, decimals = KAS_DECIMALS): b
   const [wholePart, fractionalPartRaw = ""] = str.split(".")
   const fractionalPart = fractionalPartRaw.slice(0, decimals).padEnd(decimals, "0")
 
-  return BigInt(wholePart) * 10n ** BigInt(decimals) + BigInt(fractionalPart || "0")
+  return BigInt(wholePart) * BigInt(10) ** BigInt(decimals) + BigInt(fractionalPart || "0")
 }
 
 function formatUnits(value: bigint, decimals = KAS_DECIMALS, precision = 6): string {
-  const negative = value < 0n
+  const negative = value < BigInt(0)
   const abs = negative ? -value : value
-  const base = 10n ** BigInt(decimals)
+  const base = BigInt(10) ** BigInt(decimals)
   const whole = abs / base
   const fraction = abs % base
 
-  if (fraction === 0n) {
+  if (fraction === BigInt(0)) {
     return `${negative ? "-" : ""}${whole.toString()}`
   }
 
@@ -602,7 +602,7 @@ export class KasRoyalChainService {
     const from = normalizeAddress(input.from)
     const to = normalizeAddress(input.to)
     const data = assertNonEmptyHexData(input.data, "contract write data")
-    const valueWei = input.valueKas === undefined ? 0n : parseDecimalToUnits(input.valueKas)
+    const valueWei = input.valueKas === undefined ? BigInt(0) : parseDecimalToUnits(input.valueKas)
     const valueWeiHex = bigintToHex(valueWei)
     const chain = await this.requireChainContext()
 
