@@ -38,9 +38,3 @@ Games currently in scope:
 - GitHub
 - Vercel
 - Supabase
-
-## Vision
-
-KasRoyal starts with skill arenas first, pre-match betting only, one featured bettable market per game type, and unlimited watch-only rooms.
-
-Future architecture will move toward a server-authoritative backend and on-chain settlement across the Kaspa ecosystem.
