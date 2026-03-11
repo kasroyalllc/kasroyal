@@ -1,33 +1,36 @@
 "use client"
-import { useEffect, useMemo, useState } from "react"
-import { Chess } from "chess.js"
 
-const files = ["a", "b", "c", "d", "e", "f", "g", "h"]
-const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"]
+import { useEffect, useMemo, useState } from "react"
+import { Chess, type Square } from "chess.js"
+
+const files = ["a", "b", "c", "d", "e", "f", "g", "h"] as const
+const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"] as const
 const START_TIME = 300
 
 export default function ChessPage() {
   const [game, setGame] = useState(new Chess())
   const [status, setStatus] = useState("White to move")
-  const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
-  const [legalTargets, setLegalTargets] = useState<string[]>([])
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
+  const [legalTargets, setLegalTargets] = useState<Square[]>([])
   const [message, setMessage] = useState(
     "Click a piece, then click a highlighted destination square."
   )
 
   const [moveHistory, setMoveHistory] = useState<string[]>([])
-  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null)
+  const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null)
 
   const [whiteTime, setWhiteTime] = useState(START_TIME)
   const [blackTime, setBlackTime] = useState(START_TIME)
 
   const boardSquares = useMemo(() => {
-    const out: string[] = []
+    const out: Square[] = []
+
     for (const rank of ranks) {
       for (const file of files) {
-        out.push(`${file}${rank}`)
+        out.push(`${file}${rank}` as Square)
       }
     }
+
     return out
   }, [])
 
@@ -98,7 +101,7 @@ export default function ChessPage() {
     setLegalTargets([])
   }
 
-  function handleSquareClick(square: string) {
+  function handleSquareClick(square: Square) {
     if (gameOver) return
 
     const piece = game.get(square)
@@ -165,7 +168,7 @@ export default function ChessPage() {
     setBlackTime(START_TIME)
   }
 
-  function renderPiece(square: string) {
+  function renderPiece(square: Square) {
     const piece = game.get(square)
     if (!piece) return null
 
@@ -175,7 +178,7 @@ export default function ChessPage() {
       <img
         src={`/pieces/${name}.svg`}
         alt={name}
-        className="h-12 w-12 select-none pointer-events-none drop-shadow-xl transition-all duration-200 ease-in-out"
+        className="pointer-events-none h-12 w-12 select-none drop-shadow-xl transition-all duration-200 ease-in-out"
       />
     )
   }
@@ -362,14 +365,14 @@ export default function ChessPage() {
 
               <div className="rounded-2xl border border-white/6 bg-black/30 p-4">
                 <div className="text-sm text-white/60">Legal Moves</div>
-                <div className="mt-1 text-sm text-white/80 break-words">
+                <div className="mt-1 max-h-[180px] break-words text-sm text-white/80">
                   {legalTargets.length ? legalTargets.join(", ") : "None"}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-white/6 bg-black/30 p-4">
                 <div className="text-sm text-white/60">Move History</div>
-                <div className="mt-1 text-sm text-white/80 break-words max-h-[180px] overflow-y-auto">
+                <div className="mt-1 max-h-[180px] overflow-y-auto break-words text-sm text-white/80">
                   {moveHistory.length
                     ? moveHistory.map((m, i) => (
                         <div key={i}>
@@ -390,7 +393,8 @@ export default function ChessPage() {
               <div className="rounded-2xl border border-white/6 bg-black/30 p-4">
                 <div className="text-sm text-white/60">Security</div>
                 <div className="mt-1 text-sm text-white/80">
-                  Client prototype active. Server-authoritative match validation comes next.
+                  Client prototype active. Server-authoritative match validation
+                  comes next.
                 </div>
               </div>
             </div>
