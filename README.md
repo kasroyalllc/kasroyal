@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KasRoyal
 
-## Getting Started
+KasRoyal is a Kaspa-based competitive gaming and spectator betting platform built with Next.js, React, TailwindCSS, and TypeScript.
 
-First, run the development server:
+## Current Product Direction
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+KasRoyal is a premium dark-theme skill arena platform featuring:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Arena Lobby
+- Spectator betting
+- Leaderboard
+- Live match rooms
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Games currently in scope:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Chess Duel
+- Connect 4
+- Tic-Tac-Toe
 
-## Learn More
+## Current Stack
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js
+- React
+- TailwindCSS
+- TypeScript
+- localStorage mock backend
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Future Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Kaspa wallets
+- Kaspa RPC
+- IgraLabs smart contracts
+- on-chain escrow / settlement
+- Supabase backend
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- GitHub
+- Vercel
+- Supabase
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Vision
+
+KasRoyal starts with skill arenas first, pre-match betting only, one featured bettable market per game type, and unlimited watch-only rooms.
+
+Future architecture will move toward a server-authoritative backend and on-chain settlement across the Kaspa ecosystem.
