@@ -49,6 +49,7 @@ const ARENA_EVENT_NAME = "kasroyal-arena-matches-updated"
 const navItems = [
   { href: "/arena", label: "Arena" },
   { href: "/spectate", label: "Spectate" },
+  { href: "/bets", label: "Bets" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/profile", label: "Profile" },
   { href: "/tx", label: "Tx Console" },
