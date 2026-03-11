@@ -786,9 +786,9 @@ export default function SpectatePage() {
                   </div>
                   <TonePill
                     tone={
-                      closingTone === "hot"
+                      closingTone === "danger"
                         ? "red"
-                        : closingTone === "warm"
+                        : closingTone === "warning"
                           ? "gold"
                           : "green"
                     }

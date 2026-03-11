@@ -98,11 +98,20 @@ type FavoriteData = {
   edge: number
 }
 
+type RankColors = {
+  text: string
+  ring: string
+  bg: string
+  toString(): string
+}
+
 type GameMeta = {
   accent: string
   surface: string
   icon: string
   description: string
+  subtitle: string
+  glow: string
 }
 
 const ARENA_MATCHES_STORAGE_KEY = "kasroyal_arena_matches"
@@ -177,22 +186,28 @@ export const arenaFeedSeed = [
 
 export const gameMeta: Record<GameType, GameMeta> = {
   "Chess Duel": {
-    accent: "from-amber-300 via-yellow-200 to-amber-500",
+    accent: "text-amber-300",
     surface: "bg-gradient-to-br from-[#19140a] to-[#0b0b0b]",
     icon: "♞",
     description: "Deep strategy, prestige markets, elite rating swings.",
+    subtitle: "High-skill tactical duels with premium featured markets.",
+    glow: "border-amber-300/20 bg-amber-300/10 text-amber-300",
   },
   "Connect 4": {
-    accent: "from-emerald-300 via-teal-200 to-emerald-500",
+    accent: "text-emerald-300",
     surface: "bg-gradient-to-br from-[#081712] to-[#0b0b0b]",
     icon: "◉",
     description: "Fast reads, trap setups, momentum-friendly pools.",
+    subtitle: "Quick-turn pressure matches with crowd-friendly pacing.",
+    glow: "border-emerald-300/20 bg-emerald-400/10 text-emerald-300",
   },
   "Tic-Tac-Toe": {
-    accent: "from-sky-300 via-cyan-200 to-sky-500",
+    accent: "text-sky-300",
     surface: "bg-gradient-to-br from-[#08131a] to-[#0b0b0b]",
     icon: "✕",
     description: "Hyper-fast rounds with aggressive pre-lock betting windows.",
+    subtitle: "Fastest arena format for instant room creation and action.",
+    glow: "border-sky-300/20 bg-sky-300/10 text-sky-300",
   },
 }
 
@@ -237,7 +252,10 @@ export const initialArenaMatches: ArenaMatch[] = normalizeArenaMatches(
       bettingWindowSeconds: 60,
       result: null,
       moveHistory: ["1. e4", "1... c5", "2. Nf3", "2... d6", "17... Qe7"],
-      boardState: { mode: "chess-preview", fen: "rnbq1rk1/pp3ppp/3bpn2/2pp4/2P5/2N1PN2/PP1PBPPP/R1BQ1RK1 w - - 0 8" },
+      boardState: {
+        mode: "chess-preview",
+        fen: "rnbq1rk1/pp3ppp/3bpn2/2pp4/2P5/2N1PN2/PP1PBPPP/R1BQ1RK1 w - - 0 8",
+      },
     },
     {
       id: "arena-2",
@@ -444,7 +462,10 @@ function rankFromRating(rating: number): RankTier {
   return "Bronze I"
 }
 
-function buildProfileFromWallet(wallet: string, fallbackName?: string): PlayerProfile {
+function buildProfileFromWallet(
+  wallet: string,
+  fallbackName?: string
+): PlayerProfile {
   const short =
     wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet
 
@@ -473,7 +494,8 @@ function sideLabelsForGame(game: GameType) {
   return { host: "X", challenger: "O" }
 }
 
-function bestOfForGame(game: GameType): 1 | 3 | 5 {
+function bestOfForGame(game: GameType, explicit?: 1 | 3 | 5): 1 | 3 | 5 {
+  if (explicit === 1 || explicit === 3 || explicit === 5) return explicit
   if (game === "Chess Duel") return 3
   if (game === "Connect 4") return 3
   return 1
@@ -546,9 +568,7 @@ function mapDbMatchToArenaMatch(dbMatch: {
   const game = dbGameTypeToGameType(dbMatch.game_type)
   const labels = sideLabelsForGame(game)
   const createdAt = new Date(dbMatch.created_at).getTime()
-  const seatedAt = dbMatch.challenger_wallet
-    ? createdAt + 5_000
-    : undefined
+  const seatedAt = dbMatch.challenger_wallet ? createdAt + 5_000 : undefined
 
   const bettingWindowSeconds = getGameBettingWindowSeconds(game)
   const countdownStartedAt = seatedAt
@@ -565,9 +585,10 @@ function mapDbMatchToArenaMatch(dbMatch: {
     id: dbMatch.id,
     game,
     status: dbStatusToArenaStatus(dbMatch.status),
-    bettingStatus: "disabled",
-    marketVisibility: "watch-only",
-    isFeaturedMarket: false,
+    bettingStatus: dbMatch.status === "Ready to Start" ? "open" : "disabled",
+    marketVisibility:
+      dbMatch.status === "Waiting for Opponent" ? "watch-only" : "featured",
+    isFeaturedMarket: dbMatch.status !== "Waiting for Opponent",
     bestOf: bestOfForGame(game),
     wager: Number(dbMatch.wager ?? 0),
     createdAt,
@@ -627,13 +648,39 @@ function applyBetsToMatches(
         .filter((ticket) => ticket.side === "challenger")
         .reduce((sum, ticket) => sum + ticket.amount, 0)
 
+      const featured =
+        !!match.challenger &&
+        (match.status === "Ready to Start" || match.status === "Live")
+
       return {
         ...match,
+        bettingStatus:
+          match.status === "Ready to Start"
+            ? "open"
+            : match.status === "Live"
+              ? "locked"
+              : "disabled",
+        marketVisibility: featured ? "featured" : "watch-only",
+        isFeaturedMarket: featured,
         spectatorPool: {
           host: hostPool,
           challenger: challengerPool,
         },
         spectators: Math.max(match.spectators, related.length + 6),
+        statusText:
+          match.status === "Ready to Start"
+            ? "Featured market open"
+            : match.status === "Live"
+              ? "Match is live"
+              : match.status === "Finished"
+                ? "Match finished"
+                : "Open seat available",
+        moveText:
+          match.status === "Ready to Start"
+            ? `Starts in ${formatTime(getArenaBettingSecondsLeft(match))}`
+            : match.moveText,
+        result: match.result ?? null,
+        playerPot: match.wager * (match.challenger ? 2 : 1),
       }
     }),
     Date.now()
@@ -645,7 +692,12 @@ async function hydrateMatchesFromSupabase() {
     const dbMatches = await getDbMatches()
     const mapped = dbMatches.map(mapDbMatchToArenaMatch)
     const localTickets = readSpectatorTickets()
-    persistMatches(applyBetsToMatches(mapped.length ? mapped : initialArenaMatches, localTickets))
+    persistMatches(
+      applyBetsToMatches(
+        mapped.length ? mapped : initialArenaMatches,
+        localTickets
+      )
+    )
   } catch (error) {
     console.error("KasRoyal hydrateMatchesFromSupabase failed", error)
   }
@@ -707,8 +759,15 @@ export function readSpectatorTickets() {
   return [...spectatorTicketsCache]
 }
 
-export function getArenaById(matchId: string) {
-  return readArenaMatches().find((match) => match.id === matchId) ?? null
+export function readCurrentUserTickets(user = currentUser.name) {
+  return readSpectatorTickets().filter((ticket) => ticket.user === user)
+}
+
+export function getArenaById(
+  matchId: string,
+  matches: ArenaMatch[] = readArenaMatches()
+) {
+  return matches.find((match) => match.id === matchId) ?? null
 }
 
 export async function getArenaByIdAsync(matchId: string) {
@@ -752,7 +811,11 @@ export function updateArenaMatch(
 
 async function syncMatchToSupabase(match: ArenaMatch) {
   try {
-    if (match.status === "Ready to Start" || match.status === "Live" || match.status === "Finished") {
+    if (
+      match.status === "Ready to Start" ||
+      match.status === "Live" ||
+      match.status === "Finished"
+    ) {
       await updateDbMatchStatus(match.id, match.status)
     }
   } catch (error) {
@@ -798,89 +861,182 @@ export function subscribeSpectatorTickets(
   }
 }
 
-export async function createArenaMatch(input: {
+export function createArenaMatch(input: {
   game: GameType
   wager: number
+  bestOf?: 1 | 3 | 5
   hostWallet?: string
 }) {
   const wager = clampWager(input.wager)
   const hostWallet = input.hostWallet ?? currentUser.name
   const profile = buildProfileFromWallet(hostWallet, currentUser.name)
   const labels = sideLabelsForGame(input.game)
+  const resolvedBestOf = bestOfForGame(input.game, input.bestOf)
 
-  try {
-    const dbMatch = await createDbMatch({
-      game_type: input.game,
-      host_wallet: hostWallet,
-      wager,
-    })
+  const localMatch: ArenaMatch = normalizeArenaMatches(
+    [
+      {
+        id: `arena-${cryptoSafeId()}`,
+        game: input.game,
+        status: "Waiting for Opponent",
+        bettingStatus: "disabled",
+        marketVisibility: "watch-only",
+        isFeaturedMarket: false,
+        bestOf: resolvedBestOf,
+        wager,
+        createdAt: Date.now(),
+        spectators: randomInt(2, 12),
+        playerPot: wager,
+        host: profile,
+        challenger: null,
+        hostSideLabel: labels.host,
+        challengerSideLabel: labels.challenger,
+        statusText: "Open seat available",
+        moveText: "Waiting for join",
+        roundScore: { host: 0, challenger: 0 },
+        spectatorPool: { host: 0, challenger: 0 },
+        bettingWindowSeconds: getGameBettingWindowSeconds(input.game),
+        result: null,
+        moveHistory: [],
+        boardState: createDefaultBoardState(input.game),
+      },
+    ],
+    Date.now()
+  )[0]
 
-    const mapped = mapDbMatchToArenaMatch(dbMatch)
-    mapped.host = profile
-    mapped.hostSideLabel = labels.host
-    mapped.challengerSideLabel = labels.challenger
+  upsertMatchLocally(localMatch)
 
-    upsertMatchLocally(mapped)
-    return mapped
-  } catch (error) {
-    console.error("KasRoyal createArenaMatch fallback", error)
+  void (async () => {
+    try {
+      const dbMatch = await createDbMatch({
+        game_type: input.game,
+        host_wallet: hostWallet,
+        wager,
+      })
 
-    const localMatch: ArenaMatch = normalizeArenaMatches(
-      [
-        {
-          id: `arena-${cryptoSafeId()}`,
-          game: input.game,
-          status: "Waiting for Opponent",
-          bettingStatus: "disabled",
-          marketVisibility: "watch-only",
-          isFeaturedMarket: false,
-          bestOf: bestOfForGame(input.game),
-          wager,
-          createdAt: Date.now(),
-          spectators: randomInt(2, 12),
-          playerPot: wager,
-          host: profile,
-          challenger: null,
-          hostSideLabel: labels.host,
-          challengerSideLabel: labels.challenger,
-          statusText: "Open seat available",
-          moveText: "Waiting for join",
-          roundScore: { host: 0, challenger: 0 },
-          spectatorPool: { host: 0, challenger: 0 },
-          bettingWindowSeconds: getGameBettingWindowSeconds(input.game),
-          result: null,
-          moveHistory: [],
-          boardState: createDefaultBoardState(input.game),
-        },
-      ],
-      Date.now()
-    )[0]
+      const mapped = mapDbMatchToArenaMatch(dbMatch)
+      mapped.host = profile
+      mapped.bestOf = resolvedBestOf
+      mapped.hostSideLabel = labels.host
+      mapped.challengerSideLabel = labels.challenger
 
-    upsertMatchLocally(localMatch)
-    return localMatch
-  }
+      const current = readArenaMatches()
+      const withoutTemp = current.filter((match) => match.id !== localMatch.id)
+      persistMatches([mapped, ...withoutTemp])
+    } catch (error) {
+      console.error("KasRoyal createArenaMatch background sync failed", error)
+    }
+  })()
+
+  return localMatch
 }
 
-export async function joinArenaMatch(matchId: string, wallet?: string) {
+export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | null {
   const walletAddress = wallet ?? `${currentUser.name}-wallet`
-  try {
-    const dbMatch = await joinDbMatch(matchId, walletAddress)
-    const mapped = mapDbMatchToArenaMatch(dbMatch)
-    upsertMatchLocally(mapped)
-    return mapped
-  } catch (error) {
-    console.error("KasRoyal joinArenaMatch fallback", error)
+  const existing = getArenaById(matchId)
 
-    return updateArenaMatch(matchId, (current) => ({
-      challenger: buildProfileFromWallet(walletAddress, currentUser.name),
-      status: "Ready to Start",
-      seatedAt: Date.now(),
-      countdownStartedAt: Date.now(),
-      bettingClosesAt:
-        Date.now() + getGameBettingWindowSeconds(current.game) * 1000,
-      playerPot: current.wager * 2,
-    }))
+  if (!existing) {
+    return null
   }
+
+  if (existing.challenger) {
+    return existing
+  }
+
+  const challengerProfile = buildProfileFromWallet(walletAddress, currentUser.name)
+  const countdownStartedAt = Date.now()
+
+  const localJoined = updateArenaMatch(matchId, (current) => ({
+    challenger: challengerProfile,
+    status: "Ready to Start",
+    bettingStatus: "open",
+    marketVisibility: "featured",
+    isFeaturedMarket: true,
+    seatedAt: current.seatedAt ?? countdownStartedAt,
+    countdownStartedAt: current.countdownStartedAt ?? countdownStartedAt,
+    bettingClosesAt:
+      (current.countdownStartedAt ?? countdownStartedAt) +
+      getGameBettingWindowSeconds(current.game) * 1000,
+    playerPot: current.wager * 2,
+    statusText: "Featured market open",
+    moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(current.game))}`,
+  }))
+
+  void (async () => {
+    try {
+      const dbMatch = await joinDbMatch(matchId, walletAddress)
+      const mapped = mapDbMatchToArenaMatch(dbMatch)
+      upsertMatchLocally({
+        ...mapped,
+        challenger: challengerProfile,
+      })
+    } catch (error) {
+      console.error("KasRoyal joinArenaMatch background sync failed", error)
+    }
+  })()
+
+  return localJoined
+}
+
+export function autoFillArenaMatch(matchId: string): ArenaMatch | null {
+  const match = getArenaById(matchId)
+
+  if (!match || match.challenger) {
+    return match
+  }
+
+  const opponent =
+    mockOpponentPool.find((player) => player.name !== match.host.name) ??
+    mockOpponentPool[0]
+
+  const walletSeed = `${opponent.name}-wallet`
+  const joined = joinArenaMatch(matchId, walletSeed)
+
+  if (!joined) return joined
+
+  return updateArenaMatch(matchId, {
+    challenger: opponent,
+    status: "Ready to Start",
+    bettingStatus: "open",
+    marketVisibility: "featured",
+    isFeaturedMarket: true,
+    seatedAt: joined.seatedAt ?? Date.now(),
+    countdownStartedAt: joined.countdownStartedAt ?? Date.now(),
+    bettingClosesAt:
+      (joined.countdownStartedAt ?? Date.now()) +
+      getGameBettingWindowSeconds(joined.game) * 1000,
+    playerPot: joined.wager * 2,
+    statusText: "Featured market open",
+    moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(joined.game))}`,
+  })
+}
+
+export function launchArenaMatch(matchId: string): ArenaMatch | null {
+  const match = getArenaById(matchId)
+
+  if (!match) {
+    return null
+  }
+
+  const nowValue = Date.now()
+
+  return updateArenaMatch(matchId, (current) => ({
+    status: "Live",
+    bettingStatus: "locked",
+    marketVisibility: current.challenger ? "featured" : "watch-only",
+    isFeaturedMarket: !!current.challenger,
+    seatedAt: current.seatedAt ?? nowValue,
+    countdownStartedAt: current.countdownStartedAt ?? nowValue,
+    bettingClosesAt: nowValue,
+    startedAt: nowValue,
+    statusText: "Match is live",
+    moveText:
+      current.game === "Chess Duel"
+        ? "1. e4"
+        : current.game === "Connect 4"
+          ? "Opening disc dropped"
+          : "Opening move",
+  }))
 }
 
 export async function placeArenaSpectatorBet(input: {
@@ -929,8 +1085,25 @@ export function getTicketsForMatch(matchId: string) {
   return readSpectatorTickets().filter((ticket) => ticket.matchId === matchId)
 }
 
-export function getTicketExposureByMatch(matchId: string) {
-  return getTicketsForMatch(matchId).reduce((sum, ticket) => sum + ticket.amount, 0)
+export function getTicketExposureByMatch(matchId: string, user?: string) {
+  const tickets = getTicketsForMatch(matchId)
+  const filtered = user
+    ? tickets.filter((ticket) => ticket.user === user)
+    : tickets
+
+  const host = filtered
+    .filter((ticket) => ticket.side === "host")
+    .reduce((sum, ticket) => sum + ticket.amount, 0)
+
+  const challenger = filtered
+    .filter((ticket) => ticket.side === "challenger")
+    .reduce((sum, ticket) => sum + ticket.amount, 0)
+
+  return {
+    host,
+    challenger,
+    total: host + challenger,
+  }
 }
 
 export function getFavoriteData(
@@ -973,54 +1146,62 @@ export function getEdgeText(hostRating: number, challengerRating: number) {
 }
 
 export function getWinProbability(
-  hostRating: number,
-  challengerRating: number,
-  side: ArenaSide
+  firstRating: number,
+  secondRating: number,
+  side?: ArenaSide
 ) {
-  const qa = Math.pow(10, hostRating / 400)
-  const qb = Math.pow(10, challengerRating / 400)
-  const hostProb = qa / (qa + qb)
-  return side === "host" ? hostProb : 1 - hostProb
+  const qa = Math.pow(10, firstRating / 400)
+  const qb = Math.pow(10, secondRating / 400)
+  const firstProbability = qa / (qa + qb)
+
+  if (!side) {
+    return firstProbability
+  }
+
+  return side === "host" ? firstProbability : 1 - firstProbability
 }
 
-export function getRankColors(rank: RankTier) {
+function makeRankColors(text: string, ring: string, bg: string): RankColors {
+  return {
+    text,
+    ring,
+    bg,
+    toString() {
+      return `${text} ${ring} ${bg}`
+    },
+  }
+}
+
+export function getRankColors(rank: RankTier): RankColors {
   if (rank === "Grandmaster" || rank === "Master") {
-    return {
-      text: "text-amber-300",
-      ring: "ring-amber-300/30",
-      bg: "bg-amber-400/10",
-    }
+    return makeRankColors(
+      "text-amber-300",
+      "ring-amber-300/30",
+      "bg-amber-400/10"
+    )
   }
 
   if (rank === "Diamond II" || rank === "Platinum I") {
-    return {
-      text: "text-sky-300",
-      ring: "ring-sky-300/30",
-      bg: "bg-sky-400/10",
-    }
+    return makeRankColors("text-sky-300", "ring-sky-300/30", "bg-sky-400/10")
   }
 
   if (rank === "Gold III" || rank === "Gold I") {
-    return {
-      text: "text-emerald-300",
-      ring: "ring-emerald-300/30",
-      bg: "bg-emerald-400/10",
-    }
+    return makeRankColors(
+      "text-emerald-300",
+      "ring-emerald-300/30",
+      "bg-emerald-400/10"
+    )
   }
 
   if (rank === "Silver II") {
-    return {
-      text: "text-slate-200",
-      ring: "ring-white/20",
-      bg: "bg-white/10",
-    }
+    return makeRankColors("text-slate-200", "ring-white/20", "bg-white/10")
   }
 
-  return {
-    text: "text-orange-200",
-    ring: "ring-orange-300/20",
-    bg: "bg-orange-400/10",
-  }
+  return makeRankColors(
+    "text-orange-200",
+    "ring-orange-300/20",
+    "bg-orange-400/10"
+  )
 }
 
 export function buildFeaturedSpectateMarkets(matches = readArenaMatches()) {
@@ -1036,8 +1217,78 @@ export function buildFeaturedSpectateMarkets(matches = readArenaMatches()) {
     })
 }
 
+export function buildLeaderboardFromArena(
+  matches: ArenaMatch[] = readArenaMatches()
+): LeaderboardEntry[] {
+  const baseMap = new Map<string, LeaderboardEntry>()
+
+  for (const seed of leaderboardSeed) {
+    baseMap.set(seed.name, { ...seed })
+  }
+
+  const ensureEntry = (profile: PlayerProfile, favoriteGame: GameType) => {
+    const existing = baseMap.get(profile.name)
+    if (existing) {
+      existing.rating = profile.rating
+      existing.rank = profile.rank
+      existing.winRate = profile.winRate
+      if (!existing.favoriteGame) {
+        existing.favoriteGame = favoriteGame
+      }
+      return existing
+    }
+
+    const winsLosses = profile.last10.split("-")
+    const wins = Number(winsLosses[0] ?? 5)
+    const losses = Number(winsLosses[1] ?? 5)
+
+    const created: LeaderboardEntry = {
+      id: `lb-${cryptoSafeId()}`,
+      name: profile.name,
+      rank: profile.rank,
+      rating: profile.rating,
+      winRate: profile.winRate,
+      wins: Number.isFinite(wins) ? wins : 5,
+      losses: Number.isFinite(losses) ? losses : 5,
+      streak: profile.winRate >= 50 ? "W2" : "L1",
+      favoriteGame,
+      earnings: 0,
+      avatarGlow:
+        favoriteGame === "Chess Duel"
+          ? "amber"
+          : favoriteGame === "Connect 4"
+            ? "emerald"
+            : "sky",
+    }
+
+    baseMap.set(profile.name, created)
+    return created
+  }
+
+  for (const match of matches) {
+    const hostEntry = ensureEntry(match.host, match.game)
+    hostEntry.favoriteGame = hostEntry.favoriteGame || match.game
+    hostEntry.earnings = Number((hostEntry.earnings + match.wager * 0.35).toFixed(1))
+
+    if (match.challenger) {
+      const challengerEntry = ensureEntry(match.challenger, match.game)
+      challengerEntry.favoriteGame = challengerEntry.favoriteGame || match.game
+      challengerEntry.earnings = Number(
+        (challengerEntry.earnings + match.wager * 0.35).toFixed(1)
+      )
+    }
+  }
+
+  return [...baseMap.values()].sort((a, b) => {
+    if (b.rating !== a.rating) return b.rating - a.rating
+    if (b.winRate !== a.winRate) return b.winRate - a.winRate
+    if (b.earnings !== a.earnings) return b.earnings - a.earnings
+    return b.wins - a.wins
+  })
+}
+
 export function getLeaderboard(): LeaderboardEntry[] {
-  return [...leaderboardSeed].sort((a, b) => b.rating - a.rating)
+  return buildLeaderboardFromArena(readArenaMatches())
 }
 
 function cryptoSafeId() {
