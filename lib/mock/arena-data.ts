@@ -29,8 +29,6 @@ import {
   getClosingTone,
   getGameBettingWindowLabel,
   getGameBettingWindowSeconds,
-  isArenaBettable,
-  isArenaSpectatable,
   normalizeArenaMatches,
 } from "@/lib/engine/lifecycle"
 import { gameDisplayOrder } from "@/lib/engine/featured-markets"
@@ -77,8 +75,6 @@ export {
   getNetPool,
   getProjectedState,
   getSideShare,
-  isArenaBettable,
-  isArenaSpectatable,
 }
 
 export type PersistedBetTicket = {
@@ -569,7 +565,6 @@ function mapDbMatchToArenaMatch(dbMatch: {
   const labels = sideLabelsForGame(game)
   const createdAt = new Date(dbMatch.created_at).getTime()
   const seatedAt = dbMatch.challenger_wallet ? createdAt + 5_000 : undefined
-
   const bettingWindowSeconds = getGameBettingWindowSeconds(game)
   const countdownStartedAt = seatedAt
   const bettingClosesAt = countdownStartedAt
@@ -585,10 +580,9 @@ function mapDbMatchToArenaMatch(dbMatch: {
     id: dbMatch.id,
     game,
     status: dbStatusToArenaStatus(dbMatch.status),
-    bettingStatus: dbMatch.status === "Ready to Start" ? "open" : "disabled",
-    marketVisibility:
-      dbMatch.status === "Waiting for Opponent" ? "watch-only" : "featured",
-    isFeaturedMarket: dbMatch.status !== "Waiting for Opponent",
+    bettingStatus: challenger && dbMatch.status === "Ready to Start" ? "open" : "disabled",
+    marketVisibility: challenger ? "featured" : "watch-only",
+    isFeaturedMarket: !!challenger,
     bestOf: bestOfForGame(game),
     wager: Number(dbMatch.wager ?? 0),
     createdAt,
@@ -609,7 +603,7 @@ function mapDbMatchToArenaMatch(dbMatch: {
     challengerSideLabel: labels.challenger,
     statusText:
       challenger && dbMatch.status === "Ready to Start"
-        ? "Featured market open"
+        ? "Countdown active"
         : challenger && dbMatch.status === "Live"
           ? "Match is live"
           : challenger && dbMatch.status === "Finished"
@@ -617,7 +611,7 @@ function mapDbMatchToArenaMatch(dbMatch: {
             : "Open seat available",
     moveText:
       challenger && dbMatch.status === "Ready to Start"
-        ? "Countdown live"
+        ? "Starting soon"
         : challenger && dbMatch.status === "Live"
           ? game === "Chess Duel"
             ? "1. e4"
@@ -634,6 +628,22 @@ function mapDbMatchToArenaMatch(dbMatch: {
   }
 }
 
+export function isArenaSpectatable(match: ArenaMatch) {
+  return (
+    match.status === "Waiting for Opponent" ||
+    match.status === "Ready to Start" ||
+    match.status === "Live"
+  )
+}
+
+export function isArenaBettable(match: ArenaMatch) {
+  return (
+    !!match.challenger &&
+    match.status === "Ready to Start" &&
+    match.bettingStatus === "open"
+  )
+}
+
 function applyBetsToMatches(
   matches: ArenaMatch[],
   tickets: PersistedBetTicket[]
@@ -648,10 +658,6 @@ function applyBetsToMatches(
         .filter((ticket) => ticket.side === "challenger")
         .reduce((sum, ticket) => sum + ticket.amount, 0)
 
-      const featured =
-        !!match.challenger &&
-        (match.status === "Ready to Start" || match.status === "Live")
-
       return {
         ...match,
         bettingStatus:
@@ -660,8 +666,8 @@ function applyBetsToMatches(
             : match.status === "Live"
               ? "locked"
               : "disabled",
-        marketVisibility: featured ? "featured" : "watch-only",
-        isFeaturedMarket: featured,
+        marketVisibility: match.challenger ? "featured" : "watch-only",
+        isFeaturedMarket: !!match.challenger,
         spectatorPool: {
           host: hostPool,
           challenger: challengerPool,
@@ -669,7 +675,7 @@ function applyBetsToMatches(
         spectators: Math.max(match.spectators, related.length + 6),
         statusText:
           match.status === "Ready to Start"
-            ? "Featured market open"
+            ? "Countdown active"
             : match.status === "Live"
               ? "Match is live"
               : match.status === "Finished"
@@ -957,8 +963,10 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
     bettingClosesAt:
       (current.countdownStartedAt ?? countdownStartedAt) +
       getGameBettingWindowSeconds(current.game) * 1000,
+    startedAt: undefined,
+    finishedAt: undefined,
     playerPot: current.wager * 2,
-    statusText: "Featured market open",
+    statusText: "Countdown active",
     moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(current.game))}`,
   }))
 
@@ -969,6 +977,16 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
       upsertMatchLocally({
         ...mapped,
         challenger: challengerProfile,
+        status: "Ready to Start",
+        bettingStatus: "open",
+        marketVisibility: "featured",
+        isFeaturedMarket: true,
+        countdownStartedAt: localJoined?.countdownStartedAt,
+        bettingClosesAt: localJoined?.bettingClosesAt,
+        startedAt: undefined,
+        finishedAt: undefined,
+        statusText: "Countdown active",
+        moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(mapped.game))}`,
       })
     } catch (error) {
       console.error("KasRoyal joinArenaMatch background sync failed", error)
@@ -989,26 +1007,25 @@ export function autoFillArenaMatch(matchId: string): ArenaMatch | null {
     mockOpponentPool.find((player) => player.name !== match.host.name) ??
     mockOpponentPool[0]
 
-  const walletSeed = `${opponent.name}-wallet`
-  const joined = joinArenaMatch(matchId, walletSeed)
+  const countdownStartedAt = Date.now()
 
-  if (!joined) return joined
-
-  return updateArenaMatch(matchId, {
+  return updateArenaMatch(matchId, (current) => ({
     challenger: opponent,
     status: "Ready to Start",
     bettingStatus: "open",
     marketVisibility: "featured",
     isFeaturedMarket: true,
-    seatedAt: joined.seatedAt ?? Date.now(),
-    countdownStartedAt: joined.countdownStartedAt ?? Date.now(),
+    seatedAt: current.seatedAt ?? countdownStartedAt,
+    countdownStartedAt: current.countdownStartedAt ?? countdownStartedAt,
     bettingClosesAt:
-      (joined.countdownStartedAt ?? Date.now()) +
-      getGameBettingWindowSeconds(joined.game) * 1000,
-    playerPot: joined.wager * 2,
-    statusText: "Featured market open",
-    moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(joined.game))}`,
-  })
+      (current.countdownStartedAt ?? countdownStartedAt) +
+      getGameBettingWindowSeconds(current.game) * 1000,
+    startedAt: undefined,
+    finishedAt: undefined,
+    playerPot: current.wager * 2,
+    statusText: "Countdown active",
+    moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(current.game))}`,
+  }))
 }
 
 export function launchArenaMatch(matchId: string): ArenaMatch | null {
@@ -1051,6 +1068,10 @@ export async function placeArenaSpectatorBet(input: {
 
   if (!match) {
     throw new Error("Match not found")
+  }
+
+  if (!isArenaBettable(match)) {
+    throw new Error("Betting is closed for this match")
   }
 
   const ticket: PersistedBetTicket = {
@@ -1206,8 +1227,17 @@ export function getRankColors(rank: RankTier): RankColors {
 
 export function buildFeaturedSpectateMarkets(matches = readArenaMatches()) {
   return matches
-    .filter((match) => match.isFeaturedMarket)
+    .filter(
+      (match) =>
+        !!match.challenger &&
+        (match.status === "Ready to Start" || match.status === "Live")
+    )
     .sort((a, b) => {
+      const aPriority = a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
+      const bPriority = b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0
+
+      if (bPriority !== aPriority) return bPriority - aPriority
+
       const aPool = a.spectatorPool.host + a.spectatorPool.challenger
       const bPool = b.spectatorPool.host + b.spectatorPool.challenger
 
