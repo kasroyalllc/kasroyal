@@ -24,7 +24,6 @@ import {
   getProjectedState,
   getRankColors,
   getSideShare,
-  getTicketExposureByMatch,
   getTicketsForMatch,
   getWinProbability,
   isArenaBettable,
@@ -33,6 +32,7 @@ import {
   subscribeArenaMatches,
   subscribeSpectatorTickets,
   type ArenaMatch,
+  type ArenaSide,
   type GameType,
   type PersistedBetTicket,
   type RankTier,
@@ -43,55 +43,6 @@ type SpectateFilter = "All" | GameType
 function clampBetAmount(value: number) {
   if (!Number.isFinite(value)) return MIN_BET
   return Math.min(MAX_BET, Math.max(MIN_BET, Math.floor(value)))
-}
-
-function RankBadge({ rank }: { rank: RankTier }) {
-  return (
-    <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${getRankColors(
-        rank
-      )}`}
-    >
-      {rank}
-    </span>
-  )
-}
-
-function LabelPill({ label }: { label: string }) {
-  const className =
-    label === "Favorite"
-      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-      : label === "Even Match"
-      ? "border-white/10 bg-white/10 text-white/75"
-      : "border-amber-300/20 bg-amber-300/10 text-amber-300"
-
-  return (
-    <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.15em] ${className}`}
-    >
-      {label}
-    </span>
-  )
-}
-
-function StatMini({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string
-  value: string
-  tone?: "neutral" | "gold" | "green"
-}) {
-  const toneClass =
-    tone === "gold" ? "text-amber-300" : tone === "green" ? "text-emerald-300" : "text-white"
-
-  return (
-    <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
-      <div className="text-xs uppercase tracking-[0.16em] text-white/45">{label}</div>
-      <div className={`mt-2 text-2xl font-black ${toneClass}`}>{value}</div>
-    </div>
-  )
 }
 
 function HeaderStat({
@@ -107,287 +58,128 @@ function HeaderStat({
     tone === "gold"
       ? "text-amber-300"
       : tone === "green"
-      ? "text-emerald-300"
-      : tone === "sky"
-      ? "text-sky-300"
-      : "text-white"
+        ? "text-emerald-300"
+        : tone === "sky"
+          ? "text-sky-300"
+          : "text-white"
 
   return (
-    <div className="rounded-2xl border border-white/8 bg-black/30 px-5 py-4">
-      <div className="text-xs uppercase tracking-[0.18em] text-white/45">{label}</div>
-      <div className={`mt-2 text-2xl font-black ${toneClass}`}>{value}</div>
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+      <div className="text-[11px] uppercase tracking-[0.24em] text-white/45">{label}</div>
+      <div className={`mt-1 text-lg font-semibold ${toneClass}`}>{value}</div>
     </div>
   )
 }
 
-function PoolPreviewCard({
-  title,
-  player,
-  rank,
-  sideLabel,
-  favoriteLabel,
-  share,
-  currentPool,
-  currentMultiplier,
-  projectedPayout,
-  projectedMultiplier,
-  isSelected,
-  onSelect,
-  disabled,
-  tone,
-  flash,
-  winRate,
-  mmr,
-  last10,
-  probability,
-}: {
-  title: string
-  player: string
-  rank: RankTier
-  sideLabel: string
-  favoriteLabel: string
-  share: number
-  currentPool: number
-  currentMultiplier: number
-  projectedPayout: number
-  projectedMultiplier: number
-  isSelected: boolean
-  onSelect: () => void
-  disabled: boolean
-  tone: "amber" | "emerald"
-  flash: boolean
-  winRate: number
-  mmr: number
-  last10: string
-  probability: number
-}) {
-  const buttonClass = isSelected
-    ? tone === "amber"
-      ? "bg-gradient-to-r from-amber-400 to-yellow-300 text-black"
-      : "bg-gradient-to-r from-emerald-300 to-emerald-500 text-black"
-    : "border border-white/10 bg-white/5 text-white"
+function RankBadge({ rank }: { rank: RankTier }) {
+  const colors = getRankColors(rank)
 
   return (
-    <div
-      className={`rounded-[28px] border p-5 ${
-        tone === "amber" ? "border-amber-300/10 bg-black/25" : "border-emerald-400/10 bg-black/25"
-      }`}
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${colors.bg} ${colors.text} ${colors.ring}`}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-sm uppercase tracking-[0.16em] text-white/45">{title}</div>
-          <div className="mt-2 text-3xl font-black">{player}</div>
-          <div className="mt-1 text-base text-white/60">{sideLabel}</div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <RankBadge rank={rank} />
-            <LabelPill label={favoriteLabel} />
-          </div>
-
-          <div className="mt-4 grid gap-1 text-sm text-white/55">
-            <div>{mmr} MMR</div>
-            <div>{winRate}% win rate</div>
-            <div>Last 10: {last10}</div>
-            <div>Win probability: {Math.round(probability * 100)}%</div>
-          </div>
-        </div>
-
-        <button
-          onClick={onSelect}
-          disabled={disabled}
-          className={`shrink-0 rounded-2xl px-4 py-3 text-sm font-bold transition ${buttonClass} disabled:cursor-not-allowed disabled:opacity-50`}
-        >
-          Back {player}
-        </button>
-      </div>
-
-      <div className="mt-6">
-        <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-white/45">
-          <span>Market Share</span>
-          <span>{share.toFixed(1)}%</span>
-        </div>
-
-        <div className="h-3 overflow-hidden rounded-full bg-white/5">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ease-out ${
-              tone === "amber"
-                ? "bg-gradient-to-r from-amber-400 to-yellow-300"
-                : "bg-gradient-to-r from-emerald-300 to-emerald-500"
-            }`}
-            style={{ width: `${share}%` }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div
-          className={`rounded-2xl border p-4 transition-all duration-500 ${
-            tone === "amber"
-              ? "border-amber-300/20 bg-amber-300/10"
-              : "border-emerald-400/20 bg-emerald-400/10"
-          } ${flash ? "scale-[1.02] ring-2 ring-white/25" : ""}`}
-        >
-          <div className="text-xs uppercase tracking-[0.16em] text-white/50">Current Pool</div>
-          <div className={`mt-2 text-3xl font-black ${tone === "amber" ? "text-amber-300" : "text-emerald-300"}`}>
-            {currentPool.toFixed(0)} KAS
-          </div>
-          <div className="mt-4 text-xs uppercase tracking-[0.16em] text-white/50">Multiplier</div>
-          <div className="mt-1 text-2xl font-black">{currentMultiplier.toFixed(2)}x</div>
-        </div>
-
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-white/50">Your Preview</div>
-          <div className="mt-2 text-3xl font-black">{projectedPayout.toFixed(2)} KAS</div>
-          <div className="mt-4 text-xs uppercase tracking-[0.16em] text-white/50">Projected Multiplier</div>
-          <div className={`mt-1 text-2xl font-black ${tone === "amber" ? "text-amber-300" : "text-emerald-300"}`}>
-            {projectedMultiplier.toFixed(2)}x
-          </div>
-        </div>
-      </div>
-    </div>
+      {rank}
+    </span>
   )
 }
 
-function MatchVisual({ game }: { game: ArenaMatch["game"] }) {
-  if (game === "Chess Duel") {
-    return (
-      <div className="grid grid-cols-8 gap-1 rounded-[18px] border border-white/8 bg-black/30 p-4">
-        {Array.from({ length: 64 }).map((_, i) => (
-          <div
-            key={i}
-            className={`aspect-square rounded-[4px] ${
-              (Math.floor(i / 8) + i) % 2 === 0 ? "bg-amber-200/20" : "bg-black/50"
-            }`}
-          />
-        ))}
-      </div>
-    )
-  }
-
-  if (game === "Connect 4") {
-    return (
-      <div className="grid grid-cols-7 gap-2 rounded-[18px] border border-white/8 bg-[#07100e] p-4 shadow-[inset_0_0_24px_rgba(0,255,200,0.08)]">
-        {Array.from({ length: 42 }).map((_, i) => {
-          const filled = [2, 4, 7, 10, 12, 18, 20, 23, 25, 27, 30, 31, 33].includes(i)
-          const alt = [8, 15, 16, 22, 24, 29, 32, 34, 35].includes(i)
-
-          return (
-            <div
-              key={i}
-              className={`aspect-square rounded-full border ${
-                filled
-                  ? "border-amber-200/60 bg-amber-300 shadow-[0_0_14px_rgba(255,215,0,0.16)]"
-                  : alt
-                  ? "border-emerald-300/60 bg-emerald-400 shadow-[0_0_14px_rgba(0,255,200,0.14)]"
-                  : "border-white/5 bg-black/40"
-              }`}
-            />
-          )
-        })}
-      </div>
-    )
-  }
+function TonePill({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode
+  tone?: "neutral" | "green" | "gold" | "red" | "sky"
+}) {
+  const className =
+    tone === "green"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+      : tone === "gold"
+        ? "border-amber-300/20 bg-amber-300/10 text-amber-300"
+        : tone === "red"
+          ? "border-red-400/20 bg-red-400/10 text-red-300"
+          : tone === "sky"
+            ? "border-sky-400/20 bg-sky-400/10 text-sky-300"
+            : "border-white/10 bg-white/10 text-white/75"
 
   return (
-    <div className="grid grid-cols-3 gap-3 rounded-[18px] border border-white/8 bg-black/30 p-4">
-      {["X", "O", "X", "", "O", "", "", "", ""].map((cell, i) => (
-        <div
-          key={i}
-          className={`flex aspect-square items-center justify-center rounded-[16px] border border-white/10 bg-black/35 text-3xl font-black ${
-            cell === "X" ? "text-amber-200" : cell === "O" ? "text-emerald-200" : "text-white/20"
-          }`}
-        >
-          {cell}
-        </div>
-      ))}
-    </div>
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${className}`}>
+      {children}
+    </span>
   )
 }
 
 function FeaturedGameCard({
   match,
-  seconds,
   active,
   onSelect,
 }: {
   match: ArenaMatch
-  seconds: number
   active: boolean
   onSelect: () => void
 }) {
+  const totalPool = match.spectatorPool.host + match.spectatorPool.challenger
+  const seconds = getArenaBettingSecondsLeft(match)
+  const open = isArenaBettable(match)
   const favoriteData = getFavoriteData(
     match.host.rating,
     match.challenger?.rating ?? match.host.rating
   )
-  const totalPool = match.spectatorPool.host + match.spectatorPool.challenger
-  const marketOpen = isArenaBettable(match)
-  const tone = getClosingTone(seconds)
+  const meta = gameMeta[match.game]
 
   return (
     <button
-      type="button"
       onClick={onSelect}
-      className={`w-full rounded-[24px] border p-4 text-left transition ${
+      className={`w-full rounded-3xl border p-5 text-left transition ${
         active
-          ? "border-emerald-300/30 bg-emerald-400/10 shadow-[0_0_24px_rgba(0,255,200,0.08)]"
-          : "border-white/8 bg-black/25 hover:bg-white/[0.05]"
+          ? "border-emerald-300/30 bg-emerald-400/10 shadow-[0_0_0_1px_rgba(52,211,153,0.15)]"
+          : "border-white/10 bg-white/5 hover:bg-white/10"
       }`}
     >
-      <div className="mb-3 flex items-center justify-between">
-        <span className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] ${gameMeta[match.game].glow}`}>
-          {match.game}
-        </span>
-        <span className="text-sm font-black text-amber-300">{match.playerPot} KAS</span>
-      </div>
-
-      <div className="text-base font-bold text-white">
-        {match.host.name} vs {match.challenger?.name ?? "Waiting Opponent"}
-      </div>
-
-      <div className="mt-2 text-xs text-white/50">
-        {match.isFeaturedMarket
-          ? "Official featured market for this game"
-          : "Watch-only room"}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <RankBadge rank={match.host.rank} />
-        {match.challenger ? <RankBadge rank={match.challenger.rank} /> : null}
-      </div>
-
-      <div className="mt-3 grid gap-2 text-xs text-white/55">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          {match.host.name}: {favoriteData.leftLabel} • {match.host.rating} MMR
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{meta.icon}</span>
+            <div className="text-lg font-semibold text-white">{match.game}</div>
+          </div>
+          <div className="mt-1 text-sm text-white/60">
+            {match.host.name} vs {match.challenger?.name ?? "Waiting Opponent"}
+          </div>
         </div>
-        <div>
-          {match.challenger?.name ?? "Waiting Opponent"}: {favoriteData.rightLabel} •{" "}
-          {match.challenger?.rating ?? 0} MMR
-        </div>
+        <TonePill tone={match.isFeaturedMarket ? "gold" : "neutral"}>
+          {match.isFeaturedMarket ? "Featured Market" : "Watch Only"}
+        </TonePill>
       </div>
 
-      <div className="mt-4 text-sm text-white/60">{match.statusText}</div>
+      <div className="mt-4 text-sm text-white/65">{meta.description}</div>
 
-      <div className="mt-4 flex items-center justify-between text-xs text-white/50">
-        <span>{match.spectators} viewers</span>
-        <span>{match.moveText}</span>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <TonePill tone={favoriteData.favorite === "even" ? "neutral" : "green"}>
+          {match.host.name}: {favoriteData.leftLabel}
+        </TonePill>
+        <TonePill tone={favoriteData.favorite === "even" ? "neutral" : "gold"}>
+          {match.challenger?.name ?? "Opponent"}: {favoriteData.rightLabel}
+        </TonePill>
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-bold ${
-            !marketOpen
-              ? "bg-red-500/10 text-red-300"
-              : tone === "danger"
-              ? "bg-red-500/10 text-red-300"
-              : tone === "warning"
-              ? "bg-amber-400/10 text-amber-300"
-              : "bg-emerald-400/10 text-emerald-300"
-          }`}
-        >
-          {marketOpen ? `Open ${formatTime(seconds)}` : "Betting Closed"}
-        </span>
-
-        <span className="text-xs text-white/50">Pool: {totalPool.toFixed(0)} KAS</span>
+      <div className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Player Pot</div>
+          <div className="mt-1 font-semibold text-white">{match.playerPot.toFixed(0)} KAS</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Pool</div>
+          <div className="mt-1 font-semibold text-white">{totalPool.toFixed(0)} KAS</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Viewers</div>
+          <div className="mt-1 font-semibold text-white">{match.spectators}</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Status</div>
+          <div className="mt-1 font-semibold text-white">
+            {open ? `Open ${formatTime(seconds)}` : "Closed"}
+          </div>
+        </div>
       </div>
     </button>
   )
@@ -396,34 +188,33 @@ function FeaturedGameCard({
 export default function SpectatePage() {
   const [featuredMatches, setFeaturedMatches] = useState<ArenaMatch[]>([])
   const [selectedFilter, setSelectedFilter] = useState<SpectateFilter>("All")
-  const [activeMatchId, setActiveMatchId] = useState<string>("")
-  const [selectedSide, setSelectedSide] = useState<"host" | "challenger" | null>(null)
+  const [activeMatchId, setActiveMatchId] = useState("")
+  const [selectedSide, setSelectedSide] = useState<ArenaSide | null>(null)
   const [betAmountInput, setBetAmountInput] = useState(String(DEFAULT_BET))
   const [betMessage, setBetMessage] = useState(
     "Watch any featured live game without betting, or place a spectator bet during the official pre-match window."
   )
   const [feed, setFeed] = useState<string[]>(arenaFeedSeed)
   const [tickets, setTickets] = useState<PersistedBetTicket[]>([])
-  const [poolFlash, setPoolFlash] = useState<"host" | "challenger" | null>(null)
+  const [poolFlash, setPoolFlash] = useState<ArenaSide | null>(null)
   const [, setTick] = useState(0)
 
   useEffect(() => {
     const syncMatches = () => {
-      const matches = readArenaMatches()
-      const featured = buildFeaturedSpectateMarkets(matches)
-
-      setFeaturedMatches(featured)
-
+      const matches = buildFeaturedSpectateMarkets(readArenaMatches())
+      setFeaturedMatches(matches)
       setActiveMatchId((current) => {
-        if (current && featured.some((match) => match.id === current)) {
-          return current
-        }
-        return featured[0]?.id ?? ""
+        if (current && matches.some((m) => m.id === current)) return current
+        return matches[0]?.id ?? ""
       })
     }
 
     const syncTickets = () => {
-      setTickets(getTicketsForMatch(activeMatchId, currentUser.name))
+      if (!activeMatchId) {
+        setTickets([])
+        return
+      }
+      setTickets(getTicketsForMatch(activeMatchId))
     }
 
     syncMatches()
@@ -442,7 +233,9 @@ export default function SpectatePage() {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
       setFeaturedMatches(buildFeaturedSpectateMarkets(readArenaMatches()))
-      setTickets(getTicketsForMatch(activeMatchId, currentUser.name))
+      if (activeMatchId) {
+        setTickets(getTicketsForMatch(activeMatchId))
+      }
     }, 1000)
 
     return () => clearInterval(timer)
@@ -454,9 +247,8 @@ export default function SpectatePage() {
   }, [featuredMatches, selectedFilter])
 
   const activeMatch = useMemo(() => {
-    const fromFiltered = filteredMatches.find((match) => match.id === activeMatchId)
-    if (fromFiltered) return fromFiltered
-    return filteredMatches[0] ?? null
+    const selected = filteredMatches.find((match) => match.id === activeMatchId)
+    return selected ?? filteredMatches[0] ?? null
   }, [filteredMatches, activeMatchId])
 
   const activeMarketSeconds = activeMatch ? getArenaBettingSecondsLeft(activeMatch) : 0
@@ -467,18 +259,32 @@ export default function SpectatePage() {
   const totalSpectatorPool = activeMatch
     ? activeMatch.spectatorPool.host + activeMatch.spectatorPool.challenger
     : 0
+
   const netPool = getNetPool(totalSpectatorPool)
 
   const hostCurrentMultiplier = activeMatch
-    ? getMultiplier(activeMatch.spectatorPool.host, activeMatch.spectatorPool.challenger, "host")
+    ? getMultiplier(
+        activeMatch.spectatorPool.host,
+        activeMatch.spectatorPool.challenger,
+        "host"
+      )
     : 0
 
   const challengerCurrentMultiplier = activeMatch
-    ? getMultiplier(activeMatch.spectatorPool.host, activeMatch.spectatorPool.challenger, "challenger")
+    ? getMultiplier(
+        activeMatch.spectatorPool.host,
+        activeMatch.spectatorPool.challenger,
+        "challenger"
+      )
     : 0
 
   const hostProjection = activeMatch
-    ? getProjectedState(activeMatch.spectatorPool.host, activeMatch.spectatorPool.challenger, "host", betAmount)
+    ? getProjectedState(
+        activeMatch.spectatorPool.host,
+        activeMatch.spectatorPool.challenger,
+        "host",
+        betAmount
+      )
     : { projectedHost: 0, projectedChallenger: 0, multiplier: 0, payout: 0 }
 
   const challengerProjection = activeMatch
@@ -490,44 +296,72 @@ export default function SpectatePage() {
       )
     : { projectedHost: 0, projectedChallenger: 0, multiplier: 0, payout: 0 }
 
-  const activeTickets = useMemo(
-    () => tickets.filter((t) => t.matchId === activeMatch?.id),
-    [tickets, activeMatch?.id]
-  )
-
-  const exposure = activeMatch
-    ? getTicketExposureByMatch(activeMatch.id, currentUser.name)
-    : { host: 0, challenger: 0, total: 0 }
-
-  const myHostExposure = exposure.host
-  const myChallengerExposure = exposure.challenger
-  const myTotalExposure = exposure.total
-
-  const recentTickets = [...activeTickets].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5)
-
   const hostShare = activeMatch
-    ? getSideShare(activeMatch.spectatorPool.host, activeMatch.spectatorPool.challenger, "host")
+    ? getSideShare(
+        activeMatch.spectatorPool.host,
+        activeMatch.spectatorPool.challenger,
+        "host"
+      )
     : 0
 
   const challengerShare = activeMatch
-    ? getSideShare(activeMatch.spectatorPool.host, activeMatch.spectatorPool.challenger, "challenger")
+    ? getSideShare(
+        activeMatch.spectatorPool.host,
+        activeMatch.spectatorPool.challenger,
+        "challenger"
+      )
     : 0
 
+  const myHostExposure = useMemo(
+    () =>
+      tickets
+        .filter((ticket) => ticket.side === "host")
+        .reduce((sum, ticket) => sum + ticket.amount, 0),
+    [tickets]
+  )
+
+  const myChallengerExposure = useMemo(
+    () =>
+      tickets
+        .filter((ticket) => ticket.side === "challenger")
+        .reduce((sum, ticket) => sum + ticket.amount, 0),
+    [tickets]
+  )
+
+  const myTotalExposure = myHostExposure + myChallengerExposure
+
+  const recentTickets = useMemo(
+    () => [...tickets].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6),
+    [tickets]
+  )
+
   const favoriteData = activeMatch
-    ? getFavoriteData(activeMatch.host.rating, activeMatch.challenger?.rating ?? activeMatch.host.rating)
-    : { leftLabel: "Even Match", rightLabel: "Even Match" }
+    ? getFavoriteData(
+        activeMatch.host.rating,
+        activeMatch.challenger?.rating ?? activeMatch.host.rating
+      )
+    : {
+        favorite: "even" as const,
+        leftLabel: "Even Match",
+        rightLabel: "Even Match",
+        edge: 0,
+      }
 
   const hostProbability = activeMatch
-    ? getWinProbability(activeMatch.host.rating, activeMatch.challenger?.rating ?? activeMatch.host.rating)
+    ? getWinProbability(
+        activeMatch.host.rating,
+        activeMatch.challenger?.rating ?? activeMatch.host.rating,
+        "host"
+      )
     : 0.5
 
   const challengerProbability = activeMatch
-    ? getWinProbability(activeMatch.challenger?.rating ?? activeMatch.host.rating, activeMatch.host.rating)
+    ? getWinProbability(
+        activeMatch.host.rating,
+        activeMatch.challenger?.rating ?? activeMatch.host.rating,
+        "challenger"
+      )
     : 0.5
-
-  const upsetWarning =
-    (favoriteData.leftLabel === "Favorite" && challengerShare > 55) ||
-    (favoriteData.rightLabel === "Favorite" && hostShare > 55)
 
   function resetSlipForMatch(match: ArenaMatch) {
     setSelectedSide(null)
@@ -542,9 +376,9 @@ export default function SpectatePage() {
     resetSlipForMatch(match)
   }
 
-  function placeBet() {
+  async function handlePlaceBet() {
     if (!activeMatch) {
-      setBetMessage("No active live match available.")
+      setBetMessage("No active featured match available.")
       return
     }
 
@@ -559,11 +393,12 @@ export default function SpectatePage() {
     }
 
     if (!activeMatch.challenger) {
-      setBetMessage("This match still needs both players seated before betting.")
+      setBetMessage("This match needs both players seated before betting opens.")
       return
     }
 
     const rawValue = Number(betAmountInput)
+
     if (!Number.isFinite(rawValue)) {
       setBetMessage("Enter a valid bet amount.")
       return
@@ -575,24 +410,30 @@ export default function SpectatePage() {
     const projection = selectedSide === "host" ? hostProjection : challengerProjection
 
     try {
-      placeArenaSpectatorBet(activeMatch.id, selectedSide, safeAmount)
-      const refreshed = buildFeaturedSpectateMarkets(readArenaMatches())
-      setFeaturedMatches(refreshed)
-      setTickets(getTicketsForMatch(activeMatch.id, currentUser.name))
+      await placeArenaSpectatorBet({
+        matchId: activeMatch.id,
+        side: selectedSide,
+        amount: safeAmount,
+        user: currentUser.name,
+        walletAddress: currentUser.name,
+      })
+
+      const refreshedMatches = buildFeaturedSpectateMarkets(readArenaMatches())
+      setFeaturedMatches(refreshedMatches)
+      setTickets(getTicketsForMatch(activeMatch.id))
     } catch {
       setBetMessage("Failed to place spectator bet.")
       return
     }
 
     setPoolFlash(selectedSide)
-    setTimeout(() => setPoolFlash(null), 650)
+    window.setTimeout(() => setPoolFlash(null), 650)
 
     setFeed((prev) => {
       const whale = safeAmount >= WHALE_BET_THRESHOLD
       const message = whale
-        ? `🔥 WHALE BET: ${safeAmount} KAS on ${selectedPlayer}`
+        ? `WHALE BET: ${safeAmount} KAS on ${selectedPlayer}`
         : `⚡ ${safeAmount} KAS bet placed on ${selectedPlayer}`
-
       return [message, ...prev].slice(0, 12)
     })
 
@@ -606,23 +447,27 @@ export default function SpectatePage() {
 
   if (!activeMatch) {
     return (
-      <main className="min-h-screen bg-[#050807] text-white">
-        <div className="relative z-10 mx-auto max-w-[1200px] px-5 py-16">
-          <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-10 text-center">
-            <h1 className="text-4xl font-black">Spectator Arena</h1>
-            <p className="mt-4 text-white/60">
-              No live or ready matches yet. Launch a match from the arena lobby first.
+      <main className="min-h-screen bg-[#050807] px-4 py-8 text-white sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+            <div className="text-sm uppercase tracking-[0.3em] text-emerald-300">
+              Spectator Arena
+            </div>
+            <h1 className="mt-3 text-3xl font-semibold">No featured markets yet</h1>
+            <p className="mt-3 max-w-2xl text-white/65">
+              Launch a match from the arena lobby first. Once a game becomes featured,
+              spectators will see live pools, side splits, and projected payouts here.
             </p>
-            <div className="mt-6 flex items-center justify-center gap-3">
+            <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/arena"
-                className="inline-flex items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 px-5 py-4 text-sm font-bold text-amber-300 transition hover:bg-amber-300/15"
+                className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-3 font-semibold text-black"
               >
                 Back to Arena
               </Link>
               <Link
                 href="/bets"
-                className="inline-flex items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/15"
+                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-white"
               >
                 My Bets
               </Link>
@@ -634,459 +479,407 @@ export default function SpectatePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050807] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.07),transparent_24%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_20%,transparent_80%,rgba(255,255,255,0.02))]" />
-      <div className="absolute left-[-80px] top-24 h-[320px] w-[320px] rounded-full bg-emerald-400/10 blur-[120px]" />
-      <div className="absolute right-[-80px] top-32 h-[320px] w-[320px] rounded-full bg-amber-300/10 blur-[120px]" />
-
-      <div className="relative z-10 mx-auto max-w-[1600px] px-5 py-8 md:px-8 xl:px-10">
-        <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-400/15 bg-emerald-400/8">
-          <div className="animate-[marquee_24s_linear_infinite] whitespace-nowrap py-3 text-sm font-semibold text-emerald-200 [@keyframes_marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}]">
-            {feed.join("   •   ")}
-          </div>
+    <main className="min-h-screen bg-[#050807] px-4 py-8 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-400/15 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          <div className="animate-pulse whitespace-nowrap">{feed.join(" • ")}</div>
         </div>
 
-        <div className="mb-8 flex flex-col gap-6 rounded-[32px] border border-white/8 bg-white/[0.03] p-6 shadow-[0_0_50px_rgba(0,255,200,0.05)] lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-4 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
-              KasRoyal Live Betting Exchange
-            </div>
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <section className="space-y-6">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <div className="text-sm uppercase tracking-[0.3em] text-emerald-300">
+                    KasRoyal Live Betting Exchange
+                  </div>
+                  <h1 className="mt-2 text-4xl font-semibold">Spectator Arena</h1>
+                  <p className="mt-3 max-w-3xl text-white/65">
+                    One official featured market per game type keeps liquidity tighter and
+                    odds cleaner. Users can always spectate featured matches, but betting
+                    only exists during the controlled pre-match window.
+                  </p>
+                </div>
 
-            <h1 className="text-4xl font-black leading-none sm:text-5xl xl:text-6xl">Spectator Arena</h1>
-
-            <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-              One official featured market per game type. Users can always watch featured live rooms,
-              but betting only exists during the authoritative pre-match countdown.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-5">
-            <HeaderStat label="Featured Markets" value={`${featuredMatches.length}`} tone="gold" />
-            <HeaderStat label="Active Pool" value={`${totalSpectatorPool.toFixed(0)} KAS`} tone="green" />
-            <HeaderStat label="Live Viewers" value={`${activeMatch.spectators}`} tone="sky" />
-            <HeaderStat label="My Tickets" value={`${activeTickets.length}`} />
-            <Link
-              href="/bets"
-              className="flex items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/15"
-            >
-              My Bets
-            </Link>
-          </div>
-        </div>
-
-        <div className="mb-6 flex flex-wrap gap-2">
-          {(["All", ...gameDisplayOrder] as SpectateFilter[]).map((filter) => {
-            const active = selectedFilter === filter
-
-            return (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => setSelectedFilter(filter)}
-                className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
-                  active
-                    ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
-                    : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
-                }`}
-              >
-                {filter}
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[340px_1fr_360px]">
-          <aside className="xl:sticky xl:top-6 xl:self-start">
-            <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
-              <div className="mb-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Featured Markets</p>
-                <h2 className="mt-2 text-2xl font-black">By Game Type</h2>
-                <p className="mt-2 text-sm text-white/55">
-                  Only one official featured market per game type is shown here to keep liquidity
-                  concentrated and settlement clean.
-                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Link
+                    href="/bets"
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                  >
+                    My Bets
+                  </Link>
+                  <Link
+                    href="/arena"
+                    className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-4 py-3 text-sm font-semibold text-black"
+                  >
+                    Arena Lobby
+                  </Link>
+                </div>
               </div>
 
-              <div className="space-y-4">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <HeaderStat
+                  label="Live Viewers"
+                  value={`${activeMatch.spectators}`}
+                  tone="white"
+                />
+                <HeaderStat
+                  label="Total Pool"
+                  value={`${totalSpectatorPool.toFixed(0)} KAS`}
+                  tone="gold"
+                />
+                <HeaderStat
+                  label="Net After Rake"
+                  value={`${netPool.toFixed(2)} KAS`}
+                  tone="green"
+                />
+                <HeaderStat
+                  label="House Rake"
+                  value={`${Math.round(HOUSE_RAKE * 100)}%`}
+                  tone="sky"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div className="flex flex-wrap gap-3">
+                {(["All", ...gameDisplayOrder] as SpectateFilter[]).map((filter) => {
+                  const active = selectedFilter === filter
+
+                  return (
+                    <button
+                      key={filter}
+                      onClick={() => setSelectedFilter(filter)}
+                      className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                        active
+                          ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
+                          : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-6 grid gap-4">
                 {filteredMatches.map((match) => (
                   <FeaturedGameCard
                     key={match.id}
                     match={match}
-                    seconds={getArenaBettingSecondsLeft(match)}
                     active={match.id === activeMatch.id}
                     onSelect={() => handleSelectMatch(match)}
                   />
                 ))}
               </div>
             </div>
-          </aside>
+          </section>
 
           <section className="space-y-6">
-            <div className="rounded-[32px] border border-amber-300/10 bg-white/[0.04] p-6 shadow-[0_0_40px_rgba(0,255,200,0.05)]">
-              <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Active Match</p>
-                  <h2 className="mt-2 text-4xl font-black leading-none">{activeMatch.game}</h2>
+                  <div className="text-sm uppercase tracking-[0.3em] text-amber-300">
+                    Active Match
+                  </div>
+                  <h2 className="mt-2 text-3xl font-semibold">{activeMatch.game}</h2>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <TonePill tone="neutral">
+                      {getEdgeText(
+                        activeMatch.host.rating,
+                        activeMatch.challenger?.rating ?? activeMatch.host.rating
+                      )}
+                    </TonePill>
+                    <TonePill tone={marketOpen ? "green" : "red"}>
+                      {marketOpen
+                        ? `Betting locks in ${formatTime(activeMarketSeconds)}`
+                        : "Spectate Only"}
+                    </TonePill>
+                    <TonePill tone="gold">
+                      {getGameBettingWindowLabel(activeMatch.game)}
+                    </TonePill>
+                    <TonePill tone={activeMatch.isFeaturedMarket ? "gold" : "neutral"}>
+                      {activeMatch.isFeaturedMarket ? "Featured Market" : "Watch Only"}
+                    </TonePill>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/arena/match/${activeMatch.id}`}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                >
+                  Watch Full Match
+                </Link>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <button
+                  onClick={() => setSelectedSide("host")}
+                  disabled={!marketOpen || !activeMatch.challenger}
+                  className={`rounded-3xl border p-5 text-left transition ${
+                    selectedSide === "host"
+                      ? "border-amber-300/30 bg-amber-300/10"
+                      : "border-white/10 bg-black/20 hover:bg-white/5"
+                  } ${poolFlash === "host" ? "scale-[1.01]" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm text-white/50">Host Side</div>
+                      <div className="mt-1 text-xl font-semibold text-white">
+                        {activeMatch.host.name}
+                      </div>
+                    </div>
+                    <RankBadge rank={activeMatch.host.rank} />
+                  </div>
+
+                  <div className="mt-3 text-sm text-white/65">
+                    {activeMatch.hostSideLabel} • {activeMatch.host.rating} MMR •{" "}
+                    {activeMatch.host.winRate}% WR • Last 10: {activeMatch.host.last10}
+                  </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-white/75">
-                      {getEdgeText(activeMatch.host.rating, activeMatch.challenger?.rating ?? activeMatch.host.rating)}
-                    </span>
-
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-white/75">
-                      {getGameBettingWindowLabel(activeMatch.game)}
-                    </span>
-
-                    {upsetWarning ? (
-                      <span className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-red-300">
-                        Potential Upset
-                      </span>
-                    ) : null}
-
-                    {activeMatch.isFeaturedMarket ? (
-                      <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-amber-300">
-                        Featured Market
-                      </span>
-                    ) : (
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
-                        Watch-Only
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="rounded-full bg-white/5 px-4 py-3 text-sm font-semibold text-white/75">
-                    {activeMatch.spectators} live viewers
+                    <TonePill
+                      tone={
+                        favoriteData.leftLabel === "Favorite"
+                          ? "green"
+                          : favoriteData.leftLabel === "Underdog"
+                            ? "gold"
+                            : "neutral"
+                      }
+                    >
+                      {favoriteData.leftLabel}
+                    </TonePill>
+                    <TonePill tone="sky">
+                      Win probability {Math.round(hostProbability * 100)}%
+                    </TonePill>
                   </div>
 
-                  <div
-                    className={`rounded-full px-4 py-3 text-sm font-bold ${
-                      !marketOpen
-                        ? "bg-red-500/10 text-red-300"
-                        : closingTone === "danger"
-                        ? "bg-red-500/10 text-red-300"
-                        : closingTone === "warning"
-                        ? "bg-amber-400/10 text-amber-300"
-                        : "bg-emerald-400/10 text-emerald-300"
-                    }`}
-                  >
-                    {marketOpen ? `Betting locks in ${formatTime(activeMarketSeconds)}` : "Spectate Only"}
+                  <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Market Share
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {hostShare.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Current Multiplier
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {hostCurrentMultiplier.toFixed(2)}x
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Current Pool
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {activeMatch.spectatorPool.host.toFixed(0)} KAS
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Projected Payout
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {hostProjection.payout.toFixed(2)} KAS
+                      </div>
+                    </div>
                   </div>
+                </button>
 
-                  <Link
-                    href={`/arena/match/${activeMatch.id}`}
-                    className="rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10"
-                  >
-                    Watch Full Match
-                  </Link>
-                </div>
-              </div>
-
-              <div className="mb-6 grid gap-4 md:grid-cols-4">
-                <StatMini label="Total Pool" value={`${totalSpectatorPool.toFixed(0)} KAS`} tone="gold" />
-                <StatMini label="Net Pool" value={`${netPool.toFixed(2)} KAS`} tone="green" />
-                <StatMini label={`${activeMatch.host.name} Win`} value={`${Math.round(hostProbability * 100)}%`} />
-                <StatMini
-                  label={`${activeMatch.challenger?.name ?? "Challenger"} Win`}
-                  value={`${Math.round(challengerProbability * 100)}%`}
-                />
-              </div>
-
-              <div className="grid gap-5 xl:grid-cols-2">
-                <PoolPreviewCard
-                  title="Host Side"
-                  player={activeMatch.host.name}
-                  rank={activeMatch.host.rank}
-                  sideLabel={activeMatch.hostSideLabel}
-                  favoriteLabel={favoriteData.leftLabel}
-                  share={hostShare}
-                  currentPool={activeMatch.spectatorPool.host}
-                  currentMultiplier={hostCurrentMultiplier}
-                  projectedPayout={hostProjection.payout}
-                  projectedMultiplier={hostProjection.multiplier}
-                  isSelected={selectedSide === "host"}
-                  onSelect={() => setSelectedSide("host")}
-                  disabled={!marketOpen}
-                  tone="amber"
-                  flash={poolFlash === "host"}
-                  winRate={activeMatch.host.winRate}
-                  mmr={activeMatch.host.rating}
-                  last10={activeMatch.host.last10}
-                  probability={hostProbability}
-                />
-
-                <PoolPreviewCard
-                  title="Challenger Side"
-                  player={activeMatch.challenger?.name ?? "Waiting Opponent"}
-                  rank={activeMatch.challenger?.rank ?? activeMatch.host.rank}
-                  sideLabel={activeMatch.challengerSideLabel}
-                  favoriteLabel={favoriteData.rightLabel}
-                  share={challengerShare}
-                  currentPool={activeMatch.spectatorPool.challenger}
-                  currentMultiplier={challengerCurrentMultiplier}
-                  projectedPayout={challengerProjection.payout}
-                  projectedMultiplier={challengerProjection.multiplier}
-                  isSelected={selectedSide === "challenger"}
-                  onSelect={() => setSelectedSide("challenger")}
+                <button
+                  onClick={() => setSelectedSide("challenger")}
                   disabled={!marketOpen || !activeMatch.challenger}
-                  tone="emerald"
-                  flash={poolFlash === "challenger"}
-                  winRate={activeMatch.challenger?.winRate ?? 0}
-                  mmr={activeMatch.challenger?.rating ?? 0}
-                  last10={activeMatch.challenger?.last10 ?? "0-0"}
-                  probability={challengerProbability}
-                />
+                  className={`rounded-3xl border p-5 text-left transition ${
+                    selectedSide === "challenger"
+                      ? "border-emerald-300/30 bg-emerald-400/10"
+                      : "border-white/10 bg-black/20 hover:bg-white/5"
+                  } ${poolFlash === "challenger" ? "scale-[1.01]" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm text-white/50">Challenger Side</div>
+                      <div className="mt-1 text-xl font-semibold text-white">
+                        {activeMatch.challenger?.name ?? "Waiting Opponent"}
+                      </div>
+                    </div>
+                    {activeMatch.challenger ? (
+                      <RankBadge rank={activeMatch.challenger.rank} />
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 text-sm text-white/65">
+                    {activeMatch.challengerSideLabel} •{" "}
+                    {activeMatch.challenger?.rating ?? 0} MMR •{" "}
+                    {activeMatch.challenger?.winRate ?? 0}% WR • Last 10:{" "}
+                    {activeMatch.challenger?.last10 ?? "--"}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <TonePill
+                      tone={
+                        favoriteData.rightLabel === "Favorite"
+                          ? "green"
+                          : favoriteData.rightLabel === "Underdog"
+                            ? "gold"
+                            : "neutral"
+                      }
+                    >
+                      {favoriteData.rightLabel}
+                    </TonePill>
+                    <TonePill tone="sky">
+                      Win probability {Math.round(challengerProbability * 100)}%
+                    </TonePill>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Market Share
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {challengerShare.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Current Multiplier
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {challengerCurrentMultiplier.toFixed(2)}x
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Current Pool
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {activeMatch.spectatorPool.challenger.toFixed(0)} KAS
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Projected Payout
+                      </div>
+                      <div className="mt-1 font-semibold text-white">
+                        {challengerProjection.payout.toFixed(2)} KAS
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm uppercase tracking-[0.22em] text-white/45">
+                      Bet Slip
+                    </div>
+                    <div className="mt-1 text-lg font-semibold text-white">
+                      {selectedSide
+                        ? `Backing ${selectedSide === "host" ? activeMatch.host.name : activeMatch.challenger?.name ?? "Waiting Opponent"}`
+                        : "Select a side to begin"}
+                    </div>
+                  </div>
+                  <TonePill
+                    tone={
+                      closingTone === "hot"
+                        ? "red"
+                        : closingTone === "warm"
+                          ? "gold"
+                          : "green"
+                    }
+                  >
+                    {marketOpen ? `Open ${formatTime(activeMarketSeconds)}` : "Closed"}
+                  </TonePill>
+                </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
+                  <div>
+                    <label className="mb-2 block text-sm text-white/60">Bet Amount (KAS)</label>
+                    <input
+                      value={betAmountInput}
+                      onChange={(event) => setBetAmountInput(event.target.value)}
+                      inputMode="numeric"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-300/30"
+                      placeholder={`${DEFAULT_BET}`}
+                    />
+                    <div className="mt-2 text-xs text-white/45">
+                      Minimum {MIN_BET} KAS • Maximum {MAX_BET} KAS
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handlePlaceBet}
+                    disabled={!marketOpen || !selectedSide || !activeMatch.challenger}
+                    className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-6 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Place Bet
+                  </button>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
+                  {betMessage}
+                </div>
               </div>
             </div>
 
-            <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-6 shadow-[0_0_30px_rgba(255,200,80,0.04)]">
-              <div className="mb-5 flex items-center justify-between">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Match Stream</p>
-                  <h3 className="mt-2 text-3xl font-black">
-                    {activeMatch.host.name} vs {activeMatch.challenger?.name ?? "Waiting Opponent"}
-                  </h3>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-red-500/10 px-4 py-2 text-sm font-bold text-red-300">LIVE</div>
-                  <Link
-                    href={`/arena/match/${activeMatch.id}`}
-                    className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/15"
-                  >
-                    Open Match Room
-                  </Link>
-                </div>
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div className="text-sm uppercase tracking-[0.3em] text-sky-300">
+                My Market Activity
               </div>
 
-              <div className="rounded-[28px] border border-white/8 bg-[#0d1110] p-6">
-                <div className="mx-auto w-fit rounded-full border border-emerald-400/20 bg-emerald-400/10 px-5 py-2 text-sm font-semibold text-emerald-300">
-                  {activeMatch.statusText}
-                </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <HeaderStat label="Host Exposure" value={`${myHostExposure.toFixed(0)} KAS`} />
+                <HeaderStat
+                  label="Challenger Exposure"
+                  value={`${myChallengerExposure.toFixed(0)} KAS`}
+                />
+                <HeaderStat
+                  label="Total Exposure"
+                  value={`${myTotalExposure.toFixed(0)} KAS`}
+                  tone="gold"
+                />
+              </div>
 
-                <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div className="rounded-[24px] border border-white/8 bg-black/25 p-5">
-                    <MatchVisual game={activeMatch.game} />
+              <div className="mt-6">
+                <div className="text-sm font-semibold text-white">Recent Tickets</div>
+
+                {recentTickets.length ? (
+                  <div className="mt-3 space-y-3">
+                    {recentTickets.map((ticket) => (
+                      <div
+                        key={ticket.id}
+                        className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
+                      >
+                        <div>
+                          <div className="font-medium text-white">{ticket.user}</div>
+                          <div className="text-sm text-white/50">
+                            {ticket.side === "host"
+                              ? activeMatch.host.name
+                              : activeMatch.challenger?.name ?? "Challenger"}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-white">{ticket.amount} KAS</div>
+                          <div className="text-xs text-white/40">
+                            {new Date(ticket.createdAt).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-
-                  <div className="space-y-5">
-                    <div className="rounded-[24px] border border-white/8 bg-black/25 p-5">
-                      <div className="text-sm uppercase tracking-[0.16em] text-white/45">Host Player</div>
-                      <div className="mt-2 text-2xl font-black">{activeMatch.host.name}</div>
-                      <div className="mt-1 text-white/60">Side: {activeMatch.hostSideLabel}</div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <RankBadge rank={activeMatch.host.rank} />
-                      </div>
-
-                      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-2xl bg-white/[0.03] p-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">MMR</div>
-                          <div className="mt-1 text-lg font-black">{activeMatch.host.rating}</div>
-                        </div>
-                        <div className="rounded-2xl bg-white/[0.03] p-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">Win Rate</div>
-                          <div className="mt-1 text-lg font-black">{activeMatch.host.winRate}%</div>
-                        </div>
-                        <div className="rounded-2xl bg-white/[0.03] p-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">Last 10</div>
-                          <div className="mt-1 text-lg font-black">{activeMatch.host.last10}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-white/8 bg-black/25 p-5">
-                      <div className="text-sm uppercase tracking-[0.16em] text-white/45">Challenger Player</div>
-                      <div className="mt-2 text-2xl font-black">{activeMatch.challenger?.name ?? "Waiting Opponent"}</div>
-                      <div className="mt-1 text-white/60">Side: {activeMatch.challengerSideLabel}</div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {activeMatch.challenger ? <RankBadge rank={activeMatch.challenger.rank} /> : null}
-                      </div>
-
-                      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-2xl bg-white/[0.03] p-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">MMR</div>
-                          <div className="mt-1 text-lg font-black">{activeMatch.challenger?.rating ?? 0}</div>
-                        </div>
-                        <div className="rounded-2xl bg-white/[0.03] p-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">Win Rate</div>
-                          <div className="mt-1 text-lg font-black">{activeMatch.challenger?.winRate ?? 0}%</div>
-                        </div>
-                        <div className="rounded-2xl bg-white/[0.03] p-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">Last 10</div>
-                          <div className="mt-1 text-lg font-black">{activeMatch.challenger?.last10 ?? "0-0"}</div>
-                        </div>
-                      </div>
-                    </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/55">
+                    No tickets yet for this market.
                   </div>
-                </div>
-
-                <div className="mt-8 rounded-[24px] border border-white/8 bg-black/25 px-6 py-5 text-center text-lg text-white/80">
-                  Live move / state: <span className="font-bold text-amber-300">{activeMatch.moveText}</span>
-                </div>
+                )}
               </div>
             </div>
           </section>
-
-          <aside className="xl:sticky xl:top-6 xl:self-start">
-            <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
-              <div className="mb-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Spectator Market</p>
-                <h2 className="mt-2 text-2xl font-black">Bet Slip</h2>
-              </div>
-
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Selected Side</div>
-                  <div className="mt-2 text-xl font-black">
-                    {selectedSide === "host"
-                      ? activeMatch.host.name
-                      : selectedSide === "challenger"
-                      ? activeMatch.challenger?.name ?? "Waiting Opponent"
-                      : "None"}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <label className="text-xs uppercase tracking-[0.16em] text-white/45">Bet Amount (KAS)</label>
-
-                  <input
-                    type="number"
-                    min={MIN_BET}
-                    max={MAX_BET}
-                    step={1}
-                    inputMode="numeric"
-                    value={betAmountInput}
-                    onChange={(e) => setBetAmountInput(e.target.value)}
-                    className="mt-3 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-xl font-bold text-white outline-none"
-                  />
-
-                  <div className="mt-4 grid grid-cols-4 gap-2">
-                    {[5, 10, 25, 50].map((quickAmount) => (
-                      <button
-                        key={quickAmount}
-                        type="button"
-                        onClick={() => setBetAmountInput(String(quickAmount))}
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 transition hover:bg-white/10"
-                      >
-                        {quickAmount} KAS
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-3 text-xs text-white/45">
-                    Allowed range: {MIN_BET}–{MAX_BET} KAS
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Market Model</div>
-                  <div className="mt-3 space-y-2 text-sm text-white/75">
-                    <div>• Spectate without betting is always allowed.</div>
-                    <div>• One official featured market per game type.</div>
-                    <div>• Betting only happens during the pre-match countdown.</div>
-                    <div>• Once the countdown ends, the market hard-locks before gameplay.</div>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-                  <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4">
-                    <div className="text-xs uppercase tracking-[0.16em] text-white/45">Total Pool</div>
-                    <div className="mt-2 text-3xl font-black text-amber-300">
-                      {totalSpectatorPool.toFixed(0)} KAS
-                    </div>
-                    <div className="mt-2 text-sm text-white/55">
-                      Net after {Math.round(HOUSE_RAKE * 100)}% rake: {netPool.toFixed(2)} KAS
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                    <div className="text-xs uppercase tracking-[0.16em] text-white/45">Your Exposure</div>
-                    <div className="mt-3 space-y-2 text-sm text-white/75">
-                      <div className="flex justify-between gap-3">
-                        <span>{activeMatch.host.name}</span>
-                        <span className="font-bold text-amber-300">{myHostExposure.toFixed(2)} KAS</span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>{activeMatch.challenger?.name ?? "Waiting Opponent"}</span>
-                        <span className="font-bold text-emerald-300">{myChallengerExposure.toFixed(2)} KAS</span>
-                      </div>
-                      <div className="mt-3 flex justify-between gap-3 border-t border-white/8 pt-3">
-                        <span>Total</span>
-                        <span className="font-black text-white">{myTotalExposure.toFixed(2)} KAS</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={placeBet}
-                  disabled={!marketOpen || !activeMatch.challenger}
-                  className="w-full rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 px-5 py-4 text-base font-black text-black transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {marketOpen && activeMatch.challenger ? "Place Spectator Bet" : "Betting Closed"}
-                </button>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Link
-                    href={`/arena/match/${activeMatch.id}`}
-                    className="flex w-full items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-base font-black text-emerald-300 transition hover:bg-emerald-400/15"
-                  >
-                    Spectate
-                  </Link>
-                  <Link
-                    href="/bets"
-                    className="flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-base font-black text-white transition hover:bg-white/10"
-                  >
-                    My Bets
-                  </Link>
-                </div>
-
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Bet Slip Status</div>
-                  <div className="mt-2 text-sm leading-6 text-white/85">{betMessage}</div>
-                </div>
-
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">My Recent Tickets</div>
-                  <div className="mt-3 space-y-2 text-sm text-white/75">
-                    {recentTickets.length === 0 ? (
-                      <div className="rounded-xl bg-white/[0.03] px-3 py-3 text-white/45">
-                        No bets placed on this match yet.
-                      </div>
-                    ) : (
-                      recentTickets.map((ticket) => {
-                        const player =
-                          ticket.side === "host"
-                            ? activeMatch.host.name
-                            : activeMatch.challenger?.name ?? "Waiting Opponent"
-
-                        return (
-                          <div key={ticket.id} className="rounded-xl bg-white/[0.03] px-3 py-3">
-                            {ticket.amount.toFixed(0)} KAS on {player}
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Live Feed</div>
-                  <div className="mt-3 max-h-[260px] space-y-3 overflow-y-auto text-sm text-white/80">
-                    {feed.map((item, idx) => (
-                      <div key={`${item}-${idx}`} className="rounded-xl bg-white/[0.03] px-3 py-3">
-                        {item}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
         </div>
       </div>
     </main>
