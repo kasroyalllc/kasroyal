@@ -12,7 +12,6 @@ import {
   getArenaBettingSecondsLeft,
   getRankColors,
   joinArenaMatch,
-  launchArenaMatch,
   readArenaMatches,
   subscribeArenaMatches,
   type ArenaMatch,
@@ -62,10 +61,10 @@ function StatusPill({ status }: { status: ArenaStatus }) {
     status === "Waiting for Opponent"
       ? "bg-emerald-400/10 text-emerald-300"
       : status === "Ready to Start"
-      ? "bg-amber-300/10 text-amber-300"
-      : status === "Live"
-      ? "bg-red-500/10 text-red-300"
-      : "bg-white/10 text-white/70"
+        ? "bg-amber-300/10 text-amber-300"
+        : status === "Live"
+          ? "bg-red-500/10 text-red-300"
+          : "bg-white/10 text-white/70"
 
   return (
     <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${styles}`}>
@@ -121,8 +120,8 @@ function MiniBoard({ game }: { game: GameType }) {
                 filled
                   ? "border-amber-200/60 bg-amber-300 shadow-[0_0_10px_rgba(255,215,0,0.12)]"
                   : alt
-                  ? "border-emerald-300/60 bg-emerald-400 shadow-[0_0_10px_rgba(0,255,200,0.10)]"
-                  : "border-white/5 bg-black/40"
+                    ? "border-emerald-300/60 bg-emerald-400 shadow-[0_0_10px_rgba(0,255,200,0.10)]"
+                    : "border-white/5 bg-black/40"
               }`}
             />
           )
@@ -176,7 +175,7 @@ function MyGamesActionStrip({
           <h3 className="mt-2 text-2xl font-black">My Games Command Deck</h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
             Jump straight to the rooms you host, the matches you joined, and the ones that are ready
-            to launch or already live.
+            or already live.
           </p>
         </div>
 
@@ -291,20 +290,12 @@ export default function ArenaPage() {
   )
 
   const myReadyGames = useMemo(
-    () =>
-      myGames.filter(
-        (match) =>
-          match.status === "Ready to Start" ||
-          (match.status === "Live" && !!match.countdownStartedAt && !match.startedAt)
-      ),
+    () => myGames.filter((match) => match.status === "Ready to Start"),
     [myGames]
   )
 
   const myLiveGames = useMemo(
-    () =>
-      myGames.filter(
-        (match) => match.status === "Live" && (!!match.startedAt || !match.countdownStartedAt)
-      ),
+    () => myGames.filter((match) => match.status === "Live"),
     [myGames]
   )
 
@@ -327,15 +318,8 @@ export default function ArenaPage() {
       .filter((match) => {
         if (quickBoardFilter === "All") return true
         if (quickBoardFilter === "Open") return match.status === "Waiting for Opponent"
-        if (quickBoardFilter === "Ready") {
-          return (
-            match.status === "Ready to Start" ||
-            (match.status === "Live" && !!match.countdownStartedAt && !match.startedAt)
-          )
-        }
-        if (quickBoardFilter === "Live") {
-          return match.status === "Live" && (!!match.startedAt || !match.countdownStartedAt)
-        }
+        if (quickBoardFilter === "Ready") return match.status === "Ready to Start"
+        if (quickBoardFilter === "Live") return match.status === "Live"
         return true
       })
       .filter((match) => {
@@ -351,10 +335,8 @@ export default function ArenaPage() {
       .sort((a, b) => {
         const score = (match: ArenaMatch) => {
           const mine = match.host.name === currentUser.name || match.challenger?.name === currentUser.name
-          const ready =
-            match.status === "Ready to Start" ||
-            (match.status === "Live" && !!match.countdownStartedAt && !match.startedAt)
-          const live = match.status === "Live" && (!!match.startedAt || !match.countdownStartedAt)
+          const ready = match.status === "Ready to Start"
+          const live = match.status === "Live"
 
           if (mine && ready) return 5
           if (mine && live) return 4
@@ -373,14 +355,8 @@ export default function ArenaPage() {
   }, [matches, search, filter, ownershipFilter, quickBoardFilter])
 
   const openMatches = filteredMatches.filter((match) => match.status === "Waiting for Opponent")
-  const readyMatches = filteredMatches.filter(
-    (match) =>
-      match.status === "Ready to Start" ||
-      (match.status === "Live" && !!match.countdownStartedAt && !match.startedAt)
-  )
-  const liveMatches = filteredMatches.filter(
-    (match) => match.status === "Live" && (!!match.startedAt || !match.countdownStartedAt)
-  )
+  const readyMatches = filteredMatches.filter((match) => match.status === "Ready to Start")
+  const liveMatches = filteredMatches.filter((match) => match.status === "Live")
 
   const totalOpenWager = openMatches.reduce((sum, match) => sum + match.wager, 0)
 
@@ -446,8 +422,9 @@ export default function ArenaPage() {
       setOwnershipFilter("My Games")
       setQuickBoardFilter("Ready")
       setMessage(
-        `Seat reserved in ${joined.game}. Both players are now seated. Your joined room is now highlighted under My Games.`
+        `Joined ${joined.game}. Countdown starts automatically now — entering room...`
       )
+      window.location.href = `/arena/match/${matchId}`
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to join arena.")
     }
@@ -466,46 +443,16 @@ export default function ArenaPage() {
       setOwnershipFilter("Hosted")
       setQuickBoardFilter("Ready")
       setMessage(
-        `Dev fill complete: ${filled.challenger?.name ?? "Mock challenger"} joined ${filled.game}. You can now launch countdown and test the full room flow.`
+        `Dev fill complete: ${filled.challenger?.name ?? "Mock challenger"} joined ${filled.game}. Countdown starts automatically now — entering room...`
       )
+      window.location.href = `/arena/match/${matchId}`
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to auto-fill opponent.")
     }
   }
 
-  function launchMatch(matchId: string) {
-    try {
-      const target = matches.find((item) => item.id === matchId)
-
-      if (!target) {
-        setMessage("Arena not found.")
-        return
-      }
-
-      const currentIsParticipant =
-        target.host.name === currentUser.name || target.challenger?.name === currentUser.name
-
-      if (!currentIsParticipant) {
-        setMessage("Only seated players should launch the match room.")
-        return
-      }
-
-      const launched = launchArenaMatch(matchId)
-
-      if (!launched) {
-        setMessage("Arena not found.")
-        return
-      }
-
-      setMatches(readArenaMatches())
-      setOwnershipFilter("My Games")
-      setQuickBoardFilter("Ready")
-      setMessage(
-        `Countdown started for ${launched.game}. Featured market eligibility is now controlled by the authoritative mock lifecycle.`
-      )
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to launch arena.")
-    }
+  function enterRoom(matchId: string) {
+    window.location.href = `/arena/match/${matchId}`
   }
 
   return (
@@ -526,8 +473,8 @@ export default function ArenaPage() {
               <h1 className="text-4xl font-black leading-none sm:text-5xl xl:text-6xl">Arena Lobby</h1>
 
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-                Create live 1v1 skill matches, seat both players, and launch a pre-match countdown that
-                opens or locks featured spectator markets automatically.
+                Create live 1v1 skill matches, seat both players, and let the countdown begin
+                automatically the moment both players are in.
               </p>
             </div>
 
@@ -790,10 +737,8 @@ export default function ArenaPage() {
                 ) : (
                   filteredMatches.map((match) => {
                     const isOpen = match.status === "Waiting for Opponent"
-                    const isReady =
-                      match.status === "Ready to Start" ||
-                      (match.status === "Live" && !!match.countdownStartedAt && !match.startedAt)
-                    const isLive = match.status === "Live" && (!!match.startedAt || !match.countdownStartedAt)
+                    const isReady = match.status === "Ready to Start"
+                    const isLive = match.status === "Live"
                     const meta = gameMeta[match.game]
                     const totalPot = match.playerPot
                     const isHost = match.host.name === currentUser.name
@@ -803,22 +748,22 @@ export default function ArenaPage() {
 
                     const countdownLabel =
                       isReady && countdownSeconds > 0
-                        ? `Bet lock in ${Math.max(0, countdownSeconds)}s`
+                        ? `Starts in ${Math.max(0, countdownSeconds)}s`
                         : match.isFeaturedMarket && isLive
-                        ? "Betting locked"
-                        : match.isFeaturedMarket
-                        ? "Featured market"
-                        : "Watch-only"
+                          ? "Betting locked"
+                          : match.isFeaturedMarket
+                            ? "Featured market"
+                            : "Watch-only"
 
                     const priorityLabel = isHost
                       ? "Host Control"
                       : isChallenger
-                      ? "Joined Seat"
-                      : isReady
-                      ? "Ready Room"
-                      : isLive
-                      ? "Live Arena"
-                      : "Open Lobby"
+                        ? "Joined Seat"
+                        : isReady
+                          ? "Ready Room"
+                          : isLive
+                            ? "Live Arena"
+                            : "Open Lobby"
 
                     return (
                       <div
@@ -827,8 +772,8 @@ export default function ArenaPage() {
                           isParticipant
                             ? "border-emerald-300/18 bg-emerald-400/[0.03]"
                             : isReady
-                            ? "border-amber-300/12 bg-amber-300/[0.03]"
-                            : "border-white/8 bg-black/20"
+                              ? "border-amber-300/12 bg-amber-300/[0.03]"
+                              : "border-white/8 bg-black/20"
                         }`}
                       >
                         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -860,10 +805,10 @@ export default function ArenaPage() {
                                   isParticipant
                                     ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-300"
                                     : isReady
-                                    ? "border-fuchsia-300/20 bg-fuchsia-300/10 text-fuchsia-300"
-                                    : isLive
-                                    ? "border-red-300/20 bg-red-500/10 text-red-300"
-                                    : "border-white/10 bg-white/5 text-white/70"
+                                      ? "border-fuchsia-300/20 bg-fuchsia-300/10 text-fuchsia-300"
+                                      : isLive
+                                        ? "border-red-300/20 bg-red-500/10 text-red-300"
+                                        : "border-white/10 bg-white/5 text-white/70"
                                 }`}
                               >
                                 {priorityLabel}
@@ -954,21 +899,14 @@ export default function ArenaPage() {
                                   </button>
                                 )}
                               </>
-                            ) : isReady ? (
+                            ) : (
                               <button
                                 type="button"
-                                onClick={() => launchMatch(match.id)}
+                                onClick={() => enterRoom(match.id)}
                                 className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-4 text-center text-sm font-black text-black transition hover:scale-[1.01]"
                               >
-                                {match.countdownStartedAt ? "Countdown Active" : "Launch Countdown"}
+                                {isReady ? "Enter Room" : "Open Live Room"}
                               </button>
-                            ) : (
-                              <Link
-                                href={`/arena/match/${match.id}`}
-                                className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-4 text-center text-sm font-black text-black transition hover:scale-[1.01]"
-                              >
-                                Open Live Room
-                              </Link>
                             )}
 
                             <Link
@@ -989,14 +927,12 @@ export default function ArenaPage() {
                               {isOpen
                                 ? isHost
                                   ? "You host this room. Use Fill Opponent (Dev) to seat a mock challenger instantly."
-                                  : "Step 1: join the seat. Step 2: once both players are seated, launch the countdown."
+                                  : "Join the seat and the countdown will begin automatically as soon as both players are in."
                                 : isReady
-                                ? match.countdownStartedAt
-                                  ? `Pre-match countdown is live. ${match.isFeaturedMarket ? "Featured market can accept bets until lock." : "This room is watch-only while another featured market is active for this game."}`
-                                  : "Both players are locked. Launch the countdown to open any eligible featured market before gameplay begins."
-                                : isLive
-                                ? `Live state: ${match.moveText}`
-                                : "This arena is finished."}
+                                  ? "Both players are seated. Countdown is automatic now — just enter the room and stay there."
+                                  : isLive
+                                    ? `Live state: ${match.moveText}`
+                                    : "This arena is finished."}
                             </div>
                           </div>
                         </div>
