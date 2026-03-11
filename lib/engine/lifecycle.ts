@@ -87,13 +87,6 @@ export function normalizeArenaMatches(matches: ArenaMatch[], now = Date.now()) {
     match.isFeaturedMarket = isFeatured
     match.marketVisibility = isFeatured ? "featured" : "watch-only"
 
-    if (match.status === "Waiting for Opponent") {
-      match.bettingStatus = "disabled"
-      match.statusText = "Open seat available"
-      match.moveText = "Waiting for join"
-      return match
-    }
-
     if (match.status === "Finished") {
       match.bettingStatus = match.bettingStatus === "settled" ? "settled" : "settling"
       match.statusText = "Match finished"
@@ -101,10 +94,17 @@ export function normalizeArenaMatches(matches: ArenaMatch[], now = Date.now()) {
     }
 
     if (!match.challenger) {
+      match.status = "Waiting for Opponent"
       match.bettingStatus = "disabled"
-      match.statusText = "Waiting for opponent"
+      match.statusText = "Open seat available"
       match.moveText = "Waiting for join"
       return match
+    }
+
+    if (match.status === "Waiting for Opponent") {
+      match.status = "Ready to Start"
+      match.seatedAt = match.seatedAt ?? now
+      match.countdownStartedAt = match.countdownStartedAt ?? match.seatedAt
     }
 
     if (match.status === "Ready to Start") {
@@ -115,6 +115,7 @@ export function normalizeArenaMatches(matches: ArenaMatch[], now = Date.now()) {
         match.bettingClosesAt ?? countdownStartedAt + bettingWindowSeconds * 1000
       const secondsLeft = Math.max(0, Math.ceil((bettingClosesAt - now) / 1000))
 
+      match.seatedAt = match.seatedAt ?? countdownStartedAt
       match.countdownStartedAt = countdownStartedAt
       match.bettingClosesAt = bettingClosesAt
 
