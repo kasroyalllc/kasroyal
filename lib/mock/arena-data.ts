@@ -34,6 +34,17 @@ import {
   normalizeArenaMatches,
 } from "@/lib/engine/lifecycle"
 import { gameDisplayOrder } from "@/lib/engine/featured-markets"
+import {
+  createMatch as createDbMatch,
+  getMatchById as getDbMatchById,
+  getMatches as getDbMatches,
+  joinMatch as joinDbMatch,
+  updateMatchStatus as updateDbMatchStatus,
+} from "@/lib/db/matches"
+import {
+  getMatchBets as getDbMatchBets,
+  placeBet as placeDbBet,
+} from "@/lib/db/bets"
 
 export type {
   ArenaMatch,
@@ -80,9 +91,28 @@ export type PersistedBetTicket = {
   createdAt: number
 }
 
-export const currentUser: PlayerProfile & {
-  walletBalance: number
-} = {
+type FavoriteData = {
+  favorite: ArenaSide | "even"
+  leftLabel: string
+  rightLabel: string
+  edge: number
+}
+
+type GameMeta = {
+  accent: string
+  surface: string
+  icon: string
+  description: string
+}
+
+const ARENA_MATCHES_STORAGE_KEY = "kasroyal_arena_matches"
+const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
+const SPECTATOR_TICKETS_STORAGE_KEY = "kasroyal_spectator_tickets"
+const SPECTATOR_TICKETS_EVENT = "kasroyal-spectator-tickets-updated"
+
+const now = Date.now()
+
+export const currentUser: PlayerProfile & { walletBalance: number } = {
   name: "KasKing01",
   rank: "Diamond II",
   rating: 1842,
@@ -145,255 +175,182 @@ export const arenaFeedSeed = [
   "A 12 KAS spectator bet just came in on Black.",
 ]
 
-const now = Date.now()
-
-const ARENA_MATCHES_STORAGE_KEY = "kasroyal_arena_matches"
-const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
-
-const SPECTATOR_TICKETS_STORAGE_KEY = "kasroyal_spectator_tickets"
-const SPECTATOR_TICKETS_EVENT = "kasroyal-spectator-tickets-updated"
-
-export const initialArenaMatches: ArenaMatch[] = [
-  {
-    id: "arena-1",
-    game: "Chess Duel",
-    status: "Live",
-    bettingStatus: "locked",
-    marketVisibility: "featured",
-    isFeaturedMarket: true,
-    bestOf: 3,
-    wager: 10,
-    createdAt: now - 1000 * 60 * 18,
-    seatedAt: now - 1000 * 60 * 17,
-    countdownStartedAt: now - 1000 * 60 * 16,
-    bettingClosesAt: now - 1000 * 60 * 15,
-    startedAt: now - 1000 * 60 * 15,
-    spectators: 38,
-    playerPot: 20,
-    host: {
-      name: "CryptoCrush44",
-      rank: "Gold I",
-      rating: 1528,
-      winRate: 53,
-      last10: "5-5",
-    },
-    challenger: {
-      name: "KasKing01",
-      rank: "Diamond II",
-      rating: 1842,
-      winRate: 61,
-      last10: "7-3",
-    },
-    hostSideLabel: "White",
-    challengerSideLabel: "Black",
-    statusText: "Match is live",
-    moveText: "17... Qe7",
-    roundScore: {
-      host: 0,
-      challenger: 1,
-    },
-    spectatorPool: {
-      host: 31,
-      challenger: 42,
-    },
-    bettingWindowSeconds: 60,
-    result: null,
-    moveHistory: ["1. e4", "1... c5", "2. Nf3", "2... d6", "17... Qe7"],
-    boardState: {
-      mode: "chess-preview",
-      fen: "r1bq1rk1/pp2bppp/2np1n2/2p1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 9",
-    },
-  },
-  {
-    id: "arena-2",
-    game: "Connect 4",
-    status: "Live",
-    bettingStatus: "locked",
-    marketVisibility: "featured",
-    isFeaturedMarket: true,
-    bestOf: 3,
-    wager: 5,
-    createdAt: now - 1000 * 60 * 12,
-    seatedAt: now - 1000 * 60 * 11,
-    countdownStartedAt: now - 1000 * 60 * 10,
-    bettingClosesAt: now - 1000 * 60 * 10 + 25 * 1000,
-    startedAt: now - 1000 * 60 * 10 + 25 * 1000,
-    spectators: 24,
-    playerPot: 10,
-    host: {
-      name: "TurboBetGuy",
-      rank: "Gold III",
-      rating: 1492,
-      winRate: 57,
-      last10: "6-4",
-    },
-    challenger: {
-      name: "LuckyDog23",
-      rank: "Platinum I",
-      rating: 1608,
-      winRate: 59,
-      last10: "7-3",
-    },
-    hostSideLabel: "Yellow",
-    challengerSideLabel: "Green",
-    statusText: "Match is live",
-    moveText: "Yellow threatens column 4",
-    roundScore: {
-      host: 1,
-      challenger: 1,
-    },
-    spectatorPool: {
-      host: 18,
-      challenger: 22,
-    },
-    bettingWindowSeconds: 25,
-    result: null,
-    moveHistory: ["Y@4", "G@3", "Y@5", "G@4", "Y threatens column 4"],
-    boardState: {
-      mode: "connect4-preview",
-    },
-  },
-  {
-    id: "arena-3",
-    game: "Tic-Tac-Toe",
-    status: "Live",
-    bettingStatus: "locked",
-    marketVisibility: "featured",
-    isFeaturedMarket: true,
-    bestOf: 5,
-    wager: 2,
-    createdAt: now - 1000 * 60 * 7,
-    seatedAt: now - 1000 * 60 * 6,
-    countdownStartedAt: now - 1000 * 60 * 5,
-    bettingClosesAt: now - 1000 * 60 * 5 + 12 * 1000,
-    startedAt: now - 1000 * 60 * 5 + 12 * 1000,
-    spectators: 11,
-    playerPot: 4,
-    host: {
-      name: "StakeLord",
-      rank: "Master",
-      rating: 1910,
-      winRate: 67,
-      last10: "8-2",
-    },
-    challenger: {
-      name: "FlashMove",
-      rank: "Silver II",
-      rating: 1318,
-      winRate: 48,
-      last10: "4-6",
-    },
-    hostSideLabel: "X",
-    challengerSideLabel: "O",
-    statusText: "Match is live",
-    moveText: "X controls center",
-    roundScore: {
-      host: 1,
-      challenger: 2,
-    },
-    spectatorPool: {
-      host: 7,
-      challenger: 5,
-    },
-    bettingWindowSeconds: 12,
-    result: null,
-    moveHistory: ["X center", "O corner", "X pressure"],
-    boardState: {
-      mode: "ttt-preview",
-    },
-  },
-  {
-    id: "arena-4",
-    game: "Connect 4",
-    status: "Waiting for Opponent",
-    bettingStatus: "disabled",
-    marketVisibility: "watch-only",
-    isFeaturedMarket: false,
-    bestOf: 3,
-    wager: 8,
-    createdAt: now - 1000 * 60 * 3,
-    spectators: 6,
-    playerPot: 8,
-    host: {
-      name: "BrettBlitz",
-      rank: "Gold I",
-      rating: 1511,
-      winRate: 55,
-      last10: "6-4",
-    },
-    challenger: null,
-    hostSideLabel: "Yellow",
-    challengerSideLabel: "Green",
-    statusText: "Open seat available",
-    moveText: "Waiting for join",
-    roundScore: {
-      host: 0,
-      challenger: 0,
-    },
-    spectatorPool: {
-      host: 0,
-      challenger: 0,
-    },
-    bettingWindowSeconds: 25,
-    result: null,
-    moveHistory: [],
-  },
-]
-
-export const gameMeta: Record<
-  GameType,
-  {
-    subtitle: string
-    accent: string
-    glow: string
-    cta: string
-  }
-> = {
+export const gameMeta: Record<GameType, GameMeta> = {
   "Chess Duel": {
-    subtitle: "Skill-heavy strategic 1v1 betting arena",
-    accent: "text-amber-300",
-    glow: "border-amber-300/20 bg-amber-300/10",
-    cta: "Enter Chess Arena",
+    accent: "from-amber-300 via-yellow-200 to-amber-500",
+    surface: "bg-gradient-to-br from-[#19140a] to-[#0b0b0b]",
+    icon: "♞",
+    description: "Deep strategy, prestige markets, elite rating swings.",
   },
   "Connect 4": {
-    subtitle: "Fast tactical rounds with strong spectator appeal",
-    accent: "text-emerald-300",
-    glow: "border-emerald-300/20 bg-emerald-300/10",
-    cta: "Enter Connect 4 Arena",
+    accent: "from-emerald-300 via-teal-200 to-emerald-500",
+    surface: "bg-gradient-to-br from-[#081712] to-[#0b0b0b]",
+    icon: "◉",
+    description: "Fast reads, trap setups, momentum-friendly pools.",
   },
   "Tic-Tac-Toe": {
-    subtitle: "Quick matches for casual arena volume",
-    accent: "text-sky-300",
-    glow: "border-sky-300/20 bg-sky-300/10",
-    cta: "Enter Tic-Tac-Toe Arena",
+    accent: "from-sky-300 via-cyan-200 to-sky-500",
+    surface: "bg-gradient-to-br from-[#08131a] to-[#0b0b0b]",
+    icon: "✕",
+    description: "Hyper-fast rounds with aggressive pre-lock betting windows.",
   },
 }
 
-export const initialLeaderboard: LeaderboardEntry[] = [
+export const initialArenaMatches: ArenaMatch[] = normalizeArenaMatches(
+  [
+    {
+      id: "arena-1",
+      game: "Chess Duel",
+      status: "Live",
+      bettingStatus: "locked",
+      marketVisibility: "featured",
+      isFeaturedMarket: true,
+      bestOf: 3,
+      wager: 10,
+      createdAt: now - 1000 * 60 * 18,
+      seatedAt: now - 1000 * 60 * 17,
+      countdownStartedAt: now - 1000 * 60 * 16,
+      bettingClosesAt: now - 1000 * 60 * 15,
+      startedAt: now - 1000 * 60 * 15,
+      spectators: 38,
+      playerPot: 20,
+      host: {
+        name: "CryptoCrush44",
+        rank: "Gold I",
+        rating: 1528,
+        winRate: 53,
+        last10: "5-5",
+      },
+      challenger: {
+        name: "KasKing01",
+        rank: "Diamond II",
+        rating: 1842,
+        winRate: 61,
+        last10: "7-3",
+      },
+      hostSideLabel: "White",
+      challengerSideLabel: "Black",
+      statusText: "Match is live",
+      moveText: "17... Qe7",
+      roundScore: { host: 0, challenger: 1 },
+      spectatorPool: { host: 31, challenger: 42 },
+      bettingWindowSeconds: 60,
+      result: null,
+      moveHistory: ["1. e4", "1... c5", "2. Nf3", "2... d6", "17... Qe7"],
+      boardState: { mode: "chess-preview", fen: "rnbq1rk1/pp3ppp/3bpn2/2pp4/2P5/2N1PN2/PP1PBPPP/R1BQ1RK1 w - - 0 8" },
+    },
+    {
+      id: "arena-2",
+      game: "Connect 4",
+      status: "Ready to Start",
+      bettingStatus: "open",
+      marketVisibility: "featured",
+      isFeaturedMarket: true,
+      bestOf: 3,
+      wager: 5,
+      createdAt: now - 1000 * 60 * 4,
+      seatedAt: now - 1000 * 20,
+      countdownStartedAt: now - 1000 * 20,
+      bettingClosesAt: now + 1000 * 9,
+      spectators: 24,
+      playerPot: 10,
+      host: {
+        name: "TurboBetGuy",
+        rank: "Gold III",
+        rating: 1492,
+        winRate: 57,
+        last10: "6-4",
+      },
+      challenger: {
+        name: "LuckyDog23",
+        rank: "Platinum I",
+        rating: 1608,
+        winRate: 59,
+        last10: "7-3",
+      },
+      hostSideLabel: "Red",
+      challengerSideLabel: "Yellow",
+      statusText: "Featured market open",
+      moveText: "Starts in 0:09",
+      roundScore: { host: 0, challenger: 0 },
+      spectatorPool: { host: 14, challenger: 27 },
+      bettingWindowSeconds: 25,
+      result: null,
+      moveHistory: [],
+      boardState: {
+        mode: "connect4-live",
+        board: Array.from({ length: 6 }, () =>
+          Array.from({ length: 7 }, () => null as ArenaSide | null)
+        ),
+        turn: "host" as ArenaSide,
+        turnDeadlineTs: now + 1000 * 29,
+      },
+    },
+    {
+      id: "arena-3",
+      game: "Tic-Tac-Toe",
+      status: "Waiting for Opponent",
+      bettingStatus: "disabled",
+      marketVisibility: "watch-only",
+      isFeaturedMarket: false,
+      bestOf: 1,
+      wager: 3,
+      createdAt: now - 1000 * 60 * 2,
+      spectators: 7,
+      playerPot: 3,
+      host: {
+        name: "FlashMove",
+        rank: "Silver II",
+        rating: 1318,
+        winRate: 48,
+        last10: "4-6",
+      },
+      challenger: null,
+      hostSideLabel: "X",
+      challengerSideLabel: "O",
+      statusText: "Open seat available",
+      moveText: "Waiting for join",
+      roundScore: { host: 0, challenger: 0 },
+      spectatorPool: { host: 0, challenger: 0 },
+      bettingWindowSeconds: 12,
+      result: null,
+      moveHistory: [],
+      boardState: {
+        mode: "ttt-live",
+        board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
+        turn: "X",
+        turnDeadlineTs: now + 1000 * 12,
+      },
+    },
+  ],
+  now
+)
+
+const leaderboardSeed: LeaderboardEntry[] = [
   {
     id: "lb-1",
-    name: "StakeLord",
-    rank: "Master",
-    rating: 1910,
-    winRate: 67,
-    wins: 172,
-    losses: 84,
-    streak: "W2",
-    favoriteGame: "Tic-Tac-Toe",
-    earnings: 1185,
-    avatarGlow: "fuchsia",
-  },
-  {
-    id: "lb-2",
     name: "KasKing01",
     rank: "Diamond II",
     rating: 1842,
     winRate: 61,
     wins: 148,
-    losses: 95,
+    losses: 94,
     streak: "W4",
     favoriteGame: "Chess Duel",
-    earnings: 1240,
+    earnings: 412.8,
+    avatarGlow: "emerald",
+  },
+  {
+    id: "lb-2",
+    name: "StakeLord",
+    rank: "Master",
+    rating: 1910,
+    winRate: 67,
+    wins: 203,
+    losses: 101,
+    streak: "W7",
+    favoriteGame: "Connect 4",
+    earnings: 621.2,
     avatarGlow: "amber",
   },
   {
@@ -402,686 +359,695 @@ export const initialLeaderboard: LeaderboardEntry[] = [
     rank: "Platinum I",
     rating: 1608,
     winRate: 59,
-    wins: 121,
-    losses: 84,
-    streak: "W3",
-    favoriteGame: "Connect 4",
-    earnings: 860,
-    avatarGlow: "emerald",
-  },
-  {
-    id: "lb-4",
-    name: "CryptoCrush44",
-    rank: "Gold I",
-    rating: 1528,
-    winRate: 53,
-    wins: 98,
-    losses: 87,
-    streak: "L2",
-    favoriteGame: "Chess Duel",
-    earnings: 715,
-    avatarGlow: "amber",
-  },
-  {
-    id: "lb-5",
-    name: "TurboBetGuy",
-    rank: "Gold III",
-    rating: 1492,
-    winRate: 57,
-    wins: 109,
-    losses: 82,
-    streak: "W1",
-    favoriteGame: "Connect 4",
-    earnings: 910,
-    avatarGlow: "emerald",
-  },
-  {
-    id: "lb-6",
-    name: "FlashMove",
-    rank: "Silver II",
-    rating: 1318,
-    winRate: 48,
-    wins: 76,
-    losses: 81,
-    streak: "L1",
+    wins: 131,
+    losses: 91,
+    streak: "W2",
     favoriteGame: "Tic-Tac-Toe",
-    earnings: 420,
+    earnings: 214.6,
     avatarGlow: "sky",
   },
 ]
+
+let arenaMatchesCache: ArenaMatch[] = [...initialArenaMatches]
+let spectatorTicketsCache: PersistedBetTicket[] = []
 
 function isBrowser() {
   return typeof window !== "undefined"
 }
 
-function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-export function cloneArenaMatches(matches: ArenaMatch[] = initialArenaMatches): ArenaMatch[] {
-  return deepClone(matches)
-}
-
-function dispatchArenaMatchesUpdated() {
-  if (!isBrowser()) return
-  window.dispatchEvent(new Event(ARENA_MATCHES_EVENT))
-}
-
-function dispatchSpectatorTicketsUpdated() {
-  if (!isBrowser()) return
-  window.dispatchEvent(new Event(SPECTATOR_TICKETS_EVENT))
-}
-
-function hydrateMatches(matches: ArenaMatch[]) {
-  return normalizeArenaMatches(cloneArenaMatches(matches))
-}
-
-function persistArenaMatches(matches: ArenaMatch[], dispatch = true) {
-  if (!isBrowser()) return
-  const normalized = hydrateMatches(matches)
-  window.localStorage.setItem(ARENA_MATCHES_STORAGE_KEY, JSON.stringify(normalized))
-  if (dispatch) {
-    dispatchArenaMatchesUpdated()
-  }
-}
-
-function normalizeTicket(ticket: PersistedBetTicket): PersistedBetTicket {
-  return {
-    id: ticket.id,
-    user: ticket.user,
-    matchId: ticket.matchId,
-    game: ticket.game,
-    side: ticket.side,
-    amount: clampBetAmount(ticket.amount),
-    createdAt: ticket.createdAt,
-  }
-}
-
-function persistSpectatorTickets(tickets: PersistedBetTicket[], dispatch = true) {
-  if (!isBrowser()) return
-  const normalized = tickets.map(normalizeTicket).sort((a, b) => b.createdAt - a.createdAt)
-  window.localStorage.setItem(SPECTATOR_TICKETS_STORAGE_KEY, JSON.stringify(normalized))
-  if (dispatch) {
-    dispatchSpectatorTicketsUpdated()
-  }
-}
-
-export function readSpectatorTickets(): PersistedBetTicket[] {
-  if (!isBrowser()) {
-    return []
-  }
-
-  const stored = window.localStorage.getItem(SPECTATOR_TICKETS_STORAGE_KEY)
-  if (!stored) return []
-
+function safeJsonParse<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback
   try {
-    const parsed = JSON.parse(stored) as PersistedBetTicket[]
-    if (!Array.isArray(parsed)) return []
-    return parsed.map(normalizeTicket).sort((a, b) => b.createdAt - a.createdAt)
+    return JSON.parse(value) as T
   } catch {
-    return []
+    return fallback
   }
 }
 
-export function readCurrentUserTickets(user = currentUser.name) {
-  return readSpectatorTickets().filter((ticket) => ticket.user === user)
-}
-
-export function writeSpectatorTickets(tickets: PersistedBetTicket[]) {
+function emitStorageEvent(name: string) {
   if (!isBrowser()) return
-  persistSpectatorTickets(tickets, true)
+  window.dispatchEvent(new CustomEvent(name))
 }
 
-export function clearSpectatorTickets() {
+function persistMatches(matches: ArenaMatch[]) {
+  arenaMatchesCache = normalizeArenaMatches(matches, Date.now())
   if (!isBrowser()) return
-  window.localStorage.removeItem(SPECTATOR_TICKETS_STORAGE_KEY)
-  dispatchSpectatorTicketsUpdated()
+  window.localStorage.setItem(
+    ARENA_MATCHES_STORAGE_KEY,
+    JSON.stringify(arenaMatchesCache)
+  )
+  emitStorageEvent(ARENA_MATCHES_EVENT)
 }
 
-export function subscribeSpectatorTickets(listener: () => void) {
-  if (!isBrowser()) {
-    return () => {}
-  }
-
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === SPECTATOR_TICKETS_STORAGE_KEY) {
-      listener()
-    }
-  }
-
-  const handleCustom = () => {
-    listener()
-  }
-
-  window.addEventListener("storage", handleStorage)
-  window.addEventListener(SPECTATOR_TICKETS_EVENT, handleCustom)
-
-  return () => {
-    window.removeEventListener("storage", handleStorage)
-    window.removeEventListener(SPECTATOR_TICKETS_EVENT, handleCustom)
-  }
-}
-
-export function ensureSpectatorTicketsSeeded() {
+function persistTickets(tickets: PersistedBetTicket[]) {
+  spectatorTicketsCache = [...tickets].sort((a, b) => a.createdAt - b.createdAt)
   if (!isBrowser()) return
-  const stored = window.localStorage.getItem(SPECTATOR_TICKETS_STORAGE_KEY)
-  if (!stored) {
-    window.localStorage.setItem(SPECTATOR_TICKETS_STORAGE_KEY, JSON.stringify([]))
-  }
+  window.localStorage.setItem(
+    SPECTATOR_TICKETS_STORAGE_KEY,
+    JSON.stringify(spectatorTicketsCache)
+  )
+  emitStorageEvent(SPECTATOR_TICKETS_EVENT)
 }
 
-export function getTicketsForMatch(matchId: string, user = currentUser.name) {
-  return readCurrentUserTickets(user).filter((ticket) => ticket.matchId === matchId)
+function loadMatchesFromLocalStorage() {
+  if (!isBrowser()) return arenaMatchesCache
+  const stored = safeJsonParse<ArenaMatch[]>(
+    window.localStorage.getItem(ARENA_MATCHES_STORAGE_KEY),
+    initialArenaMatches
+  )
+  arenaMatchesCache = normalizeArenaMatches(stored, Date.now())
+  return arenaMatchesCache
 }
 
-export function getTicketExposureByMatch(matchId: string, user = currentUser.name) {
-  const tickets = getTicketsForMatch(matchId, user)
+function loadTicketsFromLocalStorage() {
+  if (!isBrowser()) return spectatorTicketsCache
+  const stored = safeJsonParse<PersistedBetTicket[]>(
+    window.localStorage.getItem(SPECTATOR_TICKETS_STORAGE_KEY),
+    []
+  )
+  spectatorTicketsCache = stored
+  return spectatorTicketsCache
+}
 
-  const host = tickets
-    .filter((ticket) => ticket.side === "host")
-    .reduce((sum, ticket) => sum + ticket.amount, 0)
+function rankFromRating(rating: number): RankTier {
+  if (rating >= 1950) return "Grandmaster"
+  if (rating >= 1800) return "Master"
+  if (rating >= 1675) return "Diamond II"
+  if (rating >= 1550) return "Platinum I"
+  if (rating >= 1450) return "Gold III"
+  if (rating >= 1350) return "Gold I"
+  if (rating >= 1200) return "Silver II"
+  return "Bronze I"
+}
 
-  const challenger = tickets
-    .filter((ticket) => ticket.side === "challenger")
-    .reduce((sum, ticket) => sum + ticket.amount, 0)
+function buildProfileFromWallet(wallet: string, fallbackName?: string): PlayerProfile {
+  const short =
+    wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet
+
+  const seed = [...wallet].reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  const rating = 1200 + (seed % 700)
+  const winRate = 44 + (seed % 24)
+  const wins = 4 + (seed % 6)
+  const losses = 10 - wins
 
   return {
-    host,
-    challenger,
-    total: host + challenger,
+    name: fallbackName ?? short,
+    rank: rankFromRating(rating),
+    rating,
+    winRate,
+    last10: `${wins}-${losses}`,
   }
 }
 
-export function readArenaMatches(): ArenaMatch[] {
-  if (!isBrowser()) {
-    return hydrateMatches(initialArenaMatches)
+function sideLabelsForGame(game: GameType) {
+  if (game === "Chess Duel") {
+    return { host: "White", challenger: "Black" }
   }
-
-  const stored = window.localStorage.getItem(ARENA_MATCHES_STORAGE_KEY)
-
-  if (!stored) {
-    const seeded = hydrateMatches(initialArenaMatches)
-    window.localStorage.setItem(ARENA_MATCHES_STORAGE_KEY, JSON.stringify(seeded))
-    return seeded
+  if (game === "Connect 4") {
+    return { host: "Red", challenger: "Yellow" }
   }
-
-  try {
-    const parsed = JSON.parse(stored) as ArenaMatch[]
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const seeded = hydrateMatches(initialArenaMatches)
-      window.localStorage.setItem(ARENA_MATCHES_STORAGE_KEY, JSON.stringify(seeded))
-      return seeded
-    }
-
-    const normalized = hydrateMatches(parsed)
-    const normalizedString = JSON.stringify(normalized)
-
-    if (normalizedString !== stored) {
-      window.localStorage.setItem(ARENA_MATCHES_STORAGE_KEY, normalizedString)
-    }
-
-    return normalized
-  } catch {
-    const seeded = hydrateMatches(initialArenaMatches)
-    window.localStorage.setItem(ARENA_MATCHES_STORAGE_KEY, JSON.stringify(seeded))
-    return seeded
-  }
+  return { host: "X", challenger: "O" }
 }
 
-export function writeArenaMatches(matches: ArenaMatch[]) {
-  if (!isBrowser()) return
-  persistArenaMatches(matches, true)
+function bestOfForGame(game: GameType): 1 | 3 | 5 {
+  if (game === "Chess Duel") return 3
+  if (game === "Connect 4") return 3
+  return 1
 }
 
-export function ensureArenaMatchesSeeded() {
-  if (!isBrowser()) return
-  const stored = window.localStorage.getItem(ARENA_MATCHES_STORAGE_KEY)
-  if (!stored) {
-    writeArenaMatches(initialArenaMatches)
-  }
-}
-
-export function resetArenaMatches() {
-  writeArenaMatches(initialArenaMatches)
-}
-
-export function subscribeArenaMatches(listener: () => void) {
-  if (!isBrowser()) {
-    return () => {}
-  }
-
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === ARENA_MATCHES_STORAGE_KEY) {
-      listener()
-    }
-  }
-
-  const handleCustom = () => {
-    listener()
-  }
-
-  window.addEventListener("storage", handleStorage)
-  window.addEventListener(ARENA_MATCHES_EVENT, handleCustom)
-
-  return () => {
-    window.removeEventListener("storage", handleStorage)
-    window.removeEventListener(ARENA_MATCHES_EVENT, handleCustom)
-  }
-}
-
-export function getArenaById(id: string, matches: ArenaMatch[] = initialArenaMatches): ArenaMatch | null {
-  return hydrateMatches(matches).find((match) => match.id === id) ?? null
-}
-
-export function readArenaById(id: string): ArenaMatch | null {
-  return getArenaById(id, readArenaMatches())
-}
-
-export function getFavoriteData(leftRating: number, rightRating: number) {
-  const diff = Math.abs(leftRating - rightRating)
-
-  if (diff < 75) {
+function createDefaultBoardState(game: GameType) {
+  if (game === "Connect 4") {
     return {
-      leftLabel: "Even Match",
-      rightLabel: "Even Match",
+      mode: "connect4-live",
+      board: Array.from({ length: 6 }, () =>
+        Array.from({ length: 7 }, () => null as ArenaSide | null)
+      ),
+      turn: "host" as ArenaSide,
+      turnDeadlineTs: Date.now() + 20_000,
     }
   }
 
-  const leftFavored = leftRating > rightRating
+  if (game === "Tic-Tac-Toe") {
+    return {
+      mode: "ttt-live",
+      board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
+      turn: "X" as "X" | "O",
+      turnDeadlineTs: Date.now() + 10_000,
+    }
+  }
 
   return {
-    leftLabel: leftFavored ? "Favorite" : diff >= 250 ? "Heavy Underdog" : "Underdog",
-    rightLabel: !leftFavored ? "Favorite" : diff >= 250 ? "Heavy Underdog" : "Underdog",
+    mode: "chess-preview",
+    fen: "start",
   }
 }
 
-export function getEdgeText(leftRating: number, rightRating: number) {
-  const diff = Math.abs(leftRating - rightRating)
-  if (diff < 75) return "Minimal Skill Edge"
-  if (diff < 150) return "Moderate Skill Edge"
-  if (diff < 250) return "Strong Skill Edge"
-  return "Massive Skill Edge"
+function dbGameTypeToGameType(game: string): GameType {
+  if (game === "Connect 4") return "Connect 4"
+  if (game === "Tic-Tac-Toe") return "Tic-Tac-Toe"
+  return "Chess Duel"
 }
 
-export function getWinProbability(ratingA: number, ratingB: number) {
-  const exponent = (ratingB - ratingA) / 400
-  return 1 / (1 + Math.pow(10, exponent))
+function dbStatusToArenaStatus(status: string): ArenaStatus {
+  if (status === "Ready to Start") return "Ready to Start"
+  if (status === "Live") return "Live"
+  if (status === "Finished") return "Finished"
+  return "Waiting for Opponent"
 }
 
-export function getRankColors(rank: RankTier) {
-  if (rank.startsWith("Bronze")) {
-    return "border-orange-400/25 bg-orange-400/10 text-orange-300"
+function upsertMatchLocally(match: ArenaMatch) {
+  const next = [...readArenaMatches()]
+  const index = next.findIndex((item) => item.id === match.id)
+
+  if (index >= 0) {
+    next[index] = match
+  } else {
+    next.unshift(match)
   }
-  if (rank.startsWith("Silver")) {
-    return "border-zinc-300/25 bg-zinc-300/10 text-zinc-200"
-  }
-  if (rank.startsWith("Gold")) {
-    return "border-amber-300/25 bg-amber-300/10 text-amber-300"
-  }
-  if (rank.startsWith("Platinum")) {
-    return "border-cyan-300/25 bg-cyan-300/10 text-cyan-300"
-  }
-  if (rank.startsWith("Diamond")) {
-    return "border-sky-300/25 bg-sky-300/10 text-sky-300"
-  }
-  if (rank === "Master") {
-    return "border-fuchsia-300/25 bg-fuchsia-300/10 text-fuchsia-300"
-  }
-  return "border-emerald-300/25 bg-emerald-300/10 text-emerald-300"
+
+  persistMatches(next)
 }
 
-export function buildFeaturedSpectateMarkets(matches: ArenaMatch[] = readArenaMatches()) {
-  const normalized = hydrateMatches(matches)
-
-  return gameDisplayOrder
-    .map((game) => {
-      const candidates = normalized
-        .filter((match) => match.game === game)
-        .filter(isArenaSpectatable)
-        .sort((a, b) => {
-          const aScore = a.isFeaturedMarket
-            ? a.status === "Ready to Start"
-              ? 5
-              : a.status === "Live"
-              ? 4
-              : 0
-            : a.status === "Ready to Start"
-            ? 3
-            : a.status === "Live"
-            ? 2
-            : 0
-
-          const bScore = b.isFeaturedMarket
-            ? b.status === "Ready to Start"
-              ? 5
-              : b.status === "Live"
-              ? 4
-              : 0
-            : b.status === "Ready to Start"
-            ? 3
-            : b.status === "Live"
-            ? 2
-            : 0
-
-          if (bScore !== aScore) return bScore - aScore
-          if (b.playerPot !== a.playerPot) return b.playerPot - a.playerPot
-          if (b.spectators !== a.spectators) return b.spectators - a.spectators
-          return b.createdAt - a.createdAt
-        })
-
-      return candidates[0] ?? null
-    })
-    .filter((match): match is ArenaMatch => Boolean(match))
-}
-
-export function createArenaMatch(params: {
-  game: GameType
+function mapDbMatchToArenaMatch(dbMatch: {
+  id: string
+  game_type: string
+  status: string
+  host_wallet: string
+  challenger_wallet: string | null
   wager: number
-  bestOf: 1 | 3 | 5
-  host?: PlayerProfile
-}) {
-  const host = params.host ?? {
-    name: currentUser.name,
-    rank: currentUser.rank,
-    rating: currentUser.rating,
-    winRate: currentUser.winRate,
-    last10: currentUser.last10,
-  }
+  created_at: string
+  started_at: string | null
+  ended_at: string | null
+}): ArenaMatch {
+  const game = dbGameTypeToGameType(dbMatch.game_type)
+  const labels = sideLabelsForGame(game)
+  const createdAt = new Date(dbMatch.created_at).getTime()
+  const seatedAt = dbMatch.challenger_wallet
+    ? createdAt + 5_000
+    : undefined
 
-  const challengerSideLabel =
-    params.game === "Chess Duel" ? "Black" : params.game === "Connect 4" ? "Green" : "O"
+  const bettingWindowSeconds = getGameBettingWindowSeconds(game)
+  const countdownStartedAt = seatedAt
+  const bettingClosesAt = countdownStartedAt
+    ? countdownStartedAt + bettingWindowSeconds * 1000
+    : undefined
 
-  const hostSideLabel =
-    params.game === "Chess Duel" ? "White" : params.game === "Connect 4" ? "Yellow" : "X"
+  const host = buildProfileFromWallet(dbMatch.host_wallet, "Host")
+  const challenger = dbMatch.challenger_wallet
+    ? buildProfileFromWallet(dbMatch.challenger_wallet, "Challenger")
+    : null
 
-  const nextMatch: ArenaMatch = {
-    id: `arena-${Date.now()}`,
-    game: params.game,
-    status: "Waiting for Opponent",
+  return {
+    id: dbMatch.id,
+    game,
+    status: dbStatusToArenaStatus(dbMatch.status),
     bettingStatus: "disabled",
     marketVisibility: "watch-only",
     isFeaturedMarket: false,
-    bestOf: params.bestOf,
-    wager: clampWager(params.wager),
-    createdAt: Date.now(),
-    spectators: 0,
-    playerPot: clampWager(params.wager),
+    bestOf: bestOfForGame(game),
+    wager: Number(dbMatch.wager ?? 0),
+    createdAt,
+    seatedAt,
+    countdownStartedAt,
+    bettingClosesAt,
+    startedAt: dbMatch.started_at
+      ? new Date(dbMatch.started_at).getTime()
+      : undefined,
+    finishedAt: dbMatch.ended_at
+      ? new Date(dbMatch.ended_at).getTime()
+      : undefined,
+    spectators: randomInt(4, 40),
+    playerPot: Number(dbMatch.wager ?? 0) * (challenger ? 2 : 1),
     host,
-    challenger: null,
-    hostSideLabel,
-    challengerSideLabel,
-    statusText: "Open seat available",
-    moveText: "Waiting for join",
-    roundScore: {
-      host: 0,
-      challenger: 0,
-    },
-    spectatorPool: {
-      host: 0,
-      challenger: 0,
-    },
-    bettingWindowSeconds: getGameBettingWindowSeconds(params.game),
+    challenger,
+    hostSideLabel: labels.host,
+    challengerSideLabel: labels.challenger,
+    statusText:
+      challenger && dbMatch.status === "Ready to Start"
+        ? "Featured market open"
+        : challenger && dbMatch.status === "Live"
+          ? "Match is live"
+          : challenger && dbMatch.status === "Finished"
+            ? "Match finished"
+            : "Open seat available",
+    moveText:
+      challenger && dbMatch.status === "Ready to Start"
+        ? "Countdown live"
+        : challenger && dbMatch.status === "Live"
+          ? game === "Chess Duel"
+            ? "1. e4"
+            : "Opening move"
+          : challenger && dbMatch.status === "Finished"
+            ? "Settlement pending"
+            : "Waiting for join",
+    roundScore: { host: 0, challenger: 0 },
+    spectatorPool: { host: 0, challenger: 0 },
+    bettingWindowSeconds,
     result: null,
     moveHistory: [],
+    boardState: createDefaultBoardState(game),
   }
-
-  const matches = readArenaMatches()
-  writeArenaMatches([nextMatch, ...matches])
-  return readArenaById(nextMatch.id) ?? nextMatch
 }
 
-export function joinArenaMatch(matchId: string, challenger?: PlayerProfile) {
-  const challengerProfile = challenger ?? {
-    name: currentUser.name,
-    rank: currentUser.rank,
-    rating: currentUser.rating,
-    winRate: currentUser.winRate,
-    last10: currentUser.last10,
-  }
+function applyBetsToMatches(
+  matches: ArenaMatch[],
+  tickets: PersistedBetTicket[]
+): ArenaMatch[] {
+  return normalizeArenaMatches(
+    matches.map((match) => {
+      const related = tickets.filter((ticket) => ticket.matchId === match.id)
+      const hostPool = related
+        .filter((ticket) => ticket.side === "host")
+        .reduce((sum, ticket) => sum + ticket.amount, 0)
+      const challengerPool = related
+        .filter((ticket) => ticket.side === "challenger")
+        .reduce((sum, ticket) => sum + ticket.amount, 0)
 
-  const matches = readArenaMatches()
-  const target = matches.find((item) => item.id === matchId)
-
-  if (!target) {
-    throw new Error("Arena not found.")
-  }
-
-  if (target.host.name === challengerProfile.name) {
-    throw new Error("You already host this arena.")
-  }
-
-  if (target.status !== "Waiting for Opponent") {
-    throw new Error("This arena is no longer open for joining.")
-  }
-
-  const seatedAt = Date.now()
-
-  const nextMatches = matches.map((match) =>
-    match.id === matchId
-      ? {
-          ...match,
-          challenger: challengerProfile,
-          status: "Ready to Start" as ArenaStatus,
-          bettingStatus: "disabled" as const,
-          seatedAt,
-          countdownStartedAt: undefined,
-          bettingClosesAt: undefined,
-          startedAt: undefined,
-          spectators: match.spectators + 3,
-          playerPot: match.wager * 2,
-          statusText: "Both players seated",
-          moveText: "Ready for launch",
-        }
-      : match
+      return {
+        ...match,
+        spectatorPool: {
+          host: hostPool,
+          challenger: challengerPool,
+        },
+        spectators: Math.max(match.spectators, related.length + 6),
+      }
+    }),
+    Date.now()
   )
-
-  writeArenaMatches(nextMatches)
-  return readArenaById(matchId)
 }
 
-export function autoFillArenaMatch(matchId: string) {
-  const matches = readArenaMatches()
-  const target = matches.find((item) => item.id === matchId)
-
-  if (!target) {
-    throw new Error("Arena not found.")
+async function hydrateMatchesFromSupabase() {
+  try {
+    const dbMatches = await getDbMatches()
+    const mapped = dbMatches.map(mapDbMatchToArenaMatch)
+    const localTickets = readSpectatorTickets()
+    persistMatches(applyBetsToMatches(mapped.length ? mapped : initialArenaMatches, localTickets))
+  } catch (error) {
+    console.error("KasRoyal hydrateMatchesFromSupabase failed", error)
   }
-
-  if (target.status !== "Waiting for Opponent") {
-    throw new Error("This arena is no longer open for auto-fill.")
-  }
-
-  const availableOpponents = mockOpponentPool.filter((player) => player.name !== target.host.name)
-  const challengerProfile =
-    availableOpponents[Math.floor(Math.random() * availableOpponents.length)] ?? mockOpponentPool[0]
-
-  return joinArenaMatch(matchId, challengerProfile)
 }
 
-export function launchArenaMatch(matchId: string) {
-  const matches = readArenaMatches()
-  const target = matches.find((item) => item.id === matchId)
+async function hydrateTicketsForMatchFromSupabase(matchId: string) {
+  try {
+    const rows = await getDbMatchBets(matchId)
+    const local = readSpectatorTickets()
+    const filteredLocal = local.filter((ticket) => ticket.matchId !== matchId)
 
-  if (!target) {
-    throw new Error("Arena not found.")
+    const mapped: PersistedBetTicket[] = rows.map((row) => {
+      const match = readArenaMatches().find((item) => item.id === row.match_id)
+      return {
+        id: row.id,
+        user:
+          row.wallet_address.length > 10
+            ? `${row.wallet_address.slice(0, 6)}...${row.wallet_address.slice(-4)}`
+            : row.wallet_address,
+        matchId: row.match_id,
+        game: match?.game ?? "Chess Duel",
+        side: row.side === "challenger" ? "challenger" : "host",
+        amount: Number(row.amount),
+        createdAt: new Date(row.created_at).getTime(),
+      }
+    })
+
+    persistTickets([...filteredLocal, ...mapped])
+    persistMatches(applyBetsToMatches(readArenaMatches(), readSpectatorTickets()))
+  } catch (error) {
+    console.error("KasRoyal hydrateTicketsForMatchFromSupabase failed", error)
   }
-
-  if (target.status === "Waiting for Opponent") {
-    throw new Error("This arena still needs an opponent before gameplay can start.")
-  }
-
-  if (!target.challenger) {
-    throw new Error("Both players must be seated before launch.")
-  }
-
-  if (target.status === "Live") {
-    return target
-  }
-
-  const countdownStartedAt = Date.now()
-  const bettingWindowSeconds = getGameBettingWindowSeconds(target.game)
-
-  const nextMatches = matches.map((match) =>
-    match.id === matchId
-      ? {
-          ...match,
-          status: "Ready to Start" as ArenaStatus,
-          countdownStartedAt,
-          bettingClosesAt: countdownStartedAt + bettingWindowSeconds * 1000,
-          bettingWindowSeconds,
-          spectators: match.spectators + 7,
-          statusText: "Launch countdown started",
-          moveText: "Countdown live",
-        }
-      : match
-  )
-
-  writeArenaMatches(nextMatches)
-  return readArenaById(matchId)
 }
 
-export function updateArenaMatch(matchId: string, updater: (match: ArenaMatch) => ArenaMatch) {
-  const matches = readArenaMatches()
-  const target = matches.find((item) => item.id === matchId)
+if (isBrowser()) {
+  loadMatchesFromLocalStorage()
+  loadTicketsFromLocalStorage()
 
-  if (!target) {
-    throw new Error("Arena not found.")
+  const loaded = readArenaMatches()
+  if (!loaded.length) {
+    persistMatches(initialArenaMatches)
   }
 
-  const nextMatches = matches.map((match) => (match.id === matchId ? updater(match) : match))
-  writeArenaMatches(nextMatches)
-  return readArenaById(matchId)
+  void hydrateMatchesFromSupabase()
 }
 
-export function placeArenaSpectatorBet(matchId: string, side: ArenaSide, amount: number) {
-  const safeAmount = clampBetAmount(amount)
-  const currentMatch = readArenaById(matchId)
+export function readArenaMatches() {
+  if (isBrowser()) {
+    loadMatchesFromLocalStorage()
+  }
 
-  if (!currentMatch) {
-    throw new Error("Arena not found.")
+  return normalizeArenaMatches([...arenaMatchesCache], Date.now())
+}
+
+export function readSpectatorTickets() {
+  if (isBrowser()) {
+    loadTicketsFromLocalStorage()
+  }
+  return [...spectatorTicketsCache]
+}
+
+export function getArenaById(matchId: string) {
+  return readArenaMatches().find((match) => match.id === matchId) ?? null
+}
+
+export async function getArenaByIdAsync(matchId: string) {
+  try {
+    const dbMatch = await getDbMatchById(matchId)
+    const mapped = mapDbMatchToArenaMatch(dbMatch)
+    upsertMatchLocally(mapped)
+    await hydrateTicketsForMatchFromSupabase(matchId)
+    return getArenaById(matchId)
+  } catch (error) {
+    console.error("KasRoyal getArenaByIdAsync failed", error)
+    return getArenaById(matchId)
+  }
+}
+
+export function updateArenaMatch(
+  matchId: string,
+  updater:
+    | Partial<ArenaMatch>
+    | ((current: ArenaMatch) => ArenaMatch | Partial<ArenaMatch>)
+) {
+  const next = readArenaMatches().map((match) => {
+    if (match.id !== matchId) return match
+    const patch = typeof updater === "function" ? updater(match) : updater
+    return {
+      ...match,
+      ...patch,
+    }
+  })
+
+  persistMatches(next)
+
+  const updated = next.find((match) => match.id === matchId) ?? null
+
+  if (updated) {
+    void syncMatchToSupabase(updated)
+  }
+
+  return updated
+}
+
+async function syncMatchToSupabase(match: ArenaMatch) {
+  try {
+    if (match.status === "Ready to Start" || match.status === "Live" || match.status === "Finished") {
+      await updateDbMatchStatus(match.id, match.status)
+    }
+  } catch (error) {
+    console.error("KasRoyal syncMatchToSupabase failed", error)
+  }
+}
+
+export function subscribeArenaMatches(callback: (matches: ArenaMatch[]) => void) {
+  if (!isBrowser()) {
+    return () => {}
+  }
+
+  const handler = () => {
+    callback(readArenaMatches())
+  }
+
+  window.addEventListener(ARENA_MATCHES_EVENT, handler)
+  window.addEventListener("storage", handler)
+
+  return () => {
+    window.removeEventListener(ARENA_MATCHES_EVENT, handler)
+    window.removeEventListener("storage", handler)
+  }
+}
+
+export function subscribeSpectatorTickets(
+  callback: (tickets: PersistedBetTicket[]) => void
+) {
+  if (!isBrowser()) {
+    return () => {}
+  }
+
+  const handler = () => {
+    callback(readSpectatorTickets())
+  }
+
+  window.addEventListener(SPECTATOR_TICKETS_EVENT, handler)
+  window.addEventListener("storage", handler)
+
+  return () => {
+    window.removeEventListener(SPECTATOR_TICKETS_EVENT, handler)
+    window.removeEventListener("storage", handler)
+  }
+}
+
+export async function createArenaMatch(input: {
+  game: GameType
+  wager: number
+  hostWallet?: string
+}) {
+  const wager = clampWager(input.wager)
+  const hostWallet = input.hostWallet ?? currentUser.name
+  const profile = buildProfileFromWallet(hostWallet, currentUser.name)
+  const labels = sideLabelsForGame(input.game)
+
+  try {
+    const dbMatch = await createDbMatch({
+      game_type: input.game,
+      host_wallet: hostWallet,
+      wager,
+    })
+
+    const mapped = mapDbMatchToArenaMatch(dbMatch)
+    mapped.host = profile
+    mapped.hostSideLabel = labels.host
+    mapped.challengerSideLabel = labels.challenger
+
+    upsertMatchLocally(mapped)
+    return mapped
+  } catch (error) {
+    console.error("KasRoyal createArenaMatch fallback", error)
+
+    const localMatch: ArenaMatch = normalizeArenaMatches(
+      [
+        {
+          id: `arena-${cryptoSafeId()}`,
+          game: input.game,
+          status: "Waiting for Opponent",
+          bettingStatus: "disabled",
+          marketVisibility: "watch-only",
+          isFeaturedMarket: false,
+          bestOf: bestOfForGame(input.game),
+          wager,
+          createdAt: Date.now(),
+          spectators: randomInt(2, 12),
+          playerPot: wager,
+          host: profile,
+          challenger: null,
+          hostSideLabel: labels.host,
+          challengerSideLabel: labels.challenger,
+          statusText: "Open seat available",
+          moveText: "Waiting for join",
+          roundScore: { host: 0, challenger: 0 },
+          spectatorPool: { host: 0, challenger: 0 },
+          bettingWindowSeconds: getGameBettingWindowSeconds(input.game),
+          result: null,
+          moveHistory: [],
+          boardState: createDefaultBoardState(input.game),
+        },
+      ],
+      Date.now()
+    )[0]
+
+    upsertMatchLocally(localMatch)
+    return localMatch
+  }
+}
+
+export async function joinArenaMatch(matchId: string, wallet?: string) {
+  const walletAddress = wallet ?? `${currentUser.name}-wallet`
+  try {
+    const dbMatch = await joinDbMatch(matchId, walletAddress)
+    const mapped = mapDbMatchToArenaMatch(dbMatch)
+    upsertMatchLocally(mapped)
+    return mapped
+  } catch (error) {
+    console.error("KasRoyal joinArenaMatch fallback", error)
+
+    return updateArenaMatch(matchId, (current) => ({
+      challenger: buildProfileFromWallet(walletAddress, currentUser.name),
+      status: "Ready to Start",
+      seatedAt: Date.now(),
+      countdownStartedAt: Date.now(),
+      bettingClosesAt:
+        Date.now() + getGameBettingWindowSeconds(current.game) * 1000,
+      playerPot: current.wager * 2,
+    }))
+  }
+}
+
+export async function placeArenaSpectatorBet(input: {
+  matchId: string
+  side: ArenaSide
+  amount: number
+  user?: string
+  walletAddress?: string
+}) {
+  const amount = clampBetAmount(input.amount)
+  const match = getArenaById(input.matchId)
+
+  if (!match) {
+    throw new Error("Match not found")
   }
 
   const ticket: PersistedBetTicket = {
-    id: `${matchId}-${Date.now()}`,
-    user: currentUser.name,
-    matchId,
-    game: currentMatch.game,
-    side,
-    amount: safeAmount,
+    id: `ticket-${cryptoSafeId()}`,
+    user: input.user ?? currentUser.name,
+    matchId: input.matchId,
+    game: match.game,
+    side: input.side,
+    amount,
     createdAt: Date.now(),
   }
 
-  const updatedMatch = updateArenaMatch(matchId, (match) => {
-    const normalizedMatch = normalizeArenaMatches([match])[0]
+  persistTickets([...readSpectatorTickets(), ticket])
+  persistMatches(applyBetsToMatches(readArenaMatches(), readSpectatorTickets()))
 
-    if (!isArenaBettable(normalizedMatch)) {
-      throw new Error("This match is not currently open for spectator betting.")
-    }
+  try {
+    await placeDbBet({
+      match_id: input.matchId,
+      wallet_address: input.walletAddress ?? currentUser.name,
+      side: input.side,
+      amount,
+    })
+    await hydrateTicketsForMatchFromSupabase(input.matchId)
+  } catch (error) {
+    console.error("KasRoyal placeArenaSpectatorBet Supabase sync failed", error)
+  }
 
+  return ticket
+}
+
+export function getTicketsForMatch(matchId: string) {
+  return readSpectatorTickets().filter((ticket) => ticket.matchId === matchId)
+}
+
+export function getTicketExposureByMatch(matchId: string) {
+  return getTicketsForMatch(matchId).reduce((sum, ticket) => sum + ticket.amount, 0)
+}
+
+export function getFavoriteData(
+  hostRating: number,
+  challengerRating: number
+): FavoriteData {
+  const diff = hostRating - challengerRating
+  const absDiff = Math.abs(diff)
+
+  if (absDiff < 40) {
     return {
-      ...normalizedMatch,
-      spectators: normalizedMatch.spectators + 1,
-      spectatorPool: {
-        host:
-          side === "host"
-            ? normalizedMatch.spectatorPool.host + safeAmount
-            : normalizedMatch.spectatorPool.host,
-        challenger:
-          side === "challenger"
-            ? normalizedMatch.spectatorPool.challenger + safeAmount
-            : normalizedMatch.spectatorPool.challenger,
-      },
+      favorite: "even",
+      leftLabel: "Even Match",
+      rightLabel: "Even Match",
+      edge: 0,
     }
-  })
+  }
 
-  const existingTickets = readSpectatorTickets()
-  writeSpectatorTickets([ticket, ...existingTickets])
+  if (diff > 0) {
+    return {
+      favorite: "host",
+      leftLabel: "Favorite",
+      rightLabel: "Underdog",
+      edge: absDiff,
+    }
+  }
 
   return {
-    match: updatedMatch,
-    ticket,
+    favorite: "challenger",
+    leftLabel: "Underdog",
+    rightLabel: "Favorite",
+    edge: absDiff,
   }
 }
 
-export function buildLeaderboardFromArena(matches: ArenaMatch[] = readArenaMatches()): LeaderboardEntry[] {
-  const map = new Map<string, LeaderboardEntry>()
+export function getEdgeText(hostRating: number, challengerRating: number) {
+  const { favorite, edge } = getFavoriteData(hostRating, challengerRating)
+  if (favorite === "even") return "Evenly matched market"
+  return `${edge} MMR edge`
+}
 
-  function upsertPlayer(player: PlayerProfile | null, game: GameType, fallbackEarnings: number) {
-    if (!player) return
+export function getWinProbability(
+  hostRating: number,
+  challengerRating: number,
+  side: ArenaSide
+) {
+  const qa = Math.pow(10, hostRating / 400)
+  const qb = Math.pow(10, challengerRating / 400)
+  const hostProb = qa / (qa + qb)
+  return side === "host" ? hostProb : 1 - hostProb
+}
 
-    const existing = map.get(player.name)
-
-    if (!existing) {
-      const wins = Math.max(1, Math.round((player.winRate / 100) * 180))
-      const losses = Math.max(1, Math.round(((100 - player.winRate) / 100) * 120))
-
-      map.set(player.name, {
-        id: `lb-${player.name.toLowerCase()}`,
-        name: player.name,
-        rank: player.rank,
-        rating: player.rating,
-        winRate: player.winRate,
-        wins,
-        losses,
-        streak: player.last10.includes("8-2") || player.last10.includes("7-3") ? "W3" : "W1",
-        favoriteGame: game,
-        earnings: fallbackEarnings,
-        avatarGlow:
-          player.rank === "Master"
-            ? "fuchsia"
-            : player.rank.startsWith("Diamond")
-            ? "sky"
-            : player.rank.startsWith("Gold")
-            ? "amber"
-            : "emerald",
-      })
-      return
-    }
-
-    existing.rating = Math.max(existing.rating, player.rating)
-    existing.winRate = Math.max(existing.winRate, player.winRate)
-    existing.earnings += Math.round(fallbackEarnings * 0.35)
-
-    if (player.rating >= existing.rating) {
-      existing.favoriteGame = game
-      existing.rank = player.rank
+export function getRankColors(rank: RankTier) {
+  if (rank === "Grandmaster" || rank === "Master") {
+    return {
+      text: "text-amber-300",
+      ring: "ring-amber-300/30",
+      bg: "bg-amber-400/10",
     }
   }
 
-  matches.forEach((match) => {
-    upsertPlayer(match.host, match.game, match.playerPot + match.spectators * 4)
-    upsertPlayer(match.challenger, match.game, Math.round(match.playerPot * 0.9) + match.spectators * 3)
-  })
-
-  const merged = [...initialLeaderboard]
-
-  map.forEach((player) => {
-    const idx = merged.findIndex((entry) => entry.name === player.name)
-    if (idx >= 0) {
-      merged[idx] = {
-        ...merged[idx],
-        rank: player.rank,
-        rating: Math.max(merged[idx].rating, player.rating),
-        winRate: Math.max(merged[idx].winRate, player.winRate),
-        favoriteGame: player.favoriteGame,
-        earnings: Math.max(merged[idx].earnings, player.earnings),
-      }
-    } else {
-      merged.push(player)
+  if (rank === "Diamond II" || rank === "Platinum I") {
+    return {
+      text: "text-sky-300",
+      ring: "ring-sky-300/30",
+      bg: "bg-sky-400/10",
     }
-  })
+  }
 
-  return merged
+  if (rank === "Gold III" || rank === "Gold I") {
+    return {
+      text: "text-emerald-300",
+      ring: "ring-emerald-300/30",
+      bg: "bg-emerald-400/10",
+    }
+  }
+
+  if (rank === "Silver II") {
+    return {
+      text: "text-slate-200",
+      ring: "ring-white/20",
+      bg: "bg-white/10",
+    }
+  }
+
+  return {
+    text: "text-orange-200",
+    ring: "ring-orange-300/20",
+    bg: "bg-orange-400/10",
+  }
+}
+
+export function buildFeaturedSpectateMarkets(matches = readArenaMatches()) {
+  return matches
+    .filter((match) => match.isFeaturedMarket)
     .sort((a, b) => {
-      if (b.rating !== a.rating) return b.rating - a.rating
-      if (b.winRate !== a.winRate) return b.winRate - a.winRate
-      return b.earnings - a.earnings
+      const aPool = a.spectatorPool.host + a.spectatorPool.challenger
+      const bPool = b.spectatorPool.host + b.spectatorPool.challenger
+
+      if (bPool !== aPool) return bPool - aPool
+      if (b.spectators !== a.spectators) return b.spectators - a.spectators
+      return b.createdAt - a.createdAt
     })
-    .map((entry, index) => ({
-      ...entry,
-      streak:
-        entry.streak ||
-        (entry.winRate >= 60 ? "W3" : entry.winRate >= 50 ? "W1" : "L1"),
-      id: entry.id || `lb-${index + 1}`,
-    }))
+}
+
+export function getLeaderboard(): LeaderboardEntry[] {
+  return [...leaderboardSeed].sort((a, b) => b.rating - a.rating)
+}
+
+function cryptoSafeId() {
+  if (
+    typeof globalThis !== "undefined" &&
+    "crypto" in globalThis &&
+    typeof globalThis.crypto?.randomUUID === "function"
+  ) {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }

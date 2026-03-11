@@ -1,4 +1,5 @@
 import { supabase } from "../supabase"
+import type { DbBetRow } from "./types"
 
 export async function placeBet(bet: {
   match_id: string
@@ -12,14 +13,13 @@ export async function placeBet(bet: {
       match_id: bet.match_id,
       wallet_address: bet.wallet_address,
       side: bet.side,
-      amount: bet.amount
+      amount: bet.amount,
     })
-    .select()
+    .select("*")
     .single()
 
   if (error) throw error
-
-  return data
+  return data as DbBetRow
 }
 
 export async function getMatchBets(matchId: string) {
@@ -27,8 +27,8 @@ export async function getMatchBets(matchId: string) {
     .from("bets")
     .select("*")
     .eq("match_id", matchId)
+    .order("created_at", { ascending: true })
 
   if (error) throw error
-
-  return data
+  return (data ?? []) as DbBetRow[]
 }
