@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
-  clearStoredSelectedWalletId,
+  clearStoredSelectedWalletKey,
   connectInjectedWallet,
   discoverInjectedWallets,
-  getStoredSelectedWalletId,
+  getStoredSelectedWalletKey,
   getWalletSession,
   shortAddress,
   subscribeWalletEvents,
@@ -35,23 +35,27 @@ export default function NavWalletButton() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [walletOptions, setWalletOptions] = useState<WalletProviderOption[]>([])
-  const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null)
+  const [selectedWalletKey, setSelectedWalletKey] = useState<string | null>(null)
   const [session, setSession] = useState<WalletSession | null>(null)
 
   const refreshWallets = useCallback(() => {
     const options = discoverInjectedWallets()
     setWalletOptions(options)
 
-    const stored = getStoredSelectedWalletId()
+    const stored = getStoredSelectedWalletKey()
 
-    if (stored && options.some((item) => item.id === stored)) {
-      setSelectedWalletId(stored)
+    if (stored && options.some((item) => item.id === stored || item.key === stored)) {
+      setSelectedWalletKey(stored)
       return
     }
 
-    setSelectedWalletId((current) => {
-      if (current && options.some((item) => item.id === current)) return current
-      return options[0]?.id ?? null
+    setSelectedWalletKey((current) => {
+      if (current && options.some((item) => item.id === current || item.key === current)) {
+        return current
+      }
+
+      const first = options[0]
+      return (first?.key ?? first?.id ?? null) as string | null
     })
   }, [])
 
@@ -62,7 +66,7 @@ export default function NavWalletButton() {
         return
       }
 
-      const stored = getStoredSelectedWalletId()
+      const stored = getStoredSelectedWalletKey()
       if (!stored) {
         setSession(null)
         return
@@ -105,7 +109,7 @@ export default function NavWalletButton() {
         },
       },
       undefined,
-      getStoredSelectedWalletId() ?? undefined
+      getStoredSelectedWalletKey() ?? undefined
     )
 
     return () => {
@@ -118,14 +122,16 @@ export default function NavWalletButton() {
       setLoading(true)
       setError(null)
 
-      const providerId = selectedWalletId ?? walletOptions[0]?.id
+      const fallback = walletOptions[0]
+      const providerKey =
+        selectedWalletKey ?? ((fallback?.key ?? fallback?.id ?? null) as string | null)
 
-      if (!providerId) {
+      if (!providerKey) {
         throw new Error("No wallet provider detected.")
       }
 
       setDisconnectFlag(false)
-      const next = await connectInjectedWallet("galleon_testnet", undefined, providerId)
+      const next = await connectInjectedWallet("galleon_testnet", undefined, providerKey)
       setSession(next)
       setOpen(false)
       window.dispatchEvent(new Event("kasroyal-wallet-changed"))
@@ -137,7 +143,7 @@ export default function NavWalletButton() {
   }
 
   function handleDisconnect() {
-    clearStoredSelectedWalletId()
+    clearStoredSelectedWalletKey()
     setDisconnectFlag(true)
     setSession(null)
     setOpen(false)
@@ -179,7 +185,8 @@ export default function NavWalletButton() {
                   {session.account}
                 </div>
                 <div className="mt-2 text-sm text-emerald-300">
-                  {session.balanceKas} {session.networkKey === "galleon_testnet" ? "iKAS" : "KAS"}
+                  {session.balanceKas}{" "}
+                  {session.networkKey === "galleon_testnet" ? "iKAS" : "KAS"}
                 </div>
               </div>
 
@@ -211,14 +218,15 @@ export default function NavWalletButton() {
                 <div className="mt-3 grid gap-2">
                   {walletOptions.length > 0 ? (
                     walletOptions.map((wallet) => {
-                      const active = wallet.id === selectedWalletId
+                      const walletKey = (wallet.key ?? wallet.id) as string
+                      const active = walletKey === selectedWalletKey
 
                       return (
                         <button
-                          key={`${wallet.id}-${wallet.source}`}
+                          key={`${walletKey}-${wallet.source}`}
                           type="button"
                           onClick={() => {
-                            setSelectedWalletId(wallet.id)
+                            setSelectedWalletKey(walletKey)
                             setError(null)
                           }}
                           className={`rounded-2xl border px-4 py-3 text-left transition ${
@@ -250,7 +258,7 @@ export default function NavWalletButton() {
                 <button
                   type="button"
                   onClick={() => void handleConnect()}
-                  disabled={loading || walletOptions.length === 0 || !selectedWalletId}
+                  disabled={loading || walletOptions.length === 0 || !selectedWalletKey}
                   className="rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 px-4 py-3 text-sm font-black text-black transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? "Connecting..." : "Connect Wallet"}
