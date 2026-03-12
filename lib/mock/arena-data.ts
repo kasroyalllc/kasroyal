@@ -1466,7 +1466,16 @@ if (isBrowser()) {
 
 export function readArenaMatches() {
   startArenaLifecycleTicker()
-  return readMatchesFromStore().map((match) => ({
+  const raw = readMatchesFromStore()
+  const now = Date.now()
+  const withLifecycle = applyArenaLifecycle(
+    raw.map((match) => ({
+      ...match,
+      pauseState: normalizePauseState(match.pauseState),
+    })),
+    now
+  )
+  return withLifecycle.map((match) => ({
     ...match,
     pauseState: normalizePauseState(match.pauseState),
   }))
@@ -1930,6 +1939,65 @@ export function launchArenaMatch(matchId: string): ArenaMatch | null {
     moveText: getLiveMoveText(current.game),
     boardState: createLiveBoardState(current.game, nowValue),
     pauseState: normalizePauseState(current.pauseState),
+  }))
+}
+
+/**
+ * Cancel (quit) an open room. Host only, and only if no challenger has joined.
+ * Removes the match from the store so the wallet is released from active-match lock.
+ */
+export function cancelOpenRoom(matchId: string, hostIdentity?: string): boolean {
+  const identity = normalizePlayerIdentity(hostIdentity ?? currentUser.name)
+  const match = getArenaById(matchId)
+
+  if (!match) {
+    return false
+  }
+
+  if (match.challenger) {
+    return false
+  }
+
+  const hostName = normalizePlayerIdentity(match.host.name)
+  if (hostName !== identity) {
+    return false
+  }
+
+  mutateArenaStore((store) => ({
+    ...store,
+    matches: store.matches.filter((m) => m.id !== matchId),
+  }))
+  return true
+}
+
+/**
+ * Forfeit the match. Only seated players; allowed in Ready to Start or Live.
+ * Opponent wins; match becomes Finished; betting locks; wallet released.
+ */
+export function forfeitArenaMatch(matchId: string, forfeitingSide: ArenaSide): ArenaMatch | null {
+  const match = getArenaById(matchId)
+
+  if (!match) {
+    return null
+  }
+
+  if (!match.challenger) {
+    return null
+  }
+
+  if (match.status !== "Ready to Start" && match.status !== "Live") {
+    return null
+  }
+
+  const winner: ArenaSide = forfeitingSide === "host" ? "challenger" : "host"
+
+  return updateArenaMatch(matchId, () => ({
+    status: "Finished",
+    bettingStatus: "locked",
+    result: winner,
+    finishedAt: Date.now(),
+    statusText: winner === "host" ? `${match.host.name} wins by forfeit` : `${match.challenger?.name ?? "Challenger"} wins by forfeit`,
+    moveText: "Forfeit",
   }))
 }
 

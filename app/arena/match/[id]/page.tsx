@@ -1,13 +1,16 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import {
   appendRoomChat,
+  cancelOpenRoom,
   clampBetAmount,
   currentUser,
   DEFAULT_BET,
+  forfeitArenaMatch,
   formatArenaPhase,
   getArenaBettingSecondsLeft,
   getArenaById,
@@ -101,6 +104,19 @@ const COUNTDOWN_HYPE_LINES_POOL = [
   "📐 Angles and edges. Lock the side.",
   "🎯 Bullseye in 30. Aim now.",
   "🪁 Kites up. Match winds are blowing.",
+  "🧨 Fuse lit. Stand clear at zero.",
+  "🎬 Director says action in 30.",
+  "🦉 Wise owls have already locked in.",
+  "🍀 Luck is a factor. So is the timer.",
+  "⛵ Sails set. Match harbor in sight.",
+  "🔑 Key moment. Don't close the tab.",
+  "🎸 Guitar solo in 30. Metaphorically.",
+  "🪶 Light as a feather. Stakes are not.",
+  "🌵 Desert island energy. One match.",
+  "🦔 Hedge your bets? No. One side only.",
+  "🎩 Top hats optional. Focus required.",
+  "🪨 Steady hands win. Timer's ticking.",
+  "🌶️ Hot take: lock your side now.",
 ]
 
 type PersistedConnect4BoardState = {
@@ -604,6 +620,7 @@ function makeLiveFeed(match: ArenaMatch | null) {
 
 export default function ArenaMatchPage() {
   const params = useParams<{ id: string }>()
+  const router = useRouter()
   const matchId = typeof params?.id === "string" ? params.id : ""
 
   const [match, setMatch] = useState<ArenaMatch | null>(null)
@@ -620,6 +637,8 @@ export default function ArenaMatchPage() {
   const [, setTick] = useState(0)
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
+  const [showCancelRoomConfirm, setShowCancelRoomConfirm] = useState(false)
+  const [showForfeitConfirm, setShowForfeitConfirm] = useState(false)
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
 
@@ -1246,6 +1265,36 @@ export default function ArenaMatchPage() {
     }
   }
 
+  function handleCancelOpenRoom() {
+    setShowCancelRoomConfirm(false)
+    if (!matchId || !match) return
+    if (match.challenger) return
+    if (currentUser.name !== match.host.name) return
+    const done = cancelOpenRoom(matchId, currentUser.name)
+    if (done) {
+      setMessage("Room cancelled. You can create a new match from the Arena.")
+      router.push("/arena")
+    } else {
+      setMessage("Could not cancel room. Only the host can cancel an open room with no challenger.")
+    }
+  }
+
+  function handleForfeit() {
+    setShowForfeitConfirm(false)
+    if (!match || !currentUserSide) return
+    if (!challenger) return
+    if (match.status !== "Ready to Start" && match.status !== "Live") return
+    const updated = forfeitArenaMatch(match.id, currentUserSide)
+    if (updated) {
+      setMatch(updated)
+      const winnerName = currentUserSide === "host" ? challenger.name : match.host.name
+      setFeed((prev) => [`🏳️ You forfeited. ${winnerName} wins.`, ...prev].slice(0, 12))
+      setMessage(`You forfeited. ${winnerName} wins the match.`)
+    } else {
+      setMessage("Forfeit failed. Only seated players can forfeit in Ready to Start or Live.")
+    }
+  }
+
   function dropConnect4(col: number) {
     if (!match) return
 
@@ -1498,6 +1547,64 @@ export default function ArenaMatchPage() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.06),transparent_24%)]" />
       <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_20%,transparent_80%,rgba(255,255,255,0.02))]" />
 
+      {/* Cancel Open Room confirmation */}
+      {showCancelRoomConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCancelRoomConfirm(false)} />
+          <div className="relative w-full max-w-md rounded-[28px] border border-amber-300/25 bg-[#0c1210] p-6 shadow-2xl ring-1 ring-amber-300/10">
+            <p className="text-lg font-bold text-white">Cancel this open room?</p>
+            <p className="mt-2 text-sm text-white/70">
+              No one has joined yet. The room will be removed and your wallet will no longer be locked to this match.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCancelRoomConfirm(false)}
+                className="flex-1 rounded-2xl border border-white/20 bg-white/5 py-3 text-sm font-bold text-white transition hover:bg-white/10"
+              >
+                Keep Room
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelOpenRoom}
+                className="flex-1 rounded-2xl border border-amber-300/30 bg-amber-300/20 py-3 text-sm font-black text-amber-200 transition hover:bg-amber-300/30"
+              >
+                Yes, Cancel Room
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Forfeit confirmation */}
+      {showForfeitConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowForfeitConfirm(false)} />
+          <div className="relative w-full max-w-md rounded-[28px] border border-red-300/25 bg-[#0c1210] p-6 shadow-2xl ring-1 ring-red-300/10">
+            <p className="text-lg font-bold text-white">Forfeit this match?</p>
+            <p className="mt-2 text-sm text-white/70">
+              Your opponent will win and the match will end immediately. This cannot be undone.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowForfeitConfirm(false)}
+                className="flex-1 rounded-2xl border border-white/20 bg-white/5 py-3 text-sm font-bold text-white transition hover:bg-white/10"
+              >
+                Keep Playing
+              </button>
+              <button
+                type="button"
+                onClick={handleForfeit}
+                className="flex-1 rounded-2xl border border-red-300/30 bg-red-500/20 py-3 text-sm font-black text-red-200 transition hover:bg-red-500/30"
+              >
+                Yes, Forfeit
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="relative z-10 mx-auto max-w-[1700px] px-5 py-8 md:px-8 xl:px-10">
         <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-400/15 bg-emerald-400/8">
           <div className="whitespace-nowrap py-3 text-sm font-semibold text-emerald-200">
@@ -1579,7 +1686,7 @@ export default function ArenaMatchPage() {
           pausedByName={pausedByName}
         />
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)_400px] xl:grid-rows-[auto_auto_auto]">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)_minmax(420px,480px)] xl:grid-rows-[auto_auto_auto]">
           <aside className="order-2 space-y-6 xl:order-1 xl:sticky xl:top-6 xl:row-span-1 xl:self-start">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
               <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player One</p>
@@ -1620,6 +1727,38 @@ export default function ArenaMatchPage() {
                   <StatCard label="Win Rate" value={`${challenger.winRate}%`} />
                   <StatCard label="Last 10" value={challenger.last10} />
                 </div>
+              </div>
+            ) : null}
+
+            {match.status === "Waiting for Opponent" && isHostUser ? (
+              <div className="rounded-[28px] border border-amber-300/15 bg-amber-300/5 p-5 shadow-2xl">
+                <p className="text-sm uppercase tracking-[0.2em] text-amber-300/80">Open Room</p>
+                <p className="mt-2 text-sm text-white/70">
+                  No challenger yet. You can cancel this room to free your wallet and create a new match.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowCancelRoomConfirm(true)}
+                  className="mt-4 w-full rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm font-black text-amber-200 transition hover:bg-amber-300/20"
+                >
+                  Cancel Open Room
+                </button>
+              </div>
+            ) : null}
+
+            {isPlayer && challenger && (match.status === "Ready to Start" || match.status === "Live") ? (
+              <div className="rounded-[28px] border border-red-300/15 bg-red-500/5 p-5 shadow-2xl">
+                <p className="text-sm uppercase tracking-[0.2em] text-red-300/80">Forfeit</p>
+                <p className="mt-2 text-sm text-white/70">
+                  Forfeit this match. Your opponent will win and the match will end.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowForfeitConfirm(true)}
+                  className="mt-4 w-full rounded-2xl border border-red-300/25 bg-red-500/10 px-4 py-3 text-sm font-black text-red-200 transition hover:bg-red-500/20"
+                >
+                  Forfeit Match
+                </button>
               </div>
             ) : null}
 
@@ -1946,11 +2085,11 @@ export default function ArenaMatchPage() {
 
           {/* Right column: Live Arena Betting (top), Chat, Feed — visible above the fold on desktop */}
           <div className="order-1 space-y-6 xl:order-3 xl:col-start-3 xl:row-start-1 xl:sticky xl:top-6 xl:self-start">
-            <div className="rounded-[32px] border border-amber-300/20 bg-gradient-to-br from-[#0c1210] to-[#080c0a] p-6 shadow-[0_0_40px_rgba(255,200,80,0.12)] ring-1 ring-amber-300/10">
-              <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 rounded-[28px] border border-amber-300/20 bg-gradient-to-br from-[#0c1210] to-[#080c0a] p-5 shadow-[0_0_40px_rgba(255,200,80,0.12)] ring-1 ring-amber-300/10 sm:p-6">
+              <div className="mb-5 flex flex-col gap-3 sm:gap-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-amber-300/90">Live Arena Betting</p>
-                  <h3 className="mt-2 text-2xl font-black text-white sm:text-3xl">Spectator Market</h3>
+                  <h3 className="mt-1.5 text-xl font-black text-white sm:mt-2 sm:text-2xl xl:text-3xl">Spectator Market</h3>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1993,19 +2132,17 @@ export default function ArenaMatchPage() {
                 </div>
               ) : null}
 
-              <div className="mb-5 grid gap-4 lg:grid-cols-3">
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+              <div className="mb-5 grid gap-3 sm:gap-4">
+                <div className="min-w-0 rounded-2xl border border-white/8 bg-black/25 p-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">KasRoyal v1 Rule</div>
-                  <div className="mt-2 text-lg font-black text-white">One Side Per Match</div>
-                  <div className="mt-2 text-sm leading-6 text-white/65">
-                    You may back only one side in this arena. You can add to that position before market
-                    lock, but you cannot hedge both sides in the same match.
+                  <div className="mt-1.5 text-base font-black text-white sm:text-lg">One Side Per Match</div>
+                  <div className="mt-1.5 text-sm leading-relaxed text-white/65">
+                    Back one side only. Add to that position before lock; no hedging both sides.
                   </div>
                 </div>
-
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+                <div className="min-w-0 rounded-2xl border border-white/8 bg-black/25 p-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">Your Locked Side</div>
-                  <div className="mt-2 text-lg font-black text-emerald-300">
+                  <div className="mt-1.5 text-base font-black text-emerald-300 sm:text-lg">
                     {spectatorBetLockedForPlayers
                       ? "Player In Match"
                       : myExistingSide === "host"
@@ -2014,38 +2151,37 @@ export default function ArenaMatchPage() {
                           ? challenger?.name ?? "Opponent"
                           : "No Position Yet"}
                   </div>
-                  <div className="mt-2 text-sm leading-6 text-white/65">
+                  <div className="mt-1.5 text-sm leading-relaxed text-white/65">
                     {spectatorBetLockedForPlayers
-                      ? "Participants are not allowed to use the spectator pool in their own match."
+                      ? "Participants cannot use the spectator pool in their own match."
                       : myExistingSide
-                        ? "Add to this side before lock if you want more exposure."
+                        ? "Add to this side before lock for more exposure."
                         : "Select a side to open your position."}
                   </div>
                 </div>
-
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+                <div className="min-w-0 rounded-2xl border border-white/8 bg-black/25 p-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">Projected Profit</div>
-                  <div className="mt-2 text-lg font-black text-amber-300">
+                  <div className="mt-1.5 text-base font-black text-amber-300 sm:text-lg">
                     {spectatorBetLockedForPlayers
                       ? "Locked"
                       : selectedSide && !marketNeedsOpposingLiquidity
                         ? `${selectedProjectedProfit.toFixed(2)} KAS`
                         : "0.00 KAS"}
                   </div>
-                  <div className="mt-2 text-sm leading-6 text-white/65">
+                  <div className="mt-1.5 text-sm leading-relaxed text-white/65">
                     {spectatorBetLockedForPlayers
-                      ? "Join the spectator market from matches you are not playing in."
+                      ? "Spectate other matches to bet."
                       : selectedSide && marketNeedsOpposingLiquidity
-                        ? "Opposing bets have not formed yet. Profit appears only when liquidity exists on the other side."
-                        : "Profit comes from the losing side pool after rake, not from the house."}
+                        ? "Profit appears when opposing liquidity exists."
+                        : "Profit from losing side pool after rake."}
                   </div>
                 </div>
               </div>
 
-              <div className="grid gap-5 xl:grid-cols-2">
-                <div className="rounded-[28px] border border-amber-300/10 bg-black/25 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
+              <div className="grid gap-5">
+                <div className="min-w-0 rounded-[28px] border border-amber-300/10 bg-black/25 p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <div className="text-sm uppercase tracking-[0.16em] text-white/45">Back Host</div>
                       <div className="mt-2 text-3xl font-black">{match.host.name}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -2121,9 +2257,9 @@ export default function ArenaMatchPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[28px] border border-emerald-400/10 bg-black/25 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
+                <div className="min-w-0 rounded-[28px] border border-emerald-400/10 bg-black/25 p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <div className="text-sm uppercase tracking-[0.16em] text-white/45">Back Challenger</div>
                       <div className="mt-2 text-3xl font-black">
                         {challenger ? challenger.name : "Waiting Opponent"}
@@ -2360,7 +2496,7 @@ export default function ArenaMatchPage() {
           </div>
 
           {/* Room Chat — premium, prominent */}
-          <div className="order-4 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-6">
+          <div className="order-4 min-w-0 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-6">
             <div className="rounded-[28px] border border-emerald-300/15 bg-[#080c0a] p-5 shadow-[0_0_32px_rgba(0,255,200,0.06)] ring-1 ring-emerald-300/10">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
@@ -2423,7 +2559,7 @@ export default function ArenaMatchPage() {
           </div>
 
           {/* Live Feed */}
-          <div className="order-5 xl:col-start-3 xl:row-start-3">
+          <div className="order-5 min-w-0 xl:col-start-3 xl:row-start-3">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
               <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/45">Live Feed</div>
               <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto text-sm text-white/80">
