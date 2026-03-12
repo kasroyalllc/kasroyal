@@ -639,6 +639,53 @@ export default function ArenaMatchPage() {
   const connect4State = useMemo(() => getConnect4State(match), [match])
   const tttState = useMemo(() => getTttState(match), [match])
 
+  const connect4Winner = useMemo(
+    () => getConnect4Winner(connect4State.board),
+    [connect4State.board]
+  )
+  const tttWinner = useMemo(() => getTttWinner(tttState.board), [tttState.board])
+
+  useEffect(() => {
+    if (!match || match.status !== "Live" || !match.challenger) return
+
+    if (match.game === "Connect 4" && !connect4State.hasPersistedState) {
+      const updated = updateArenaMatch(match.id, (current) => ({
+        ...current,
+        boardState: {
+          mode: "connect4-live",
+          board: getEmptyConnect4Board(),
+          turn: "host",
+          turnDeadlineTs: Date.now() + CONNECT4_MOVE_SECONDS * 1000,
+        },
+        moveText: "New round",
+        statusText: `${match.host.name} to move`,
+      }))
+      if (updated) {
+        setMatch(updated)
+        setMessage("Fresh Connect 4 game initialized.")
+      }
+      return
+    }
+
+    if (match.game === "Tic-Tac-Toe" && !tttState.hasPersistedState) {
+      const updated = updateArenaMatch(match.id, (current) => ({
+        ...current,
+        boardState: {
+          mode: "ttt-live",
+          board: getEmptyTttBoard(),
+          turn: "X",
+          turnDeadlineTs: Date.now() + TTT_MOVE_SECONDS * 1000,
+        },
+        moveText: "New round",
+        statusText: `${match.host.name} to move`,
+      }))
+      if (updated) {
+        setMatch(updated)
+        setMessage("Fresh Tic-Tac-Toe game initialized.")
+      }
+    }
+  }, [match, connect4State.hasPersistedState, tttState.hasPersistedState])
+
   if (!matchId) {
     return (
       <main className="min-h-screen bg-[#050807] text-white">
@@ -706,8 +753,6 @@ export default function ArenaMatchPage() {
   const tttTurnDeadlineTs = tttState.turnDeadlineTs
   const hasPersistedTttState = tttState.hasPersistedState
 
-  const connect4Winner = useMemo(() => getConnect4Winner(connect4Board), [connect4Board])
-  const tttWinner = useMemo(() => getTttWinner(tttBoard), [tttBoard])
   const tttBoardFull = tttBoard.every((cell) => cell !== null)
 
   const isFinished = match.status === "Finished"
@@ -1327,27 +1372,6 @@ export default function ArenaMatchPage() {
     })
     setMessage("Chess preview reset.")
   }
-
-  useEffect(() => {
-    if (!match || match.status !== "Live" || !challenger) return
-
-    if (match.game === "Connect 4" && !hasPersistedConnect4State) {
-      persistConnect4Board(getEmptyConnect4Board(), "host", Date.now() + CONNECT4_MOVE_SECONDS * 1000, {
-        moveText: "New round",
-        statusText: `${match.host.name} to move`,
-      })
-      setMessage("Fresh Connect 4 game initialized.")
-      return
-    }
-
-    if (match.game === "Tic-Tac-Toe" && !hasPersistedTttState) {
-      persistTttBoard(getEmptyTttBoard(), "X", Date.now() + TTT_MOVE_SECONDS * 1000, {
-        moveText: "New round",
-        statusText: `${match.host.name} to move`,
-      })
-      setMessage("Fresh Tic-Tac-Toe game initialized.")
-    }
-  }, [match, challenger, hasPersistedConnect4State, hasPersistedTttState])
 
   const boardTurnLabel = isFinished
     ? "—"
