@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import {
+  appendRoomChat,
   clampBetAmount,
   currentUser,
   DEFAULT_BET,
@@ -14,6 +15,7 @@ import {
   getMultiplier,
   getProjectedState,
   getRankColors,
+  getRoomChat,
   getSideShare,
   getTicketsForMatch,
   getWinProbability,
@@ -29,12 +31,14 @@ import {
   readCurrentUserTickets,
   resumeArenaMatch,
   subscribeArenaMatches,
+  subscribeRoomChat,
   subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
   type PauseState,
   type PersistedBetTicket,
   type RankTier,
+  type RoomChatMessage,
   updateArenaMatch,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
@@ -45,13 +49,58 @@ type TttCell = "X" | "O" | null
 const CONNECT4_MOVE_SECONDS = 20
 const TTT_MOVE_SECONDS = 10
 
-const COUNTDOWN_HYPE_LINES = [
+const COUNTDOWN_HYPE_LINES_POOL = [
   "♞ Knights are stretching before battle...",
   "🔥 Crowd money is starting to heat up...",
   "💰 Last-minute action hitting the market...",
   "🎯 Smart money is circling the underdog...",
   "⚡ Bets are flying before lock...",
   "👑 Crowns up. Match ignition incoming...",
+  "🧠 The house always wins. Just kidding. Maybe.",
+  "🎲 Place your bets. No refunds after zero.",
+  "⏱️ T-minus something. Get ready.",
+  "🐴 Dark horse energy in the room.",
+  "💎 Diamond hands only past this point.",
+  "🚀 To the moon or to the lobby. Your call.",
+  "🎪 Pre-match circus. You're in it.",
+  "🍿 Best seat in the house. Don't leave.",
+  "🃏 Cards on the table in 30 seconds.",
+  "🏆 Someone's about to win. Might be you.",
+  "📢 Final call. Actually we have a timer.",
+  "🌶️ Spice level: about to go live.",
+  "🦁 Only the bold stay past zero.",
+  "⚔️ Swords up. Match is loading.",
+  "🎰 Odds are odds. Bet with your head.",
+  "🦅 Eagle eye on the board. Get set.",
+  "🐉 Dragon energy. Match incoming.",
+  "🛡️ Shields up. Countdown active.",
+  "🎺 Fanfare in 3… 2… 1…",
+  "🧲 Magnetic pull to the arena.",
+  "🌈 Fortune favors the ready.",
+  "🔮 Crystal ball says: place your side.",
+  "🪙 Coins in. No take-backs at zero.",
+  "🎭 Drama in 30. Stay tuned.",
+  "🦊 Smart foxes lock in now.",
+  "🐺 Wolves are circling. Join or watch.",
+  "🌙 Midnight energy. Match at dawn.",
+  "☕ Last sips before the board drops.",
+  "🪨 Rock solid? Lock your side.",
+  "✂️ Paper beats… actually we do board games.",
+  "🃏 Joker's wild. Timer's not.",
+  "🎪 Step right up. Timer's running.",
+  "🔔 Bell's about to ring. Get set.",
+  "📣 Hype train. All aboard.",
+  "🛒 Last chance aisle. Betting closes at zero.",
+  "🧩 Pieces moving soon. Stay put.",
+  "🎨 Masterpiece in progress. You're in it.",
+  "🏅 Medals not handed out yet. Compete.",
+  "🪵 Logs on the fire. Match is heating up.",
+  "🌊 Wave of action incoming.",
+  "🦋 Butterfly effect. Your bet matters.",
+  "🔬 Lab conditions. Fair play only.",
+  "📐 Angles and edges. Lock the side.",
+  "🎯 Bullseye in 30. Aim now.",
+  "🪁 Kites up. Match winds are blowing.",
 ]
 
 type PersistedConnect4BoardState = {
@@ -569,6 +618,8 @@ export default function ArenaMatchPage() {
   const [poolFlash, setPoolFlash] = useState<ArenaSide | null>(null)
   const [countdownLineIndex, setCountdownLineIndex] = useState(0)
   const [, setTick] = useState(0)
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
+  const [chatInput, setChatInput] = useState("")
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
 
@@ -630,7 +681,7 @@ export default function ArenaMatchPage() {
     if (!match || match.status !== "Ready to Start") return
 
     const interval = window.setInterval(() => {
-      setCountdownLineIndex((value) => (value + 1) % COUNTDOWN_HYPE_LINES.length)
+      setCountdownLineIndex((value) => value + 1)
     }, 2200)
 
     return () => window.clearInterval(interval)
@@ -644,6 +695,25 @@ export default function ArenaMatchPage() {
     [connect4State.board]
   )
   const tttWinner = useMemo(() => getTttWinner(tttState.board), [tttState.board])
+
+  const countdownLines = useMemo(() => {
+    const base = [...COUNTDOWN_HYPE_LINES_POOL]
+    let seed = 0
+    for (let i = 0; i < matchId.length; i++) seed += matchId.charCodeAt(i)
+    const rng = () => (seed = (seed * 9301 + 49297) % 233280) / 233280
+    for (let i = base.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[base[i], base[j]] = [base[j], base[i]]
+    }
+    return base
+  }, [matchId])
+
+  useEffect(() => {
+    if (!matchId) return
+    setChatMessages(getRoomChat(matchId))
+    const unsub = subscribeRoomChat(matchId, () => setChatMessages(getRoomChat(matchId)))
+    return unsub
+  }, [matchId])
 
   useEffect(() => {
     if (!match || match.status !== "Live" || !match.challenger) return
@@ -1420,7 +1490,8 @@ export default function ArenaMatchPage() {
                   : "Live"
               : "Preview"
 
-  const countdownLine = COUNTDOWN_HYPE_LINES[countdownLineIndex]
+  const countdownLine =
+    countdownLines.length > 0 ? countdownLines[countdownLineIndex % countdownLines.length] : "Match starting soon…"
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
@@ -2288,6 +2359,58 @@ export default function ArenaMatchPage() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Room Chat</div>
+                  <div className="mt-3 max-h-[200px] space-y-2 overflow-y-auto text-sm">
+                    {chatMessages.length === 0 ? (
+                      <div className="rounded-xl bg-white/[0.03] px-3 py-3 text-white/45">
+                        No messages yet. Say something!
+                      </div>
+                    ) : (
+                      chatMessages.map((msg) => (
+                        <div key={msg.id} className="rounded-xl bg-white/[0.03] px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-emerald-300/90">{msg.user}</span>
+                            <span className="text-[10px] uppercase tracking-wider text-white/40">
+                              {new Date(msg.ts).toLocaleTimeString(undefined, {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <div className="mt-1 break-words text-white/85">{msg.text}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <form
+                    className="mt-3 flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const text = chatInput.trim()
+                      if (!text) return
+                      appendRoomChat(matchId, { user: currentUser.name, text })
+                      setChatInput("")
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Type a message…"
+                      maxLength={500}
+                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim()}
+                      className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-4 py-2.5 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Send
+                    </button>
+                  </form>
                 </div>
               </div>
             </div>

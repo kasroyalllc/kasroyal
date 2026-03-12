@@ -22,16 +22,15 @@ export function getClosingTone(seconds: number) {
   return "open"
 }
 
-export function getGameBettingWindowSeconds(game: GameType) {
-  if (game === "Chess Duel") return 60
-  if (game === "Connect 4") return 25
-  return 12
+/** Universal pre-match countdown: same 30s for every game (betting/hype window only). */
+export const PRE_MATCH_COUNTDOWN_SECONDS = 30
+
+export function getGameBettingWindowSeconds(_game?: GameType) {
+  return PRE_MATCH_COUNTDOWN_SECONDS
 }
 
-export function getGameBettingWindowLabel(game: GameType) {
-  if (game === "Chess Duel") return "Betting window: 60s before start"
-  if (game === "Connect 4") return "Betting window: 25s before start"
-  return "Betting window: 12s before start"
+export function getGameBettingWindowLabel(_game?: GameType) {
+  return "Betting window: 30s before start"
 }
 
 export function getArenaBettingSecondsLeft(match: ArenaMatch, now = Date.now()) {

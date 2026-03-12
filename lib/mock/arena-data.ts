@@ -31,6 +31,7 @@ import {
   getGameBettingWindowLabel,
   getGameBettingWindowSeconds,
   normalizeArenaMatches,
+  PRE_MATCH_COUNTDOWN_SECONDS,
 } from "@/lib/engine/lifecycle"
 import { gameDisplayOrder } from "@/lib/engine/featured-markets"
 import {
@@ -90,6 +91,13 @@ export type PersistedBetTicket = {
 }
 
 export type BetSettlementState = "pending" | "won" | "lost" | "refunded" | "archived"
+
+export type RoomChatMessage = {
+  id: string
+  user: string
+  text: string
+  ts: number
+}
 
 export type BetSettlement = {
   ticket: PersistedBetTicket
@@ -171,6 +179,8 @@ const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
 const SPECTATOR_TICKETS_EVENT = "kasroyal-spectator-tickets-updated"
 const ARENA_STORE_EVENT = "kasroyal-arena-store-updated"
 const ARENA_STORE_CHANNEL = "kasroyal-arena-sync"
+const ROOM_CHAT_STORAGE_KEY = "kasroyal_room_chat_v1"
+const ROOM_CHAT_EVENT = "kasroyal-room-chat-updated"
 
 export const MAX_PAUSES_PER_SIDE = 2
 export const PAUSE_DURATION_SECONDS = 30
@@ -687,6 +697,9 @@ function resolveTimedOutLiveMatch(match: ArenaMatch, nowTs: number): ArenaMatch 
   return normalized
 }
 
+/** Universal pre-match countdown: 30s for all games. Countdown and move timer never overlap. */
+const ARENA_COUNTDOWN_SECONDS = PRE_MATCH_COUNTDOWN_SECONDS
+
 function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMatch[] {
   return normalizeArenaMatches(
     matches.map((originalMatch) => {
@@ -705,26 +718,30 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
           const bettingWindowSeconds =
             typeof match.bettingWindowSeconds === "number" && Number.isFinite(match.bettingWindowSeconds)
               ? match.bettingWindowSeconds
-              : getGameBettingWindowSeconds(match.game)
+              : ARENA_COUNTDOWN_SECONDS
           const bettingClosesAt = match.bettingClosesAt ?? countdownStartedAt + bettingWindowSeconds * 1000
+          const countdownSecondsLeft = Math.max(0, Math.ceil((bettingClosesAt - nowTs) / 1000))
 
           match = {
             ...match,
             marketVisibility: "featured",
             isFeaturedMarket: true,
-            bettingStatus: bettingClosesAt > nowTs ? "open" : "locked",
+            bettingWindowSeconds: ARENA_COUNTDOWN_SECONDS,
+            bettingStatus: countdownSecondsLeft > 0 ? "open" : "locked",
             seatedAt: match.seatedAt ?? countdownStartedAt,
             countdownStartedAt,
             bettingClosesAt,
             startedAt: match.startedAt,
             boardState:
-              match.boardState && !("turnDeadlineTs" in (match.boardState as object))
+              match.boardState && typeof match.boardState === "object" && !("turnDeadlineTs" in match.boardState)
                 ? createWaitingBoardState(match.game)
-                : match.boardState ?? createWaitingBoardState(match.game),
-            statusText: bettingClosesAt > nowTs ? "Countdown active" : "Starting match",
+                : match.boardState && typeof match.boardState === "object" && "turnDeadlineTs" in match.boardState
+                  ? match.boardState
+                  : createWaitingBoardState(match.game),
+            statusText: countdownSecondsLeft > 0 ? "Countdown active" : "Starting match",
             moveText:
-              bettingClosesAt > nowTs
-                ? `Starts in ${formatTime(Math.max(0, Math.ceil((bettingClosesAt - nowTs) / 1000)))}`
+              countdownSecondsLeft > 0
+                ? `Starts in ${formatTime(countdownSecondsLeft)}`
                 : "Launching live room",
           }
 
@@ -966,7 +983,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
           moveText: "17... Qe7",
           roundScore: { host: 0, challenger: 1 },
           spectatorPool: { host: 31, challenger: 42 },
-          bettingWindowSeconds: 60,
+          bettingWindowSeconds: PRE_MATCH_COUNTDOWN_SECONDS,
           result: null,
           moveHistory: ["1. e4", "1... c5", "2. Nf3", "2... d6", "17... Qe7"],
           boardState: {
@@ -1011,7 +1028,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
           moveText: "Starts in 0:09",
           roundScore: { host: 0, challenger: 0 },
           spectatorPool: { host: 14, challenger: 27 },
-          bettingWindowSeconds: 25,
+          bettingWindowSeconds: PRE_MATCH_COUNTDOWN_SECONDS,
           result: null,
           moveHistory: [],
           boardState: createWaitingBoardState("Connect 4"),
@@ -1043,7 +1060,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
           moveText: "Waiting for join",
           roundScore: { host: 0, challenger: 0 },
           spectatorPool: { host: 0, challenger: 0 },
-          bettingWindowSeconds: 12,
+          bettingWindowSeconds: PRE_MATCH_COUNTDOWN_SECONDS,
           result: null,
           moveHistory: [],
           boardState: createWaitingBoardState("Tic-Tac-Toe"),
@@ -1413,26 +1430,19 @@ function startArenaLifecycleTicker() {
 
   window.setInterval(() => {
     const nowTs = Date.now()
-
     const current = readArenaStore()
-    const nextMatches = applyBetsToMatches(current.matches, current.tickets)
 
-    const before = JSON.stringify(current.matches)
-    const after = JSON.stringify(nextMatches)
+    persistStore({
+      ...current,
+      updatedAt: nowTs,
+    })
 
-    if (before !== after) {
-      persistStore({
-        ...current,
-        matches: nextMatches,
-        updatedAt: nowTs,
-      })
-
-      for (const updatedMatch of nextMatches) {
-        const previous = current.matches.find((item) => item.id === updatedMatch.id)
-        if (!previous) continue
-        if (previous.status !== updatedMatch.status) {
-          void syncMatchToSupabase(updatedMatch)
-        }
+    const nextMatches = readArenaStore().matches
+    for (const updatedMatch of nextMatches) {
+      const previous = current.matches.find((item) => item.id === updatedMatch.id)
+      if (!previous) continue
+      if (previous.status !== updatedMatch.status) {
+        void syncMatchToSupabase(updatedMatch)
       }
     }
 
@@ -1607,6 +1617,98 @@ export function subscribeSpectatorTickets(callback: (tickets: PersistedBetTicket
   return () => {
     window.removeEventListener(SPECTATOR_TICKETS_EVENT, handler)
     window.removeEventListener(ARENA_STORE_EVENT, handler)
+    window.removeEventListener("storage", storageHandler)
+    channel?.removeEventListener("message", broadcastHandler)
+  }
+}
+
+function readRoomChatStore(): Record<string, RoomChatMessage[]> {
+  if (!isBrowser()) return {}
+  try {
+    const raw = window.localStorage.getItem(ROOM_CHAT_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== "object") return {}
+    const out: Record<string, RoomChatMessage[]> = {}
+    for (const [matchId, arr] of Object.entries(parsed)) {
+      if (typeof matchId !== "string" || !Array.isArray(arr)) continue
+      const list = arr
+        .filter(
+          (m): m is RoomChatMessage =>
+            m != null &&
+            typeof m === "object" &&
+            typeof (m as RoomChatMessage).id === "string" &&
+            typeof (m as RoomChatMessage).user === "string" &&
+            typeof (m as RoomChatMessage).text === "string" &&
+            typeof (m as RoomChatMessage).ts === "number"
+        )
+        .sort((a, b) => a.ts - b.ts)
+      out[matchId] = list
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeRoomChatStore(store: Record<string, RoomChatMessage[]>, updatedMatchId?: string) {
+  if (!isBrowser()) return
+  try {
+    window.localStorage.setItem(ROOM_CHAT_STORAGE_KEY, JSON.stringify(store))
+    window.dispatchEvent(
+      new CustomEvent(ROOM_CHAT_EVENT, { detail: updatedMatchId != null ? { matchId: updatedMatchId } : {} })
+    )
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: ROOM_CHAT_STORAGE_KEY, newValue: JSON.stringify(store) })
+    )
+    const channel = getBroadcastChannel()
+    channel?.postMessage({ type: "room-chat-updated", matchId: updatedMatchId })
+  } catch {
+    // ignore
+  }
+}
+
+export function getRoomChat(matchId: string): RoomChatMessage[] {
+  const store = readRoomChatStore()
+  return store[matchId] ?? []
+}
+
+export function appendRoomChat(
+  matchId: string,
+  message: { user: string; text: string }
+): RoomChatMessage {
+  const store = readRoomChatStore()
+  const list = store[matchId] ?? []
+  const ts = Date.now()
+  const id = `chat-${matchId}-${ts}-${Math.random().toString(36).slice(2, 9)}`
+  const msg: RoomChatMessage = { id, user: message.user, text: message.text.trim().slice(0, 500), ts }
+  store[matchId] = [...list, msg]
+  writeRoomChatStore(store, matchId)
+  return msg
+}
+
+export function subscribeRoomChat(matchId: string, callback: () => void): () => void {
+  const handler = (e: Event) => {
+    const detail = (e as CustomEvent<{ matchId?: string }>)?.detail
+    if (detail?.matchId !== undefined && detail.matchId !== matchId) return
+    callback()
+  }
+  const storageHandler = (event: StorageEvent) => {
+    if (event.key !== ROOM_CHAT_STORAGE_KEY) return
+    callback()
+  }
+  const broadcastHandler = (e: MessageEvent) => {
+    const data = e.data
+    if (data?.type === "room-chat-updated" && (data.matchId == null || data.matchId === matchId)) {
+      callback()
+    }
+  }
+  window.addEventListener(ROOM_CHAT_EVENT, handler)
+  window.addEventListener("storage", storageHandler)
+  const channel = getBroadcastChannel()
+  channel?.addEventListener("message", broadcastHandler)
+  return () => {
+    window.removeEventListener(ROOM_CHAT_EVENT, handler)
     window.removeEventListener("storage", storageHandler)
     channel?.removeEventListener("message", broadcastHandler)
   }
