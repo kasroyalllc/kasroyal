@@ -414,9 +414,100 @@ function emitStorageEvent(name: string) {
   window.dispatchEvent(new CustomEvent(name))
 }
 
+function createLiveBoardState(game: GameType) {
+  if (game === "Connect 4") {
+    return {
+      mode: "connect4-live",
+      board: Array.from({ length: 6 }, () =>
+        Array.from({ length: 7 }, () => null as ArenaSide | null)
+      ),
+      turn: "host" as ArenaSide,
+      turnDeadlineTs: Date.now() + 20_000,
+    }
+  }
+
+  if (game === "Tic-Tac-Toe") {
+    return {
+      mode: "ttt-live",
+      board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
+      turn: "X" as "X" | "O",
+      turnDeadlineTs: Date.now() + 10_000,
+    }
+  }
+
+  return {
+    mode: "chess-preview",
+    fen: "start",
+  }
+}
+
+function getLiveMoveText(game: GameType) {
+  if (game === "Chess Duel") return "1. e4"
+  if (game === "Connect 4") return "Opening disc dropped"
+  return "Opening move"
+}
+
+function getLiveStatusText(
+  game: GameType,
+  hostName: string,
+  challengerName?: string | null
+) {
+  if (game === "Connect 4") {
+    return `${hostName} to move`
+  }
+
+  if (game === "Tic-Tac-Toe") {
+    return `${hostName} to move`
+  }
+
+  return challengerName ? `${hostName} vs ${challengerName} live` : "Match is live"
+}
+
+function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMatch[] {
+  return normalizeArenaMatches(
+    matches.map((match) => {
+      const shouldAutoLaunch =
+        !!match.challenger &&
+        match.status === "Ready to Start" &&
+        !!match.bettingClosesAt &&
+        match.bettingClosesAt <= nowTs
+
+      if (!shouldAutoLaunch) {
+        return match
+      }
+
+      return {
+        ...match,
+        status: "Live" as ArenaStatus,
+        bettingStatus: "locked",
+        marketVisibility: "featured",
+        isFeaturedMarket: true,
+        seatedAt: match.seatedAt ?? nowTs,
+        countdownStartedAt: match.countdownStartedAt ?? nowTs,
+        bettingClosesAt: match.bettingClosesAt ?? nowTs,
+        startedAt: match.startedAt ?? nowTs,
+        finishedAt: undefined,
+        statusText: getLiveStatusText(
+          match.game,
+          match.host.name,
+          match.challenger?.name ?? null
+        ),
+        moveText: getLiveMoveText(match.game),
+        boardState: createLiveBoardState(match.game),
+      }
+    }),
+    nowTs
+  )
+}
+
 function persistMatches(matches: ArenaMatch[]) {
-  arenaMatchesCache = normalizeArenaMatches(matches, Date.now())
+  arenaMatchesCache = applyArenaLifecycle(
+    normalizeArenaMatches(matches, Date.now()),
+    Date.now()
+  )
+
   if (!isBrowser()) return
+
   window.localStorage.setItem(
     ARENA_MATCHES_STORAGE_KEY,
     JSON.stringify(arenaMatchesCache)
@@ -436,11 +527,17 @@ function persistTickets(tickets: PersistedBetTicket[]) {
 
 function loadMatchesFromLocalStorage() {
   if (!isBrowser()) return arenaMatchesCache
+
   const stored = safeJsonParse<ArenaMatch[]>(
     window.localStorage.getItem(ARENA_MATCHES_STORAGE_KEY),
     initialArenaMatches
   )
-  arenaMatchesCache = normalizeArenaMatches(stored, Date.now())
+
+  arenaMatchesCache = applyArenaLifecycle(
+    normalizeArenaMatches(stored, Date.now()),
+    Date.now()
+  )
+
   return arenaMatchesCache
 }
 
@@ -669,7 +766,9 @@ function applyBetsToMatches(
       return {
         ...match,
         bettingStatus:
-          match.status === "Ready to Start"
+          match.status === "Ready to Start" &&
+          !!match.bettingClosesAt &&
+          match.bettingClosesAt > Date.now()
             ? "open"
             : match.status === "Live"
               ? "locked"
@@ -761,6 +860,32 @@ if (isBrowser()) {
 export function readArenaMatches() {
   if (isBrowser()) {
     loadMatchesFromLocalStorage()
+  }
+
+  const previousMatches = [...arenaMatchesCache]
+  const before = JSON.stringify(previousMatches)
+  const next = applyArenaLifecycle([...arenaMatchesCache], Date.now())
+  const after = JSON.stringify(next)
+
+  if (before !== after) {
+    arenaMatchesCache = next
+
+    if (isBrowser()) {
+      window.localStorage.setItem(
+        ARENA_MATCHES_STORAGE_KEY,
+        JSON.stringify(arenaMatchesCache)
+      )
+      emitStorageEvent(ARENA_MATCHES_EVENT)
+    }
+
+    for (const updatedMatch of next) {
+      const previous = previousMatches.find((item) => item.id === updatedMatch.id)
+      if (!previous) continue
+
+      if (previous.status !== updatedMatch.status) {
+        void syncMatchToSupabase(updatedMatch)
+      }
+    }
   }
 
   return normalizeArenaMatches([...arenaMatchesCache], Date.now())
@@ -1058,13 +1183,14 @@ export function launchArenaMatch(matchId: string): ArenaMatch | null {
     countdownStartedAt: current.countdownStartedAt ?? nowValue,
     bettingClosesAt: nowValue,
     startedAt: nowValue,
-    statusText: "Match is live",
-    moveText:
-      current.game === "Chess Duel"
-        ? "1. e4"
-        : current.game === "Connect 4"
-          ? "Opening disc dropped"
-          : "Opening move",
+    finishedAt: undefined,
+    statusText: getLiveStatusText(
+      current.game,
+      current.host.name,
+      current.challenger?.name ?? null
+    ),
+    moveText: getLiveMoveText(current.game),
+    boardState: createLiveBoardState(current.game),
   }))
 }
 
