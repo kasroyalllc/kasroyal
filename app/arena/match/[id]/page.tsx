@@ -694,6 +694,7 @@ export default function ArenaMatchPage() {
   const betAmount = clampBetAmount(Number(betAmountInput))
   const challenger = match.challenger
   const pauseState = normalizePauseState(match.pauseState)
+  const spectatorPool = match.spectatorPool ?? { host: 0, challenger: 0 }
 
   const connect4Board = connect4State.board
   const connect4Turn = connect4State.turn
@@ -731,7 +732,7 @@ export default function ArenaMatchPage() {
         : "A player"
 
   const totalPlayerPot = match.playerPot
-  const totalSpectatorPool = match.spectatorPool.host + match.spectatorPool.challenger
+  const totalSpectatorPool = spectatorPool.host + spectatorPool.challenger
   const netSpectatorPool = totalSpectatorPool * (1 - HOUSE_RAKE)
   const bettingSecondsLeft = getArenaBettingSecondsLeft(match)
   const marketOpen = isArenaBettable(match)
@@ -840,34 +841,34 @@ export default function ArenaMatchPage() {
     : { leftLabel: "Waiting", rightLabel: "Waiting" }
 
   const hostCurrentMultiplier = getMultiplier(
-    match.spectatorPool.host,
-    match.spectatorPool.challenger,
+    spectatorPool.host,
+    spectatorPool.challenger,
     "host"
   )
   const challengerCurrentMultiplier = getMultiplier(
-    match.spectatorPool.host,
-    match.spectatorPool.challenger,
+    spectatorPool.host,
+    spectatorPool.challenger,
     "challenger"
   )
 
   const hostProjection = getProjectedState(
-    match.spectatorPool.host,
-    match.spectatorPool.challenger,
+    spectatorPool.host,
+    spectatorPool.challenger,
     "host",
     betAmount
   )
 
   const challengerProjection = getProjectedState(
-    match.spectatorPool.host,
-    match.spectatorPool.challenger,
+    spectatorPool.host,
+    spectatorPool.challenger,
     "challenger",
     betAmount
   )
 
-  const hostShare = getSideShare(match.spectatorPool.host, match.spectatorPool.challenger, "host")
+  const hostShare = getSideShare(spectatorPool.host, spectatorPool.challenger, "host")
   const challengerShare = getSideShare(
-    match.spectatorPool.host,
-    match.spectatorPool.challenger,
+    spectatorPool.host,
+    spectatorPool.challenger,
     "challenger"
   )
 
@@ -890,9 +891,9 @@ export default function ArenaMatchPage() {
 
   const oppositePoolForSelectedSide =
     selectedSide === "host"
-      ? match.spectatorPool.challenger
+      ? spectatorPool.challenger
       : selectedSide === "challenger"
-        ? match.spectatorPool.host
+        ? spectatorPool.host
         : 0
 
   const selectedProjectedProfit =
@@ -990,7 +991,7 @@ export default function ArenaMatchPage() {
     setSelectedSide(side)
 
     const sideName = side === "host" ? match.host.name : challenger?.name ?? "Opponent"
-    const oppositePool = side === "host" ? match.spectatorPool.challenger : match.spectatorPool.host
+    const oppositePool = side === "host" ? spectatorPool.challenger : spectatorPool.host
 
     if (oppositePool <= 0) {
       setMessage(
@@ -1055,7 +1056,7 @@ export default function ArenaMatchPage() {
       const selectedPlayer = selectedSide === "host" ? match.host.name : challenger.name
       const projection = selectedSide === "host" ? hostProjection : challengerProjection
       const oppositePool =
-        selectedSide === "host" ? match.spectatorPool.challenger : match.spectatorPool.host
+        selectedSide === "host" ? spectatorPool.challenger : spectatorPool.host
 
       setFeed((prev) => {
         const whale = betAmount >= WHALE_BET_THRESHOLD
@@ -1992,7 +1993,7 @@ export default function ArenaMatchPage() {
                     >
                       <div className="text-xs uppercase tracking-[0.16em] text-white/50">Current Pool</div>
                       <div className="mt-2 text-3xl font-black text-amber-300">
-                        {match.spectatorPool.host.toFixed(0)} KAS
+                        {spectatorPool.host.toFixed(0)} KAS
                       </div>
                       <div className="mt-4 text-xs uppercase tracking-[0.16em] text-white/50">Multiplier</div>
                       <div className="mt-1 text-2xl font-black">{hostCurrentMultiplier.toFixed(2)}x</div>
@@ -2072,7 +2073,7 @@ export default function ArenaMatchPage() {
                     >
                       <div className="text-xs uppercase tracking-[0.16em] text-white/50">Current Pool</div>
                       <div className="mt-2 text-3xl font-black text-emerald-300">
-                        {match.spectatorPool.challenger.toFixed(0)} KAS
+                        {spectatorPool.challenger.toFixed(0)} KAS
                       </div>
                       <div className="mt-4 text-xs uppercase tracking-[0.16em] text-white/50">Multiplier</div>
                       <div className="mt-1 text-2xl font-black">{challengerCurrentMultiplier.toFixed(2)}x</div>

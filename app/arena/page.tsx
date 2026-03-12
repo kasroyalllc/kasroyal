@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import {
   autoFillArenaMatch,
@@ -432,6 +433,7 @@ function MatchCard({
 }
 
 export default function ArenaPage() {
+  const router = useRouter()
   const [matches, setMatches] = useState<ArenaMatch[]>([])
   const [selectedGame, setSelectedGame] = useState<GameType>("Connect 4")
   const [wagerInput, setWagerInput] = useState("5")
@@ -616,7 +618,7 @@ export default function ArenaPage() {
       setBestOf(1)
       setCustomMode(false)
 
-      window.location.href = `/arena/match/${created.id}`
+      router.push(`/arena/match/${created.id}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to create arena.")
     }
@@ -639,7 +641,7 @@ export default function ArenaPage() {
       setMatches(readArenaMatches())
       setOwnershipFilter("Mine")
       setMessage(`Joined ${joined.game}. Countdown should now begin automatically.`)
-      window.location.href = `/arena/match/${matchId}`
+      router.push(`/arena/match/${matchId}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to join arena.")
     }
@@ -659,7 +661,7 @@ export default function ArenaPage() {
       setMessage(
         `Dev fill complete: ${filled.challenger?.name ?? "Mock challenger"} joined ${filled.game}.`
       )
-      window.location.href = `/arena/match/${matchId}`
+      router.push(`/arena/match/${matchId}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to fill opponent.")
     }
@@ -708,6 +710,18 @@ export default function ArenaPage() {
             </div>
           </div>
         </div>
+
+        {activeWalletMatch ? (
+          <div className="mb-6">
+            <Link
+              href={`/arena/match/${activeWalletMatch.id}`}
+              className="flex items-center justify-center gap-3 rounded-[24px] border-2 border-emerald-400/40 bg-emerald-400/20 px-6 py-4 text-lg font-black text-emerald-100 shadow-[0_0_40px_rgba(0,255,200,0.12)] transition hover:border-emerald-300/50 hover:bg-emerald-400/30 hover:text-emerald-50"
+            >
+              <span className="text-2xl">🎮</span>
+              Return to Active Game — {activeWalletMatch.game} ({activeWalletMatch.status})
+            </Link>
+          </div>
+        ) : null}
 
         {priorityResumeMatch ? <ResumeMatchBanner match={priorityResumeMatch} /> : null}
 

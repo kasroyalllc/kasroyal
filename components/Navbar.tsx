@@ -3,6 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { currentUser, getWalletActiveMatch } from "@/lib/mock/arena-data"
 import {
   clearAppWalletConnectionState,
   clearStoredSelectedWalletKey,
@@ -179,6 +180,12 @@ export default function Navbar() {
     spectators: 0,
   })
 
+  const [activeMatch, setActiveMatch] = useState<{
+    id: string
+    game: string
+    status: string
+  } | null>(null)
+
   const walletMenuRef = useRef<HTMLDivElement | null>(null)
   const walletButtonRef = useRef<HTMLButtonElement | null>(null)
 
@@ -285,6 +292,9 @@ export default function Navbar() {
         volume,
         spectators,
       })
+
+      const active = getWalletActiveMatch(currentUser.name)
+      setActiveMatch(active ? { id: active.id, game: active.game, status: active.status } : null)
     }
 
     const handleProfileChanged = () => {
@@ -470,17 +480,29 @@ export default function Navbar() {
             </div>
 
             <div className="hidden flex-1 justify-center xl:flex">
-              <div className="rounded-[30px] border border-white/8 bg-white/[0.03] px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                <nav className="flex items-center justify-center gap-3">
-                  {navItems.map((item) => (
-                    <DesktopNavLink
-                      key={item.href}
-                      href={item.href}
-                      label={item.label}
-                      onNavigate={() => setWalletMenuOpen(false)}
-                    />
-                  ))}
-                </nav>
+              <div className="flex items-center justify-center gap-3">
+                {activeMatch ? (
+                  <Link
+                    href={`/arena/match/${activeMatch.id}`}
+                    onClick={() => setWalletMenuOpen(false)}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/30 bg-emerald-400/15 px-4 py-3 text-sm font-bold text-emerald-200 shadow-[0_8px_24px_rgba(0,0,0,0.15)] transition hover:border-emerald-300/40 hover:bg-emerald-400/25 hover:text-emerald-100"
+                  >
+                    <span className="text-base">🎮</span>
+                    Return to Active Game
+                  </Link>
+                ) : null}
+                <div className="rounded-[30px] border border-white/8 bg-white/[0.03] px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                  <nav className="flex items-center justify-center gap-3">
+                    {navItems.map((item) => (
+                      <DesktopNavLink
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        onNavigate={() => setWalletMenuOpen(false)}
+                      />
+                    ))}
+                  </nav>
+                </div>
               </div>
             </div>
 
@@ -684,7 +706,17 @@ export default function Navbar() {
             <LiveStatPill label="Spectators" value={`${arenaStats.spectators}`} tone="sky" />
           </div>
 
-          <div className="relative mx-auto mt-3 flex max-w-[1460px] items-center justify-center gap-2 overflow-x-auto pb-1 xl:hidden">
+          <div className="relative mx-auto mt-3 flex max-w-[1460px] flex-wrap items-center justify-center gap-2 overflow-x-auto pb-1 xl:hidden">
+            {activeMatch ? (
+              <Link
+                href={`/arena/match/${activeMatch.id}`}
+                onClick={() => setWalletMenuOpen(false)}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-400/30 bg-emerald-400/15 px-3 py-2 text-xs font-bold text-emerald-200"
+              >
+                <span>🎮</span>
+                Return to Active Game
+              </Link>
+            ) : null}
             {navItems.map((item) => (
               <Link
                 key={item.href}

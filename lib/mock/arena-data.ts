@@ -1676,12 +1676,14 @@ export function createArenaMatch(input: {
       mapped.challengerSideLabel = labels.challenger
       mapped.pauseState = createInitialPauseState()
 
+      // Keep the temp id so the URL /arena/match/${localMatch.id} still resolves
       mutateArenaStore((store) => {
-        const withoutTemp = store.matches.filter((match) => match.id !== localMatch.id)
-        return {
-          ...store,
-          matches: [mapped, ...withoutTemp],
-        }
+        const idx = store.matches.findIndex((m) => m.id === localMatch.id)
+        if (idx < 0) return store
+        const merged: ArenaMatch = { ...mapped, id: localMatch.id }
+        const next = [...store.matches]
+        next[idx] = merged
+        return { ...store, matches: next }
       })
     } catch (error) {
       console.error("KasRoyal createArenaMatch background sync failed", error)
