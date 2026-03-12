@@ -196,6 +196,95 @@ function CountdownOverlay({
   )
 }
 
+function RoomPhaseBanner({
+  status,
+  isPlayer,
+  isHostUser,
+  isChallengerUser,
+  bettingSecondsLeft,
+  hostName,
+  challengerName,
+}: {
+  status: ArenaMatch["status"]
+  isPlayer: boolean
+  isHostUser: boolean
+  isChallengerUser: boolean
+  bettingSecondsLeft: number
+  hostName: string
+  challengerName: string
+}) {
+  let tone =
+    "border-white/10 bg-white/[0.04] text-white"
+  let eyebrow = "Room Status"
+  let title = "Arena room loaded"
+  let body = "Follow the match state here."
+
+  if (status === "Waiting for Opponent") {
+    tone = "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+    eyebrow = "Waiting Room"
+    title = isHostUser ? "Your lobby is open" : "This room is waiting for an opponent"
+    body = isHostUser
+      ? "You created this match. Stay ready here or return to the lobby until another player joins."
+      : `Once another player joins ${hostName}, this room will move into countdown automatically.`
+  }
+
+  if (status === "Ready to Start") {
+    tone = "border-fuchsia-300/20 bg-fuchsia-300/10 text-fuchsia-100"
+    eyebrow = "Ready To Start"
+    title = isHostUser
+      ? `${challengerName} joined your room`
+      : isChallengerUser
+        ? "You are seated and ready"
+        : `${hostName} vs ${challengerName} is about to begin`
+    body = isPlayer
+      ? `You are already in the correct room. Stay here — the countdown is live and the match starts in ${bettingSecondsLeft}s.`
+      : `Both players are seated. Betting is still open for ${bettingSecondsLeft}s, then the match goes live.`
+  }
+
+  if (status === "Live") {
+    tone = "border-red-300/20 bg-red-500/10 text-red-100"
+    eyebrow = "Live Match"
+    title = isPlayer ? "You are in the live arena" : "This match is now live"
+    body = isPlayer
+      ? "Stay in this room to play or follow the live board state turn by turn."
+      : "You are spectating the live room. Betting is closed and gameplay is underway."
+  }
+
+  if (status === "Finished") {
+    tone = "border-amber-300/20 bg-amber-300/10 text-amber-100"
+    eyebrow = "Finished"
+    title = "Match complete"
+    body = "This arena has resolved. Review the final state, payout context, and feed below."
+  }
+
+  return (
+    <div className={`mb-6 rounded-[28px] border p-5 ${tone}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.26em] opacity-80">{eyebrow}</div>
+          <h2 className="mt-2 text-2xl font-black">{title}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 opacity-85">{body}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/arena"
+            className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/15"
+          >
+            Arena Lobby
+          </Link>
+          <Link
+            href="/spectate"
+            className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/15"
+          >
+            Spectate
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function makeLiveFeed(match: ArenaMatch) {
   return [
     `${match.host.name} entered the ${match.game} room.`,
@@ -364,7 +453,7 @@ export default function ArenaMatchPage() {
   const [tickets, setTickets] = useState<SpectatorTicket[]>([])
   const [feed, setFeed] = useState<string[]>(makeLiveFeed(initialMatch))
   const [message, setMessage] = useState(
-    "Stay in the room, watch the countdown, and follow the match live."
+    "Stay in this room once both players are seated. The countdown and live match flow happen here."
   )
   const [poolFlash, setPoolFlash] = useState<ArenaSide | null>(null)
   const [countdownLineIndex, setCountdownLineIndex] = useState(0)
@@ -1053,6 +1142,16 @@ export default function ArenaMatchPage() {
           </div>
         </div>
 
+        <RoomPhaseBanner
+          status={match.status}
+          isPlayer={isPlayer}
+          isHostUser={isHostUser}
+          isChallengerUser={isChallengerUser}
+          bettingSecondsLeft={bettingSecondsLeft}
+          hostName={match.host.name}
+          challengerName={challenger?.name ?? "Opponent"}
+        />
+
         <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_390px]">
           <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
@@ -1134,7 +1233,7 @@ export default function ArenaMatchPage() {
                   <div
                     className={`rounded-full px-4 py-3 text-sm font-bold ${
                       isCountdown
-                        ? "bg-emerald-400/10 text-emerald-300"
+                        ? "bg-fuchsia-300/10 text-fuchsia-300"
                         : match.status === "Live" && moveSecondsLeft <= 5
                           ? "bg-red-500/10 text-red-300"
                           : "bg-amber-400/10 text-amber-300"
@@ -1160,7 +1259,9 @@ export default function ArenaMatchPage() {
                 {isFinished
                   ? `Match finished. Final state: ${match.statusText}.`
                   : isCountdown
-                    ? `Match starts in ${bettingSecondsLeft}s. Stay in the room and enjoy the pre-match hype while betting is still open.`
+                    ? isPlayer
+                      ? `You are seated in this room. Stay here — the countdown is active and the match begins in ${bettingSecondsLeft}s.`
+                      : `Match starts in ${bettingSecondsLeft}s. Betting remains open until lock, then the arena goes live.`
                     : isSpectatorOnly
                       ? "You are spectating this room. You can watch the live game here."
                       : canCurrentUserMove
@@ -1222,7 +1323,7 @@ export default function ArenaMatchPage() {
                       value={boardClockLabel}
                       accent={
                         isCountdown
-                          ? "text-emerald-300"
+                          ? "text-fuchsia-300"
                           : !isFinished && moveSecondsLeft <= 5
                             ? "text-red-300"
                             : "text-amber-300"
@@ -1267,7 +1368,7 @@ export default function ArenaMatchPage() {
                       value={boardClockLabel}
                       accent={
                         isCountdown
-                          ? "text-emerald-300"
+                          ? "text-fuchsia-300"
                           : !isFinished && moveSecondsLeft <= 5
                             ? "text-red-300"
                             : "text-amber-300"
@@ -1647,7 +1748,7 @@ export default function ArenaMatchPage() {
                 </div>
 
                 <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">My Recent Tickets</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">My Recent Bets</div>
 
                   <div className="mt-3 space-y-2 text-sm text-white/75">
                     {recentTickets.length === 0 ? (
