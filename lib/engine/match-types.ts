@@ -10,11 +10,20 @@ export type RankTier =
   | "Master"
   | "Grandmaster"
 
-export type ArenaStatus = "Waiting for Opponent" | "Ready to Start" | "Live" | "Finished"
+export type ArenaStatus =
+  | "Waiting for Opponent"
+  | "Ready to Start"
+  | "Live"
+  | "Finished"
 
 export type ArenaSide = "host" | "challenger"
 
-export type BettingStatus = "disabled" | "open" | "locked" | "settling" | "settled"
+export type BettingStatus =
+  | "disabled"
+  | "open"
+  | "locked"
+  | "settling"
+  | "settled"
 
 export type MarketVisibility = "featured" | "watch-only"
 
@@ -28,6 +37,14 @@ export type PlayerProfile = {
   last10: string
 }
 
+export type PauseState = {
+  isPaused: boolean
+  pausedBy: ArenaSide | null
+  pauseExpiresAt: number | null
+  pauseCountHost: number
+  pauseCountChallenger: number
+}
+
 export type ArenaMatch = {
   id: string
   game: GameType
@@ -35,34 +52,48 @@ export type ArenaMatch = {
   bettingStatus: BettingStatus
   marketVisibility: MarketVisibility
   isFeaturedMarket: boolean
+
   bestOf: 1 | 3 | 5
   wager: number
+
   createdAt: number
   seatedAt?: number
   countdownStartedAt?: number
   bettingClosesAt?: number
   startedAt?: number
   finishedAt?: number
+
   spectators: number
   playerPot: number
+
   host: PlayerProfile
   challenger: PlayerProfile | null
+
   hostSideLabel: string
   challengerSideLabel: string
+
   statusText: string
   moveText: string
+
   roundScore: {
     host: number
     challenger: number
   }
+
   spectatorPool: {
     host: number
     challenger: number
   }
+
   bettingWindowSeconds: number
+
   result: MatchResult
+
   moveHistory: string[]
+
   boardState?: unknown
+
+  pauseState?: PauseState
 }
 
 export type SpectatorTicket = {
@@ -94,5 +125,5 @@ export type MatchEvent =
   | { type: "BETTING_LOCKED"; matchId: string; ts: number }
   | { type: "MATCH_STARTED"; matchId: string; ts: number }
   | { type: "MOVE_ACCEPTED"; matchId: string; move: string; ts: number }
-  | { type: "MATCH_FINISHED"; matchId: string; winner: "host" | "challenger" | "draw"; ts: number }
+  | { type: "MATCH_FINISHED"; matchId: string; winner: ArenaSide | "draw"; ts: number }
   | { type: "SETTLEMENT_COMPLETED"; matchId: string; ts: number }
