@@ -89,6 +89,30 @@ export type PersistedBetTicket = {
   createdAt: number
 }
 
+export type BetSettlementState = "pending" | "won" | "lost" | "refunded" | "archived"
+
+export type BetSettlement = {
+  ticket: PersistedBetTicket
+  match: ArenaMatch | null
+  state: BetSettlementState
+  payout: number
+  profit: number
+  multiplier: number
+  result: ArenaMatch["result"] | null
+  resultLabel: string
+  backedPlayerName: string
+}
+
+export type UserSettledPayoutSummary = {
+  settledCount: number
+  wonCount: number
+  lostCount: number
+  refundedCount: number
+  totalStaked: number
+  totalPayout: number
+  totalProfit: number
+}
+
 type FavoriteData = {
   favorite: ArenaSide | "even"
   leftLabel: string
@@ -1759,6 +1783,164 @@ export function getTicketExposureByMatch(matchId: string, user?: string) {
     host,
     challenger,
     total: host + challenger,
+  }
+}
+
+export function getMatchResultLabel(match: ArenaMatch | null) {
+  if (!match) return "Archived"
+  if (match.result === "host") return `${match.host.name} won`
+  if (match.result === "challenger") return `${match.challenger?.name ?? "Challenger"} won`
+  if (match.result === "draw") return "Draw / Refund"
+  if (match.status === "Finished") return "Finished"
+  return formatArenaPhase(match.status)
+}
+
+export function getBackedPlayerName(
+  ticket: Pick<PersistedBetTicket, "side">,
+  match: ArenaMatch | null
+) {
+  if (!match) {
+    return ticket.side === "host" ? "Host" : "Challenger"
+  }
+
+  return ticket.side === "host" ? match.host.name : match.challenger?.name ?? "Challenger"
+}
+
+export function getBetSettlement(
+  ticket: PersistedBetTicket,
+  match?: ArenaMatch | null
+): BetSettlement {
+  const resolvedMatch = match ?? getArenaById(ticket.matchId)
+  const backedPlayerName = getBackedPlayerName(ticket, resolvedMatch)
+  const resultLabel = getMatchResultLabel(resolvedMatch)
+
+  if (!resolvedMatch) {
+    return {
+      ticket,
+      match: null,
+      state: "archived",
+      payout: 0,
+      profit: 0,
+      multiplier: 0,
+      result: null,
+      resultLabel,
+      backedPlayerName,
+    }
+  }
+
+  const multiplier = getMultiplier(
+    resolvedMatch.spectatorPool.host,
+    resolvedMatch.spectatorPool.challenger,
+    ticket.side
+  )
+
+  if (resolvedMatch.status !== "Finished") {
+    return {
+      ticket,
+      match: resolvedMatch,
+      state: "pending",
+      payout: 0,
+      profit: 0,
+      multiplier,
+      result: resolvedMatch.result ?? null,
+      resultLabel,
+      backedPlayerName,
+    }
+  }
+
+  if (resolvedMatch.result === "draw") {
+    return {
+      ticket,
+      match: resolvedMatch,
+      state: "refunded",
+      payout: Number(ticket.amount.toFixed(2)),
+      profit: 0,
+      multiplier: 1,
+      result: resolvedMatch.result,
+      resultLabel,
+      backedPlayerName,
+    }
+  }
+
+  if (resolvedMatch.result === ticket.side) {
+    const payout = Number((ticket.amount * multiplier).toFixed(2))
+    const profit = Number((payout - ticket.amount).toFixed(2))
+
+    return {
+      ticket,
+      match: resolvedMatch,
+      state: "won",
+      payout,
+      profit,
+      multiplier,
+      result: resolvedMatch.result,
+      resultLabel,
+      backedPlayerName,
+    }
+  }
+
+  return {
+    ticket,
+    match: resolvedMatch,
+    state: "lost",
+    payout: 0,
+    profit: Number((-ticket.amount).toFixed(2)),
+    multiplier,
+    result: resolvedMatch.result ?? null,
+    resultLabel,
+    backedPlayerName,
+  }
+}
+
+export function getMatchSettlement(matchId: string) {
+  const match = getArenaById(matchId)
+  const tickets = getTicketsForMatch(matchId)
+  const settlements = tickets.map((ticket) => getBetSettlement(ticket, match))
+
+  const totalStaked = Number(
+    settlements.reduce((sum, item) => sum + item.ticket.amount, 0).toFixed(2)
+  )
+  const totalPayout = Number(
+    settlements.reduce((sum, item) => sum + item.payout, 0).toFixed(2)
+  )
+  const totalProfit = Number(
+    settlements.reduce((sum, item) => sum + item.profit, 0).toFixed(2)
+  )
+
+  return {
+    match,
+    tickets,
+    settlements,
+    totalStaked,
+    totalPayout,
+    totalProfit,
+  }
+}
+
+export function getUserSettledPayouts(user = currentUser.name): UserSettledPayoutSummary {
+  const tickets = readCurrentUserTickets(user)
+  const settlements = tickets
+    .map((ticket) => getBetSettlement(ticket))
+    .filter((item) => item.state !== "pending" && item.state !== "archived")
+
+  const wonCount = settlements.filter((item) => item.state === "won").length
+  const lostCount = settlements.filter((item) => item.state === "lost").length
+  const refundedCount = settlements.filter((item) => item.state === "refunded").length
+
+  return {
+    settledCount: settlements.length,
+    wonCount,
+    lostCount,
+    refundedCount,
+    totalStaked: Number(
+      settlements.reduce((sum, item) => sum + item.ticket.amount, 0).toFixed(2)
+    ),
+    totalPayout: Number(
+      settlements.reduce((sum, item) => sum + item.payout, 0).toFixed(2)
+    ),
+    totalProfit: Number(
+      settlements.reduce((sum, item) => sum + item.profit, 0).toFixed(2)
+    ),
   }
 }
 

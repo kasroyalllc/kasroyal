@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   arenaFeedSeed,
   clampBetAmount,
@@ -9,10 +9,13 @@ import {
   DEFAULT_BET,
   gameDisplayOrder,
   gameMeta,
+  getArenaBettingSecondsLeft,
+  getMatchResultLabel,
   getMultiplier,
   getRankColors,
   getSideShare,
   isArenaBettable,
+  isArenaSpectatable,
   placeArenaSpectatorBet,
   readArenaMatches,
   subscribeArenaMatches,
@@ -66,7 +69,7 @@ function TonePill({
   children,
   tone = "neutral",
 }: {
-  children: React.ReactNode
+  children: ReactNode
   tone?: "neutral" | "green" | "gold" | "red" | "sky"
 }) {
   const className =
@@ -104,6 +107,24 @@ function EmptySection({
   )
 }
 
+function getMatchPhaseTone(match: ArenaMatch) {
+  if (match.status === "Ready to Start") return "gold" as const
+  if (match.status === "Live") return "green" as const
+  if (match.status === "Finished") return "sky" as const
+  return "neutral" as const
+}
+
+function getMatchPhaseLabel(match: ArenaMatch) {
+  if (match.status === "Ready to Start") {
+    const seconds = getArenaBettingSecondsLeft(match)
+    return seconds > 0 ? `Starting Soon • ${seconds}s` : "Starting Soon"
+  }
+
+  if (match.status === "Live") return "Live Match"
+  if (match.status === "Finished") return getMatchResultLabel(match)
+  return match.status
+}
+
 function LiveMatchCard({
   match,
   active,
@@ -138,7 +159,7 @@ function LiveMatchCard({
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          <TonePill tone="green">Live</TonePill>
+          <TonePill tone={getMatchPhaseTone(match)}>{getMatchPhaseLabel(match)}</TonePill>
           <TonePill tone={bettingOpen ? "gold" : "neutral"}>
             {bettingOpen ? "Betting Open" : "Betting Closed"}
           </TonePill>
@@ -208,18 +229,22 @@ export default function SpectatePage() {
   }, [])
 
   const filteredMatches = useMemo(() => {
-    if (selectedFilter === "All") return allMatches
-    return allMatches.filter((match) => match.game === selectedFilter)
+    const spectatable = allMatches.filter((match) => isArenaSpectatable(match))
+    if (selectedFilter === "All") return spectatable
+    return spectatable.filter((match) => match.game === selectedFilter)
   }, [allMatches, selectedFilter])
 
   const liveMatches = useMemo(() => {
     return filteredMatches
       .filter(
-        (match) => match.status === "Live" || match.status === "Ready to Start"
+        (match) =>
+          isArenaSpectatable(match) &&
+          (match.status === "Ready to Start" || match.status === "Live")
       )
       .sort((a, b) => {
         const aPriority = a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
         const bPriority = b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0
+
         if (bPriority !== aPriority) return bPriority - aPriority
 
         const aPool = a.spectatorPool.host + a.spectatorPool.challenger
@@ -238,6 +263,11 @@ export default function SpectatePage() {
     })
   }, [liveMatches])
 
+  useEffect(() => {
+    setSelectedSide(null)
+    setBetAmountInput(String(DEFAULT_BET))
+  }, [activeLiveMatchId])
+
   const activeLiveMatch = useMemo(() => {
     return liveMatches.find((match) => match.id === activeLiveMatchId) ?? liveMatches[0] ?? null
   }, [liveMatches, activeLiveMatchId])
@@ -253,6 +283,7 @@ export default function SpectatePage() {
   const activeTotalPool = activeLiveMatch
     ? activeLiveMatch.spectatorPool.host + activeLiveMatch.spectatorPool.challenger
     : 0
+
   const hostShare = activeLiveMatch
     ? getSideShare(
         activeLiveMatch.spectatorPool.host,
@@ -260,6 +291,7 @@ export default function SpectatePage() {
         "host"
       )
     : 0
+
   const challengerShare = activeLiveMatch
     ? getSideShare(
         activeLiveMatch.spectatorPool.host,
@@ -334,6 +366,7 @@ export default function SpectatePage() {
       })
 
       setAllMatches(readArenaMatches())
+
       const sideName =
         selectedSide === "host"
           ? activeLiveMatch.host.name
@@ -476,8 +509,8 @@ export default function SpectatePage() {
                 </div>
 
                 {activeLiveMatch ? (
-                  <TonePill tone={activeLiveMatch.status === "Live" ? "green" : "gold"}>
-                    {activeLiveMatch.status === "Live" ? "Live Now" : "Starting Soon"}
+                  <TonePill tone={getMatchPhaseTone(activeLiveMatch)}>
+                    {getMatchPhaseLabel(activeLiveMatch)}
                   </TonePill>
                 ) : (
                   <TonePill tone="neutral">Idle</TonePill>
@@ -512,8 +545,8 @@ export default function SpectatePage() {
                   <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <TonePill tone="gold">{activeLiveMatch.game}</TonePill>
-                      <TonePill tone={activeLiveMatch.status === "Live" ? "green" : "gold"}>
-                        {activeLiveMatch.status === "Live" ? "Live Match" : "Ready To Start"}
+                      <TonePill tone={getMatchPhaseTone(activeLiveMatch)}>
+                        {getMatchPhaseLabel(activeLiveMatch)}
                       </TonePill>
                       <TonePill tone="sky">{activeLiveMatch.statusText}</TonePill>
                     </div>

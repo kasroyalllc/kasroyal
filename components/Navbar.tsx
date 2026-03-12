@@ -69,14 +69,45 @@ function setDisconnectFlag(value: boolean) {
   }
 }
 
+function normalizeNavbarArenaMatch(value: unknown): NavbarArenaMatch | null {
+  if (!value || typeof value !== "object") return null
+
+  const match = value as Partial<NavbarArenaMatch>
+
+  if (
+    typeof match.id !== "string" ||
+    (match.status !== "Waiting for Opponent" &&
+      match.status !== "Ready to Start" &&
+      match.status !== "Live" &&
+      match.status !== "Finished")
+  ) {
+    return null
+  }
+
+  return {
+    id: match.id,
+    status: match.status,
+    wager: typeof match.wager === "number" && Number.isFinite(match.wager) ? match.wager : 0,
+    spectators:
+      typeof match.spectators === "number" && Number.isFinite(match.spectators)
+        ? match.spectators
+        : 0,
+  }
+}
+
 function readArenaMatchesForNavbar(): NavbarArenaMatch[] {
   if (typeof window === "undefined") return []
 
   try {
     const raw = window.localStorage.getItem(ARENA_STORAGE_KEY)
     if (!raw) return []
-    const parsed = JSON.parse(raw) as NavbarArenaMatch[]
-    return Array.isArray(parsed) ? parsed : []
+
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+
+    return parsed
+      .map((item) => normalizeNavbarArenaMatch(item))
+      .filter((item): item is NavbarArenaMatch => item !== null)
   } catch {
     return []
   }
@@ -115,10 +146,10 @@ function LiveStatPill({
     tone === "amber"
       ? "text-amber-300"
       : tone === "emerald"
-      ? "text-emerald-300"
-      : tone === "sky"
-      ? "text-sky-300"
-      : "text-white"
+        ? "text-emerald-300"
+        : tone === "sky"
+          ? "text-sky-300"
+          : "text-white"
 
   return (
     <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.15)]">
@@ -156,7 +187,7 @@ export default function Navbar() {
     setMounted(true)
 
     const syncProfile = () => {
-      const stored = localStorage.getItem("kasroyal-profile")
+      const stored = window.localStorage.getItem("kasroyal-profile")
 
       if (!stored) {
         setProfile(defaultProfile)
@@ -242,10 +273,10 @@ export default function Navbar() {
       const live = matches.filter((match) => match.status === "Live").length
       const volume = matches
         .filter((match) => match.status !== "Finished")
-        .reduce((sum, match) => sum + (Number.isFinite(match.wager) ? match.wager : 0), 0)
+        .reduce((sum, match) => sum + match.wager, 0)
       const spectators = matches
         .filter((match) => match.status !== "Finished")
-        .reduce((sum, match) => sum + (Number.isFinite(match.spectators) ? match.spectators : 0), 0)
+        .reduce((sum, match) => sum + match.spectators, 0)
 
       setArenaStats({
         open,

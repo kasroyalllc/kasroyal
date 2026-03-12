@@ -1,12 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   currentUser,
   getArenaBettingSecondsLeft,
+  getBetSettlement,
   getMultiplier,
   getRankColors,
+  getUserSettledPayouts,
   isArenaBettable,
   placeArenaSpectatorBet,
   readArenaMatches,
@@ -15,14 +17,10 @@ import {
   subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
+  type BetSettlement,
   type PersistedBetTicket,
   type RankTier,
 } from "@/lib/mock/arena-data"
-
-type BetRecordWithMatch = {
-  bet: PersistedBetTicket
-  match: ArenaMatch | null
-}
 
 function RankBadge({ rank }: { rank: RankTier }) {
   const colors = getRankColors(rank)
@@ -49,7 +47,7 @@ function SummaryCard({
   label: string
   value: string
   subtext?: string
-  tone?: "white" | "amber" | "emerald" | "sky"
+  tone?: "white" | "amber" | "emerald" | "sky" | "red"
 }) {
   const toneClass =
     tone === "amber"
@@ -58,7 +56,9 @@ function SummaryCard({
         ? "text-emerald-300"
         : tone === "sky"
           ? "text-sky-300"
-          : "text-white"
+          : tone === "red"
+            ? "text-red-300"
+            : "text-white"
 
   return (
     <div className="rounded-[26px] border border-white/8 bg-white/[0.03] p-5 shadow-[0_0_30px_rgba(0,255,200,0.03)]">
@@ -103,7 +103,7 @@ function TonePill({
   children,
   tone = "neutral",
 }: {
-  children: React.ReactNode
+  children: ReactNode
   tone?: "neutral" | "green" | "gold" | "red" | "sky"
 }) {
   const className =
@@ -124,15 +124,6 @@ function TonePill({
       {children}
     </span>
   )
-}
-
-function getBetStatus(match: ArenaMatch | null) {
-  if (!match) return "Archived"
-  if (match.status === "Waiting for Opponent") return "Open Room"
-  if (match.status === "Ready to Start") return "Pre-Match"
-  if (match.status === "Live") return "Live"
-  if (match.status === "Finished") return "Finished"
-  return "Unknown"
 }
 
 function OpenMarketCard({
@@ -200,7 +191,7 @@ function OpenMarketCard({
         selectedSide === "host" ? match.host.name : match.challenger?.name ?? "Challenger"
 
       setMessage(
-        `Bet placed: ${betAmount} KAS on ${backed}. You can track it below in My Bets.`
+        `Bet placed: ${betAmount} KAS on ${backed}. You can track pending and settled status below in My Bets.`
       )
       setBetAmountInput("5")
       setSelectedSide(null)
@@ -399,52 +390,55 @@ function OpenMarketCard({
   )
 }
 
-function MyBetCard({ bet, match }: BetRecordWithMatch) {
-  const status = getBetStatus(match)
-  const backedPlayer =
-    !match
-      ? bet.side === "host"
-        ? "Host"
-        : "Challenger"
-      : bet.side === "host"
-        ? match.host.name
-        : match.challenger?.name ?? "Challenger"
+function MyBetCard({ item }: { item: BetSettlement }) {
+  const { ticket, match, state, payout, profit, multiplier, resultLabel, backedPlayerName } = item
 
-  const multiplier = match
-    ? getMultiplier(match.spectatorPool.host, match.spectatorPool.challenger, bet.side)
-    : 0
-
-  const projected = multiplier > 0 ? bet.amount * multiplier : 0
-  const tone =
-    status === "Pre-Match"
-      ? "gold"
-      : status === "Live"
-        ? "green"
-        : status === "Open Room"
+  const statusTone =
+    state === "won"
+      ? "green"
+      : state === "lost"
+        ? "red"
+        : state === "refunded"
           ? "sky"
-          : "neutral"
+          : state === "pending"
+            ? "gold"
+            : "neutral"
+
+  const statusLabel =
+    state === "won"
+      ? "Won"
+      : state === "lost"
+        ? "Lost"
+        : state === "refunded"
+          ? "Refunded"
+          : state === "pending"
+            ? "Pending"
+            : "Archived"
 
   return (
     <div className="rounded-[30px] border border-white/8 bg-white/[0.03] p-5 shadow-[0_0_40px_rgba(0,255,200,0.03)]">
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <TonePill tone="gold">{bet.game}</TonePill>
-            <TonePill tone={tone}>{status}</TonePill>
-            <TonePill tone="sky">Backed {backedPlayer}</TonePill>
+            <TonePill tone="gold">{ticket.game}</TonePill>
+            <TonePill tone={statusTone}>{statusLabel}</TonePill>
+            <TonePill tone="sky">Backed {backedPlayerName}</TonePill>
+            <TonePill tone="neutral">{resultLabel}</TonePill>
           </div>
 
           <h3 className="mt-4 text-2xl font-black">
             {match
               ? `${match.host.name} vs ${match.challenger?.name ?? "Waiting Opponent"}`
-              : bet.matchId}
+              : ticket.matchId}
           </h3>
 
-          <div className="mt-5 grid gap-3 text-sm text-white/60 sm:grid-cols-2 xl:grid-cols-4">
-            <div>Placed: {formatDate(bet.createdAt)}</div>
-            <div>Amount: {bet.amount.toFixed(2)} KAS</div>
-            <div>Projected return: {projected > 0 ? `${projected.toFixed(2)} KAS` : "--"}</div>
+          <div className="mt-5 grid gap-3 text-sm text-white/60 sm:grid-cols-2 xl:grid-cols-6">
+            <div>Placed: {formatDate(ticket.createdAt)}</div>
+            <div>Stake: {ticket.amount.toFixed(2)} KAS</div>
             <div>Multiplier: {multiplier > 0 ? `${multiplier.toFixed(2)}x` : "--"}</div>
+            <div>Payout: {payout.toFixed(2)} KAS</div>
+            <div>Profit: {profit >= 0 ? `+${profit.toFixed(2)}` : profit.toFixed(2)} KAS</div>
+            <div>Status: {statusLabel}</div>
           </div>
         </div>
 
@@ -458,7 +452,7 @@ function MyBetCard({ bet, match }: BetRecordWithMatch) {
                 Watch Match
               </Link>
 
-              {match.status === "Live" ? (
+              {match.status === "Live" || match.status === "Ready to Start" ? (
                 <Link
                   href="/spectate"
                   className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-center text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/15"
@@ -528,23 +522,17 @@ export default function BetsPage() {
       })
   }, [matches])
 
-  const myBetRecords = useMemo<BetRecordWithMatch[]>(() => {
+  const myBetRecords = useMemo<BetSettlement[]>(() => {
     return bets
-      .map((bet) => ({
-        bet,
-        match: matches.find((match) => match.id === bet.matchId) ?? null,
-      }))
-      .sort((a, b) => b.bet.createdAt - a.bet.createdAt)
+      .map((bet) => {
+        const match = matches.find((item) => item.id === bet.matchId) ?? null
+        return getBetSettlement(bet, match)
+      })
+      .sort((a, b) => b.ticket.createdAt - a.ticket.createdAt)
   }, [bets, matches])
 
-  const activeMyBets = myBetRecords.filter(
-    ({ match }) => match?.status === "Ready to Start" || match?.status === "Live"
-  )
-
-  const betHistory = myBetRecords.filter(
-    ({ match }) =>
-      !match || match.status === "Finished" || match.status === "Waiting for Opponent"
-  )
+  const pendingMyBets = myBetRecords.filter((item) => item.state === "pending")
+  const settledMyBets = myBetRecords.filter((item) => item.state !== "pending")
 
   const totalOpenPools = openMarkets.reduce(
     (sum, match) => sum + match.spectatorPool.host + match.spectatorPool.challenger,
@@ -552,16 +540,13 @@ export default function BetsPage() {
   )
 
   const totalMyExposure = bets.reduce((sum, bet) => sum + bet.amount, 0)
-
-  const totalProjected = myBetRecords.reduce((sum, item) => {
+  const totalPendingExposure = pendingMyBets.reduce((sum, item) => sum + item.ticket.amount, 0)
+  const totalProjectedPending = pendingMyBets.reduce((sum, item) => {
     if (!item.match) return sum
-    const multiplier = getMultiplier(
-      item.match.spectatorPool.host,
-      item.match.spectatorPool.challenger,
-      item.bet.side
-    )
-    return sum + item.bet.amount * multiplier
+    return sum + item.ticket.amount * item.multiplier
   }, 0)
+
+  const settledSummary = useMemo(() => getUserSettledPayouts(currentUser.name), [bets, matches])
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
@@ -581,7 +566,7 @@ export default function BetsPage() {
             </h1>
 
             <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-              Open markets live here during the pre-match countdown. Once betting closes, track your positions in My Bets and follow the action from the room or Spectate.
+              Open markets go live here during the pre-match countdown. Once betting closes, your positions move into pending tracking and then settle into win, loss, or refund once the match resolves.
             </p>
           </div>
 
@@ -601,7 +586,7 @@ export default function BetsPage() {
           </div>
         </div>
 
-        <div className="mb-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-10 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <SummaryCard
             label="Open Markets"
             value={`${openMarkets.length}`}
@@ -615,16 +600,22 @@ export default function BetsPage() {
             tone="amber"
           />
           <SummaryCard
-            label="My Exposure"
+            label="Total Exposure"
             value={`${totalMyExposure.toFixed(2)} KAS`}
             subtext="All bets you've placed"
             tone="sky"
           />
           <SummaryCard
-            label="Projected Total"
-            value={`${totalProjected.toFixed(2)} KAS`}
-            subtext="Based on current pool state"
+            label="Pending Exposure"
+            value={`${totalPendingExposure.toFixed(2)} KAS`}
+            subtext={`Pending projected: ${totalProjectedPending.toFixed(2)} KAS`}
             tone="white"
+          />
+          <SummaryCard
+            label="Settled Profit"
+            value={`${settledSummary.totalProfit >= 0 ? "+" : ""}${settledSummary.totalProfit.toFixed(2)} KAS`}
+            subtext={`Settled payout: ${settledSummary.totalPayout.toFixed(2)} KAS • W:${settledSummary.wonCount} L:${settledSummary.lostCount} R:${settledSummary.refundedCount}`}
+            tone={settledSummary.totalProfit >= 0 ? "emerald" : "red"}
           />
         </div>
 
@@ -655,34 +646,30 @@ export default function BetsPage() {
 
           <section>
             <SectionHeader
-              title="My Bets"
-              count={activeMyBets.length}
-              subtitle="Your active betting positions. Watch these rooms directly from here."
+              title="My Pending Bets"
+              count={pendingMyBets.length}
+              subtitle="These positions are still waiting for the match to finish."
             />
             <div className="space-y-4">
-              {activeMyBets.length === 0 ? (
-                <EmptyState text="You do not have any active bets right now." />
+              {pendingMyBets.length === 0 ? (
+                <EmptyState text="You do not have any pending bets right now." />
               ) : (
-                activeMyBets.map(({ bet, match }) => (
-                  <MyBetCard key={bet.id} bet={bet} match={match} />
-                ))
+                pendingMyBets.map((item) => <MyBetCard key={item.ticket.id} item={item} />)
               )}
             </div>
           </section>
 
           <section>
             <SectionHeader
-              title="Bet History"
-              count={betHistory.length}
-              subtitle="Older or inactive bet records kept lightweight for reference."
+              title="Settled Bets"
+              count={settledMyBets.length}
+              subtitle="Resolved positions with final payout, refund, or loss shown."
             />
             <div className="space-y-4">
-              {betHistory.length === 0 ? (
-                <EmptyState text="No bet history yet." />
+              {settledMyBets.length === 0 ? (
+                <EmptyState text="No settled bets yet." />
               ) : (
-                betHistory.map(({ bet, match }) => (
-                  <MyBetCard key={bet.id} bet={bet} match={match} />
-                ))
+                settledMyBets.map((item) => <MyBetCard key={item.ticket.id} item={item} />)
               )}
             </div>
           </section>

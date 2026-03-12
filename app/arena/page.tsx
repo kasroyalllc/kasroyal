@@ -10,6 +10,7 @@ import {
   formatAge,
   gameMeta,
   getArenaBettingSecondsLeft,
+  getMatchResultLabel,
   getRankColors,
   getWalletActiveMatch,
   hasWalletActiveMatch,
@@ -28,11 +29,11 @@ type OwnershipFilter = "All" | "Mine" | "Hosted" | "Joined"
 const DEV_BOTS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_BOTS === "true"
 
 function RankBadge({ rank }: { rank: RankTier }) {
+  const colors = getRankColors(rank)
+
   return (
     <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${getRankColors(
-        rank
-      )}`}
+      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${colors.bg} ${colors.text} ${colors.ring}`}
     >
       {rank}
     </span>
@@ -67,7 +68,7 @@ function StatusPill({ status }: { status: ArenaStatus }) {
         ? "border-amber-300/20 bg-amber-300/10 text-amber-300"
         : status === "Live"
           ? "border-red-400/20 bg-red-400/10 text-red-300"
-          : "border-white/10 bg-white/10 text-white/70"
+          : "border-sky-300/20 bg-sky-300/10 text-sky-300"
 
   return (
     <span
@@ -91,6 +92,17 @@ function EmptyState({
       <div className="mt-2 text-sm leading-6 text-white/55">{text}</div>
     </div>
   )
+}
+
+function getPhaseLabel(match: ArenaMatch) {
+  if (match.status === "Ready to Start") {
+    const seconds = getArenaBettingSecondsLeft(match)
+    return seconds > 0 ? `Starts in ${seconds}s` : "Starting Soon"
+  }
+
+  if (match.status === "Live") return "Live now"
+  if (match.status === "Finished") return getMatchResultLabel(match)
+  return "Open seat"
 }
 
 function ResumeMatchBanner({
@@ -251,19 +263,11 @@ function MatchCard({
   const isOpen = match.status === "Waiting for Opponent"
   const isReady = match.status === "Ready to Start"
   const isLive = match.status === "Live"
+  const isFinished = match.status === "Finished"
   const isHost = match.host.name === currentUser.name
   const isChallenger = match.challenger?.name === currentUser.name
   const isMine = isHost || isChallenger
-  const countdownSeconds = getArenaBettingSecondsLeft(match)
-
-  const countdownLabel =
-    isReady && countdownSeconds > 0
-      ? `Starts in ${countdownSeconds}s`
-      : isLive
-        ? "Live now"
-        : isOpen
-          ? "Open seat"
-          : "Room status"
+  const countdownLabel = getPhaseLabel(match)
 
   const joinBlockedByWalletLock =
     walletLocked && activeMatchId !== null && activeMatchId !== match.id && isOpen && !isHost
@@ -273,9 +277,13 @@ function MatchCard({
       className={`rounded-[24px] border p-5 transition ${
         isReady
           ? "border-amber-300/20 bg-amber-300/[0.04]"
-          : isMine
-            ? "border-emerald-300/20 bg-emerald-400/[0.04]"
-            : "border-white/10 bg-white/[0.03]"
+          : isLive
+            ? "border-red-300/20 bg-red-500/[0.04]"
+            : isMine
+              ? "border-emerald-300/20 bg-emerald-400/[0.04]"
+              : isFinished
+                ? "border-sky-300/20 bg-sky-300/[0.04]"
+                : "border-white/10 bg-white/[0.03]"
       }`}
     >
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -400,7 +408,7 @@ function MatchCard({
               href={`/arena/match/${match.id}`}
               className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-4 text-center text-sm font-black text-black transition hover:scale-[1.01]"
             >
-              {isLive ? "Open Live Room" : "Enter Room"}
+              {isLive ? "Open Live Room" : isReady ? "Enter Room" : "View Result"}
             </Link>
           )}
 
@@ -692,7 +700,11 @@ export default function ArenaPage() {
                 accent="text-amber-300"
               />
               <MetricCard label="My Matches" value={`${myMatches.length}`} accent="text-sky-300" />
-              <MetricCard label="Live Arenas" value={`${liveMatches.length}`} accent="text-emerald-300" />
+              <MetricCard
+                label="Live Arenas"
+                value={`${liveMatches.length}`}
+                accent="text-emerald-300"
+              />
             </div>
           </div>
         </div>
