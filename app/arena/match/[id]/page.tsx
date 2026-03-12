@@ -24,17 +24,14 @@ import {
   MIN_BET,
   PAUSE_DURATION_SECONDS,
   pauseArenaMatch,
-  placeArenaSpectatorBet,
   readArenaMatches,
-  readCurrentUserTickets,
   resumeArenaMatch,
   subscribeArenaMatches,
-  subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
   type PauseState,
-  type PersistedBetTicket,
   type RankTier,
+  type SpectatorTicket,
   updateArenaMatch,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
@@ -91,7 +88,8 @@ function normalizePauseState(pauseState?: Partial<PauseState> | null): PauseStat
       ? Number(pauseState?.pauseExpiresAt)
       : null,
     pauseCountHost:
-      typeof pauseState?.pauseCountHost === "number" && Number.isFinite(pauseState.pauseCountHost)
+      typeof pauseState?.pauseCountHost === "number" &&
+      Number.isFinite(pauseState.pauseCountHost)
         ? Math.max(0, Math.floor(pauseState.pauseCountHost))
         : 0,
     pauseCountChallenger:
@@ -100,6 +98,63 @@ function normalizePauseState(pauseState?: Partial<PauseState> | null): PauseStat
         ? Math.max(0, Math.floor(pauseState.pauseCountChallenger))
         : 0,
   }
+}
+
+function createFallbackMatch(matchId: string): ArenaMatch {
+  return {
+    id: matchId,
+    game: "Connect 4",
+    status: "Waiting for Opponent",
+    bettingStatus: "disabled",
+    marketVisibility: "watch-only",
+    isFeaturedMarket: false,
+    bestOf: 3,
+    wager: 5,
+    createdAt: Date.now(),
+    spectators: 0,
+    playerPot: 5,
+    host: {
+      name: currentUser.name,
+      rank: currentUser.rank,
+      rating: currentUser.rating,
+      winRate: currentUser.winRate,
+      last10: currentUser.last10,
+    },
+    challenger: null,
+    hostSideLabel: "Red",
+    challengerSideLabel: "Yellow",
+    statusText: "Open seat available",
+    moveText: "Waiting for join",
+    roundScore: { host: 0, challenger: 0 },
+    spectatorPool: { host: 0, challenger: 0 },
+    bettingWindowSeconds: 25,
+    result: null,
+    moveHistory: [],
+    boardState: {
+      mode: "connect4-live",
+      board: Array.from({ length: 6 }, () => Array.from({ length: 7 }, () => null)),
+      turn: "host",
+      turnDeadlineTs: Date.now() + CONNECT4_MOVE_SECONDS * 1000,
+    },
+    pauseState: {
+      isPaused: false,
+      pausedBy: null,
+      pauseExpiresAt: null,
+      pauseCountHost: 0,
+      pauseCountChallenger: 0,
+    },
+  }
+}
+
+function getSafeInitialMatch(matchId: string): ArenaMatch {
+  const live = readArenaMatches()
+  return (
+    getArenaById(matchId, live) ??
+    initialArenaMatches[1] ??
+    initialArenaMatches[0] ??
+    live[0] ??
+    createFallbackMatch(matchId)
+  )
 }
 
 function RankBadge({ rank }: { rank: RankTier }) {
@@ -253,7 +308,8 @@ function PauseOverlay({
         </div>
 
         <p className="mt-4 max-w-2xl text-sm leading-7 text-white/75 sm:text-base">
-          Move clock is frozen. When the pause ends, the active player's timer resets to full time.
+          Move clock is frozen. When the pause ends, the active player&apos;s timer resets to full
+          time.
         </p>
 
         <div className="mt-8 flex items-center justify-center gap-4">
@@ -364,7 +420,9 @@ function RoomPhaseBanner({
     <div className={`mb-6 rounded-[28px] border p-5 ${tone}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.26em] opacity-80">{eyebrow}</div>
+          <div className="text-xs font-black uppercase tracking-[0.26em] opacity-80">
+            {eyebrow}
+          </div>
           <h2 className="mt-2 text-2xl font-black">{title}</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 opacity-85">{body}</p>
         </div>
@@ -548,21 +606,18 @@ export default function ArenaMatchPage() {
   const params = useParams<{ id: string }>()
   const matchId = typeof params?.id === "string" ? params.id : "arena-2"
 
-  const initialMatch = getArenaById(matchId, readArenaMatches()) ?? initialArenaMatches[1]
+  const initialMatch = getSafeInitialMatch(matchId)
 
   const [match, setMatch] = useState<ArenaMatch>(initialMatch)
   const [betAmountInput, setBetAmountInput] = useState(String(DEFAULT_BET))
   const [selectedSide, setSelectedSide] = useState<ArenaSide | null>(null)
-  const [tickets, setTickets] = useState<PersistedBetTicket[]>(
-    readCurrentUserTickets(currentUser.name).filter((ticket) => ticket.matchId === matchId)
-  )
+  const [tickets, setTickets] = useState<SpectatorTicket[]>([])
   const [feed, setFeed] = useState<string[]>(makeLiveFeed(initialMatch))
   const [message, setMessage] = useState(
     "Stay in this room once both players are seated. The countdown and live match flow happen here."
   )
   const [poolFlash, setPoolFlash] = useState<ArenaSide | null>(null)
   const [countdownLineIndex, setCountdownLineIndex] = useState(0)
-  const [isSubmittingBet, setIsSubmittingBet] = useState(false)
   const [, setTick] = useState(0)
 
   useEffect(() => {
@@ -574,16 +629,6 @@ export default function ArenaMatchPage() {
 
     syncMatch()
     const unsubscribe = subscribeArenaMatches(syncMatch)
-    return unsubscribe
-  }, [matchId])
-
-  useEffect(() => {
-    const syncTickets = () => {
-      setTickets(readCurrentUserTickets(currentUser.name).filter((ticket) => ticket.matchId === matchId))
-    }
-
-    syncTickets()
-    const unsubscribe = subscribeSpectatorTickets(syncTickets)
     return unsubscribe
   }, [matchId])
 
@@ -758,7 +803,7 @@ export default function ArenaMatchPage() {
 
   const favoriteData = challenger
     ? getFavoriteData(match.host.rating, challenger.rating)
-    : { leftLabel: "Waiting", rightLabel: "Waiting", favorite: "even", edge: 0 }
+    : { leftLabel: "Waiting", rightLabel: "Waiting" }
 
   const hostCurrentMultiplier = getMultiplier(
     match.spectatorPool.host,
@@ -827,6 +872,7 @@ export default function ArenaMatchPage() {
     !spectatorBetLockedForPlayers
 
   const marketNeedsOpposingLiquidity = selectedSide !== null && oppositePoolForSelectedSide <= 0
+
   const recentTickets = [...tickets].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6)
 
   function persistPartialMatch(partial: Partial<ArenaMatch>) {
@@ -914,9 +960,11 @@ export default function ArenaMatchPage() {
     setMessage(`Selected ${sideName}. Add to your position before lock if you want more exposure.`)
   }
 
-  async function placeBet() {
+  function placeBet() {
     if (spectatorBetLockedForPlayers) {
-      setMessage("Players cannot bet on their own match. Spectator betting is for non-participants only.")
+      setMessage(
+        "Players cannot bet on their own match. Spectator betting is for non-participants only."
+      )
       return
     }
 
@@ -948,52 +996,65 @@ export default function ArenaMatchPage() {
       return
     }
 
-    try {
-      setIsSubmittingBet(true)
-
-      await placeArenaSpectatorBet({
-        matchId: match.id,
-        side: selectedSide,
-        amount: betAmount,
-        user: currentUser.name,
-        walletAddress: currentUser.name,
-      })
-
-      const selectedPlayer = selectedSide === "host" ? match.host.name : challenger.name
-      const projection = selectedSide === "host" ? hostProjection : challengerProjection
-      const oppositePool =
-        selectedSide === "host" ? match.spectatorPool.challenger : match.spectatorPool.host
-
-      setPoolFlash(selectedSide)
-      setTimeout(() => setPoolFlash(null), 700)
-
-      setFeed((prev) => {
-        const whale = betAmount >= WHALE_BET_THRESHOLD
-        const isAddToPosition = myExistingSide === selectedSide
-        const prefix = isAddToPosition ? "➕ Position Added" : whale ? "🔥 WHALE BET" : "⚡ Spectator Bet"
-        const line = `${prefix}: ${betAmount} KAS on ${selectedPlayer}`
-        return [line, ...prev].slice(0, 12)
-      })
-
-      setBetAmountInput(String(DEFAULT_BET))
-
-      if (oppositePool <= 0) {
-        setMessage(
-          `Position added: ${betAmount} KAS on ${selectedPlayer}. Opposing liquidity is still empty, so projected profit remains 0 KAS until bets arrive on the other side.`
-        )
-        return
-      }
-
-      setMessage(
-        `Position added: ${betAmount} KAS on ${selectedPlayer}. Projected return: ${projection.multiplier.toFixed(
-          2
-        )}x. Estimated payout if correct: ${projection.payout.toFixed(2)} KAS after rake.`
-      )
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to place spectator bet.")
-    } finally {
-      setIsSubmittingBet(false)
+    const ticket: SpectatorTicket = {
+      id: `${Date.now()}`,
+      matchId: match.id,
+      side: selectedSide,
+      amount: betAmount,
+      createdAt: Date.now(),
     }
+
+    setTickets((prev) => [ticket, ...prev])
+
+    const updated = updateArenaMatch(match.id, (current) => ({
+      ...current,
+      spectators: current.spectators + 1,
+      spectatorPool: {
+        host:
+          selectedSide === "host"
+            ? current.spectatorPool.host + betAmount
+            : current.spectatorPool.host,
+        challenger:
+          selectedSide === "challenger"
+            ? current.spectatorPool.challenger + betAmount
+            : current.spectatorPool.challenger,
+      },
+    }))
+
+    if (updated) {
+      setMatch(updated)
+    }
+
+    setPoolFlash(selectedSide)
+    setTimeout(() => setPoolFlash(null), 700)
+
+    const selectedPlayer = selectedSide === "host" ? match.host.name : challenger.name
+    const projection = selectedSide === "host" ? hostProjection : challengerProjection
+    const oppositePool =
+      selectedSide === "host" ? match.spectatorPool.challenger : match.spectatorPool.host
+
+    setFeed((prev) => {
+      const whale = betAmount >= WHALE_BET_THRESHOLD
+      const isAddToPosition = myExistingSide === selectedSide
+      const prefix = isAddToPosition ? "➕ Position Added" : whale ? "🔥 WHALE BET" : "⚡ Spectator Bet"
+      const line = `${prefix}: ${betAmount} KAS on ${selectedPlayer}`
+      return [line, ...prev].slice(0, 12)
+    })
+
+    setBetAmountInput(String(DEFAULT_BET))
+
+    if (oppositePool <= 0) {
+      setMessage(
+        `Position added: ${betAmount} KAS on ${selectedPlayer}. Opposing liquidity is still empty, so projected profit remains 0 KAS until bets arrive on the other side.`
+      )
+      return
+    }
+
+    setMessage(
+      `Position added: ${betAmount} KAS on ${selectedPlayer}. Projected return: ${projection.multiplier.toFixed(
+        2
+      )}x. Estimated payout if correct: ${projection.payout.toFixed(2)} KAS after rake.`
+    )
   }
 
   function handlePauseMatch() {
@@ -2035,7 +2096,7 @@ export default function ArenaMatchPage() {
                     inputMode="numeric"
                     value={betAmountInput}
                     onChange={(e) => setBetAmountInput(e.target.value)}
-                    disabled={spectatorBetLockedForPlayers || isSubmittingBet}
+                    disabled={spectatorBetLockedForPlayers}
                     className="mt-3 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-xl font-bold text-white outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   />
 
@@ -2045,7 +2106,7 @@ export default function ArenaMatchPage() {
                         key={quick}
                         type="button"
                         onClick={() => setBetAmountInput(String(quick))}
-                        disabled={spectatorBetLockedForPlayers || isSubmittingBet}
+                        disabled={spectatorBetLockedForPlayers}
                         className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {quick} KAS
@@ -2110,7 +2171,6 @@ export default function ArenaMatchPage() {
                 <button
                   onClick={placeBet}
                   disabled={
-                    isSubmittingBet ||
                     spectatorBetLockedForPlayers ||
                     !marketOpen ||
                     !challenger ||
@@ -2119,15 +2179,13 @@ export default function ArenaMatchPage() {
                   }
                   className="w-full rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 px-5 py-4 text-base font-black text-black transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isSubmittingBet
-                    ? "Placing Bet..."
-                    : spectatorBetLockedForPlayers
-                      ? "Players Cannot Use Spectator Bets"
-                      : marketOpen && challenger
-                        ? myExistingSide && selectedSide === myExistingSide
-                          ? `Add to ${selectedPlayerName}`
-                          : "Place Spectator Bet"
-                        : "Betting Unavailable"}
+                  {spectatorBetLockedForPlayers
+                    ? "Players Cannot Use Spectator Bets"
+                    : marketOpen && challenger
+                      ? myExistingSide && selectedSide === myExistingSide
+                        ? `Add to ${selectedPlayerName}`
+                        : "Place Spectator Bet"
+                      : "Betting Unavailable"}
                 </button>
 
                 <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
