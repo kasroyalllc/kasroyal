@@ -8,12 +8,12 @@ import {
   appendRoomChat,
   cancelOpenRoom,
   clampBetAmount,
-  currentUser,
   DEFAULT_BET,
   forfeitArenaMatch,
   formatArenaPhase,
   getArenaBettingSecondsLeft,
   getArenaById,
+  getCurrentUser,
   getFavoriteData,
   getMultiplier,
   getProjectedState,
@@ -45,6 +45,7 @@ import {
   updateArenaMatch,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
+import { getCurrentIdentity } from "@/lib/identity"
 
 type Connect4Cell = "host" | "challenger" | null
 type TttCell = "X" | "O" | null
@@ -652,7 +653,7 @@ export default function ArenaMatchPage() {
 
     const syncTickets = () => {
       setTickets(getTicketsForMatch(matchId))
-      setMyTickets(readCurrentUserTickets(currentUser.name).filter((ticket) => ticket.matchId === matchId))
+      setMyTickets(readCurrentUserTickets(getCurrentIdentity().id).filter((ticket) => ticket.matchId === matchId))
     }
 
     syncRoom()
@@ -847,8 +848,14 @@ export default function ArenaMatchPage() {
   const isFinished = match.status === "Finished"
   const isCountdown = match.status === "Ready to Start"
   const isPaused = match.status === "Live" && pauseState.isPaused
-  const isHostUser = currentUser.name === match.host.name
-  const isChallengerUser = currentUser.name === challenger?.name
+  const currentIdentityId = getCurrentIdentity().id.toLowerCase()
+  const currentUserProfile = getCurrentUser()
+  const isHostUser =
+    (match.hostIdentityId && match.hostIdentityId.toLowerCase() === currentIdentityId) ||
+    match.host.name === currentUserProfile.name
+  const isChallengerUser =
+    (match.challengerIdentityId && match.challengerIdentityId.toLowerCase() === currentIdentityId) ||
+    (!!challenger && challenger.name === currentUserProfile.name)
   const isPlayer = isHostUser || isChallengerUser
   const isSpectatorOnly = !isPlayer
   const spectatorBetLockedForPlayers = isPlayer
@@ -1170,7 +1177,7 @@ export default function ArenaMatchPage() {
       return
     }
 
-    if (betAmount > currentUser.walletBalance) {
+    if (betAmount > currentUserProfile.walletBalance) {
       setMessage("Insufficient KAS balance for that spectator bet.")
       return
     }
@@ -1180,8 +1187,8 @@ export default function ArenaMatchPage() {
         matchId: match.id,
         side: selectedSide,
         amount: betAmount,
-        user: currentUser.name,
-        walletAddress: currentUser.name,
+        user: getCurrentIdentity().id,
+        walletAddress: getCurrentIdentity().id,
       })
 
       setPoolFlash(selectedSide)
@@ -1269,8 +1276,8 @@ export default function ArenaMatchPage() {
     setShowCancelRoomConfirm(false)
     if (!matchId || !match) return
     if (match.challenger) return
-    if (currentUser.name !== match.host.name) return
-    const done = cancelOpenRoom(matchId, currentUser.name)
+    if (!isHostUser) return
+    const done = cancelOpenRoom(matchId, getCurrentIdentity().id)
     if (done) {
       setMessage("Room cancelled. You can create a new match from the Arena.")
       router.push("/arena")
@@ -2535,7 +2542,7 @@ export default function ArenaMatchPage() {
                   e.preventDefault()
                   const text = chatInput.trim()
                   if (!text) return
-                  appendRoomChat(matchId, { user: currentUser.name, text })
+                  appendRoomChat(matchId, { user: currentUserProfile.name, text })
                   setChatInput("")
                 }}
               >

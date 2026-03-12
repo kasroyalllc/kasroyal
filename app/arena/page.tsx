@@ -7,10 +7,10 @@ import {
   autoFillArenaMatch,
   clampWager,
   createArenaMatch,
-  currentUser,
   formatAge,
   gameMeta,
   getArenaBettingSecondsLeft,
+  getCurrentUser,
   getMatchResultLabel,
   getRankColors,
   getWalletActiveMatch,
@@ -23,6 +23,7 @@ import {
   type GameType,
   type RankTier,
 } from "@/lib/mock/arena-data"
+import { getCurrentIdentity } from "@/lib/identity"
 
 type GameFilter = "All" | GameType
 type OwnershipFilter = "All" | "Mine" | "Hosted" | "Joined"
@@ -115,7 +116,11 @@ function ResumeMatchBanner({
   const isLive = match.status === "Live"
   const countdown = getArenaBettingSecondsLeft(match)
   const opponent =
-    match.host.name === currentUser.name ? match.challenger?.name ?? "Opponent" : match.host.name
+    (match.hostIdentityId &&
+      match.hostIdentityId.toLowerCase() === getCurrentIdentity().id.toLowerCase()) ||
+    match.host.name === getCurrentUser().name
+      ? match.challenger?.name ?? "Opponent"
+      : match.host.name
 
   return (
     <div
@@ -189,7 +194,11 @@ function ActiveWalletLockBanner({
   match: ArenaMatch
 }) {
   const opponent =
-    match.host.name === currentUser.name ? match.challenger?.name ?? "Opponent" : match.host.name
+    (match.hostIdentityId &&
+      match.hostIdentityId.toLowerCase() === getCurrentIdentity().id.toLowerCase()) ||
+    match.host.name === getCurrentUser().name
+      ? match.challenger?.name ?? "Opponent"
+      : match.host.name
   const isLive = match.status === "Live"
   const isReady = match.status === "Ready to Start"
   const tone = isLive
@@ -265,8 +274,13 @@ function MatchCard({
   const isReady = match.status === "Ready to Start"
   const isLive = match.status === "Live"
   const isFinished = match.status === "Finished"
-  const isHost = match.host.name === currentUser.name
-  const isChallenger = match.challenger?.name === currentUser.name
+  const id = getCurrentIdentity().id.toLowerCase()
+  const name = getCurrentUser().name
+  const isHost =
+    (match.hostIdentityId && match.hostIdentityId.toLowerCase() === id) || match.host.name === name
+  const isChallenger =
+    (match.challengerIdentityId && match.challengerIdentityId.toLowerCase() === id) ||
+    (!!match.challenger && match.challenger.name === name)
   const isMine = isHost || isChallenger
   const countdownLabel = getPhaseLabel(match)
 
@@ -465,25 +479,31 @@ export default function ArenaPage() {
   }, [])
 
   const wager = clampWager(Number(wagerInput))
-  const activeWalletMatch = useMemo(() => getWalletActiveMatch(currentUser.name), [matches])
-  const walletLocked = useMemo(() => hasWalletActiveMatch(currentUser.name), [matches])
+  const activeWalletMatch = useMemo(() => getWalletActiveMatch(), [matches])
+  const walletLocked = useMemo(() => hasWalletActiveMatch(), [matches])
 
   const filteredMatches = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const id = getCurrentIdentity().id.toLowerCase()
+    const name = getCurrentUser().name
+    const isMine = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) ||
+      (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === id) ||
+      m.host.name === name ||
+      m.challenger?.name === name
+    const isHost = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) || m.host.name === name
+    const isChallenger = (m: ArenaMatch) =>
+      (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === id) ||
+      (!!m.challenger && m.challenger.name === name)
 
     return matches
       .filter((match) => (gameFilter === "All" ? true : match.game === gameFilter))
       .filter((match) => {
         if (ownershipFilter === "All") return true
-        if (ownershipFilter === "Mine") {
-          return match.host.name === currentUser.name || match.challenger?.name === currentUser.name
-        }
-        if (ownershipFilter === "Hosted") {
-          return match.host.name === currentUser.name
-        }
-        if (ownershipFilter === "Joined") {
-          return match.challenger?.name === currentUser.name
-        }
+        if (ownershipFilter === "Mine") return isMine(match)
+        if (ownershipFilter === "Hosted") return isHost(match)
+        if (ownershipFilter === "Joined") return isChallenger(match)
         return true
       })
       .filter((match) => {
@@ -497,53 +517,54 @@ export default function ArenaPage() {
       })
   }, [matches, gameFilter, ownershipFilter, search])
 
-  const myReadyMatches = useMemo(
-    () =>
-      filteredMatches
-        .filter(
-          (match) =>
-            match.status === "Ready to Start" &&
-            (match.host.name === currentUser.name || match.challenger?.name === currentUser.name)
-        )
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [filteredMatches]
-  )
+  const myReadyMatches = useMemo(() => {
+    const id = getCurrentIdentity().id.toLowerCase()
+    const name = getCurrentUser().name
+    const isMine = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) ||
+      (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === id) ||
+      m.host.name === name ||
+      m.challenger?.name === name
+    return filteredMatches
+      .filter((match) => match.status === "Ready to Start" && isMine(match))
+      .sort((a, b) => b.createdAt - a.createdAt)
+  }, [filteredMatches])
 
-  const myLiveMatches = useMemo(
-    () =>
-      filteredMatches
-        .filter(
-          (match) =>
-            match.status === "Live" &&
-            (match.host.name === currentUser.name || match.challenger?.name === currentUser.name)
-        )
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [filteredMatches]
-  )
+  const myLiveMatches = useMemo(() => {
+    const id = getCurrentIdentity().id.toLowerCase()
+    const name = getCurrentUser().name
+    const isMine = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) ||
+      (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === id) ||
+      m.host.name === name ||
+      m.challenger?.name === name
+    return filteredMatches
+      .filter((match) => match.status === "Live" && isMine(match))
+      .sort((a, b) => b.createdAt - a.createdAt)
+  }, [filteredMatches])
 
   const priorityResumeMatch = myReadyMatches[0] ?? myLiveMatches[0] ?? activeWalletMatch ?? null
 
-  const joinableMatches = useMemo(
-    () =>
-      filteredMatches
-        .filter(
-          (match) =>
-            match.status === "Waiting for Opponent" && match.host.name !== currentUser.name
-        )
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [filteredMatches]
-  )
+  const joinableMatches = useMemo(() => {
+    const id = getCurrentIdentity().id.toLowerCase()
+    const name = getCurrentUser().name
+    const isHost = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) || m.host.name === name
+    return filteredMatches
+      .filter((match) => match.status === "Waiting for Opponent" && !isHost(match))
+      .sort((a, b) => b.createdAt - a.createdAt)
+  }, [filteredMatches])
 
-  const myMatches = useMemo(
-    () =>
-      filteredMatches
-        .filter(
-          (match) =>
-            match.host.name === currentUser.name || match.challenger?.name === currentUser.name
-        )
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [filteredMatches]
-  )
+  const myMatches = useMemo(() => {
+    const id = getCurrentIdentity().id.toLowerCase()
+    const name = getCurrentUser().name
+    const isMine = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) ||
+      (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === id) ||
+      m.host.name === name ||
+      m.challenger?.name === name
+    return filteredMatches.filter(isMine).sort((a, b) => b.createdAt - a.createdAt)
+  }, [filteredMatches])
 
   const liveMatches = useMemo(
     () =>
@@ -556,14 +577,15 @@ export default function ArenaPage() {
     [filteredMatches]
   )
 
-  const openHostedMatches = useMemo(
-    () =>
-      filteredMatches.filter(
-        (match) =>
-          match.status === "Waiting for Opponent" && match.host.name === currentUser.name
-      ),
-    [filteredMatches]
-  )
+  const openHostedMatches = useMemo(() => {
+    const id = getCurrentIdentity().id.toLowerCase()
+    const name = getCurrentUser().name
+    const isHost = (m: ArenaMatch) =>
+      (m.hostIdentityId && m.hostIdentityId.toLowerCase() === id) || m.host.name === name
+    return filteredMatches.filter(
+      (match) => match.status === "Waiting for Opponent" && isHost(match)
+    )
+  }, [filteredMatches])
 
   function handleSelectCreateGame(game: GameType) {
     setSelectedGame(game)
@@ -596,7 +618,7 @@ export default function ArenaPage() {
 
     const safeWager = clampWager(Number(wagerInput))
 
-    if (safeWager > currentUser.walletBalance) {
+    if (safeWager > getCurrentUser().walletBalance) {
       setMessage("Insufficient KAS balance for that wager.")
       return
     }
@@ -740,17 +762,17 @@ export default function ArenaPage() {
               <div className="space-y-4">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">Player</div>
-                  <div className="mt-2 text-xl font-black">{currentUser.name}</div>
+                  <div className="mt-2 text-xl font-black">{getCurrentUser().name}</div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <RankBadge rank={currentUser.rank} />
+                    <RankBadge rank={getCurrentUser().rank} />
                     <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/75">
-                      {currentUser.rating} MMR
+                      {getCurrentUser().rating} MMR
                     </span>
                   </div>
                   <div className="mt-3 text-sm text-white/55">
                     Wallet Balance:{" "}
                     <span className="font-bold text-emerald-300">
-                      {currentUser.walletBalance.toFixed(2)} KAS
+                      {getCurrentUser().walletBalance.toFixed(2)} KAS
                     </span>
                   </div>
                 </div>

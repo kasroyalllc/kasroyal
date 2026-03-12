@@ -45,6 +45,7 @@ import {
   getMatchBets as getDbMatchBets,
   placeBet as placeDbBet,
 } from "@/lib/db/bets"
+import { getCurrentIdentity } from "@/lib/identity"
 
 export type {
   ArenaMatch,
@@ -97,6 +98,25 @@ export type RoomChatMessage = {
   user: string
   text: string
   ts: number
+}
+
+/** Foundation for ranked progression: XP bar per rank, wins/losses/forfeits affect XP, season reset every 2 months. */
+export type RankProgress = {
+  tier: RankTier
+  xpInTier: number
+  xpRequiredForNext: number
+  seasonEndsAt: number
+}
+
+export function getRankProgress(identityId?: string): RankProgress {
+  const _id = identityId ?? getCurrentIdentity().id
+  // Stub: full persistence and XP delta on win/loss/forfeit to be wired when match results are settled.
+  const tier: RankTier = "Gold II"
+  const xpRequiredForNext = 100
+  const seasonEnd = new Date()
+  seasonEnd.setMonth(seasonEnd.getMonth() + 2)
+  seasonEnd.setDate(1)
+  return { tier, xpInTier: 45, xpRequiredForNext, seasonEndsAt: seasonEnd.getTime() }
 }
 
 export type BetSettlement = {
@@ -200,6 +220,7 @@ let lastRemoteHydrateAt = 0
 
 const REMOTE_HYDRATE_INTERVAL_MS = 5000
 
+/** @deprecated Use getCurrentUser() for identity-aware profile. */
 export const currentUser: PlayerProfile & { walletBalance: number } = {
   name: "KasKing01",
   rank: "Diamond II",
@@ -207,6 +228,17 @@ export const currentUser: PlayerProfile & { walletBalance: number } = {
   winRate: 61,
   last10: "7-3",
   walletBalance: 275.4,
+}
+
+/** Resolved profile for the current session: wallet-based or guest. Use for display and fallback. */
+export function getCurrentUser(): PlayerProfile & { walletBalance: number } {
+  const identity = getCurrentIdentity()
+  const profile = buildProfileFromWallet(identity.id, identity.displayName)
+  return {
+    ...profile,
+    name: identity.displayName,
+    walletBalance: identity.isGuest ? 0 : 275.4,
+  }
 }
 
 export const mockOpponentPool: PlayerProfile[] = [
@@ -512,9 +544,9 @@ function withNormalizedPauseState(match: ArenaMatch): ArenaMatch {
 }
 
 function normalizePlayerIdentity(value?: string) {
-  const raw = (value ?? currentUser.name).trim()
-  if (!raw) return currentUser.name
-  if (raw === `${currentUser.name}-wallet`) return currentUser.name
+  const raw = (value ?? getCurrentIdentity().id).trim()
+  if (!raw) return getCurrentIdentity().id
+  if (raw === `${getCurrentIdentity().id}-wallet`) return getCurrentIdentity().id
   return raw
 }
 
@@ -526,12 +558,15 @@ function isActiveMatchStatus(status: ArenaStatus) {
   )
 }
 
-function matchHasIdentity(match: ArenaMatch, identity: string) {
-  const normalizedIdentity = normalizePlayerIdentity(identity)
-  const hostName = normalizePlayerIdentity(match.host.name)
-  const challengerName = normalizePlayerIdentity(match.challenger?.name)
-
-  return hostName === normalizedIdentity || challengerName === normalizedIdentity
+/** Match participant check: use hostIdentityId/challengerIdentityId when set, else fall back to name. */
+function matchHasIdentity(match: ArenaMatch, identityId: string) {
+  const normalized = identityId.trim().toLowerCase()
+  if (!normalized) return false
+  if (match.hostIdentityId && match.hostIdentityId.toLowerCase() === normalized) return true
+  if (match.challengerIdentityId && match.challengerIdentityId.toLowerCase() === normalized) return true
+  const hostName = normalizePlayerIdentity(match.host.name).toLowerCase()
+  const challengerName = normalizePlayerIdentity(match.challenger?.name).toLowerCase()
+  return hostName === normalized || challengerName === normalized
 }
 
 function getStoreRevision() {
@@ -539,13 +574,14 @@ function getStoreRevision() {
 }
 
 function getActiveMatchForIdentity(identity?: string, excludeMatchId?: string) {
-  const normalizedIdentity = normalizePlayerIdentity(identity)
+  const id = identity !== undefined && identity !== null ? identity.trim() : getCurrentIdentity().id
+  const normalized = id ? id.toLowerCase() : ""
 
   return (
     readArenaMatches().find((match) => {
       if (excludeMatchId && match.id === excludeMatchId) return false
       if (!isActiveMatchStatus(match.status)) return false
-      return matchHasIdentity(match, normalizedIdentity)
+      return matchHasIdentity(match, normalized)
     }) ?? null
   )
 }
@@ -821,14 +857,23 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
 }
 
 function rankFromRating(rating: number): RankTier {
-  if (rating >= 1950) return "Grandmaster"
-  if (rating >= 1800) return "Master"
-  if (rating >= 1675) return "Diamond II"
+  if (rating >= 2100) return "Grandmaster"
+  if (rating >= 1950) return "Master"
+  if (rating >= 1850) return "Diamond I"
+  if (rating >= 1750) return "Diamond II"
+  if (rating >= 1650) return "Diamond III"
   if (rating >= 1550) return "Platinum I"
-  if (rating >= 1450) return "Gold III"
+  if (rating >= 1480) return "Platinum II"
+  if (rating >= 1410) return "Platinum III"
   if (rating >= 1350) return "Gold I"
-  if (rating >= 1200) return "Silver II"
-  return "Bronze I"
+  if (rating >= 1290) return "Gold II"
+  if (rating >= 1230) return "Gold III"
+  if (rating >= 1180) return "Silver I"
+  if (rating >= 1130) return "Silver II"
+  if (rating >= 1080) return "Silver III"
+  if (rating >= 1030) return "Bronze I"
+  if (rating >= 980) return "Bronze II"
+  return "Bronze III"
 }
 
 function buildProfileFromWallet(wallet: string, fallbackName?: string): PlayerProfile {
@@ -1485,8 +1530,11 @@ export function readSpectatorTickets() {
   return [...readTicketsFromStore()]
 }
 
-export function readCurrentUserTickets(user = currentUser.name) {
-  return readSpectatorTickets().filter((ticket) => ticket.user === user)
+export function readCurrentUserTickets(user = getCurrentIdentity().id) {
+  const id = user.trim().toLowerCase()
+  return readSpectatorTickets().filter(
+    (ticket) => ticket.user.toLowerCase() === id || ticket.user === user
+  )
 }
 
 export function getArenaById(matchId: string, matches: ArenaMatch[] = readArenaMatches()) {
@@ -1730,11 +1778,12 @@ export function createArenaMatch(input: {
   hostWallet?: string
 }) {
   const wager = clampWager(input.wager)
-  const hostWallet = normalizePlayerIdentity(input.hostWallet ?? currentUser.name)
+  const identity = getCurrentIdentity()
+  const hostWallet = normalizePlayerIdentity(input.hostWallet ?? identity.id)
 
   assertNoOtherActiveMatch(hostWallet)
 
-  const profile = buildProfileFromWallet(hostWallet, currentUser.name)
+  const profile = buildProfileFromWallet(hostWallet, identity.displayName)
   const labels = sideLabelsForGame(input.game)
   const resolvedBestOf = bestOfForGame(input.game, input.bestOf)
 
@@ -1754,6 +1803,8 @@ export function createArenaMatch(input: {
         playerPot: wager,
         host: profile,
         challenger: null,
+        hostIdentityId: hostWallet.toLowerCase(),
+        challengerIdentityId: undefined,
         hostSideLabel: labels.host,
         challengerSideLabel: labels.challenger,
         statusText: "Open seat available",
@@ -1805,7 +1856,8 @@ export function createArenaMatch(input: {
 }
 
 export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | null {
-  const walletAddress = normalizePlayerIdentity(wallet ?? currentUser.name)
+  const identity = getCurrentIdentity()
+  const walletAddress = normalizePlayerIdentity(wallet ?? identity.id)
   const existing = getArenaById(matchId)
 
   if (!existing) {
@@ -1818,7 +1870,7 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
 
   assertNoOtherActiveMatch(walletAddress, matchId)
 
-  const challengerProfile = buildProfileFromWallet(walletAddress, currentUser.name)
+  const challengerProfile = buildProfileFromWallet(walletAddress, identity.displayName)
   const nowTs = Date.now()
   const resolvedSeatedAt = existing.seatedAt ?? nowTs
   const resolvedCountdownStartedAt = existing.countdownStartedAt ?? nowTs
@@ -1827,6 +1879,7 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
 
   const localJoined = updateArenaMatch(matchId, (current) => ({
     challenger: challengerProfile,
+    challengerIdentityId: walletAddress.toLowerCase(),
     status: "Ready to Start",
     bettingStatus: "open",
     marketVisibility: "featured",
@@ -1851,6 +1904,7 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
       upsertMatchLocally({
         ...mapped,
         challenger: challengerProfile,
+        challengerIdentityId: walletAddress.toLowerCase(),
         status: "Ready to Start",
         bettingStatus: "open",
         marketVisibility: "featured",
@@ -1947,7 +2001,7 @@ export function launchArenaMatch(matchId: string): ArenaMatch | null {
  * Removes the match from the store so the wallet is released from active-match lock.
  */
 export function cancelOpenRoom(matchId: string, hostIdentity?: string): boolean {
-  const identity = normalizePlayerIdentity(hostIdentity ?? currentUser.name)
+  const identityId = (hostIdentity ?? getCurrentIdentity().id).trim().toLowerCase()
   const match = getArenaById(matchId)
 
   if (!match) {
@@ -1958,8 +2012,10 @@ export function cancelOpenRoom(matchId: string, hostIdentity?: string): boolean 
     return false
   }
 
-  const hostName = normalizePlayerIdentity(match.host.name)
-  if (hostName !== identity) {
+  const isHost =
+    (match.hostIdentityId && match.hostIdentityId.toLowerCase() === identityId) ||
+    normalizePlayerIdentity(match.host.name).toLowerCase() === identityId
+  if (!isHost) {
     return false
   }
 
@@ -2138,8 +2194,9 @@ export async function placeArenaSpectatorBet(input: {
     throw new Error("Betting is closed for this match")
   }
 
-  const normalizedUser = input.user ?? currentUser.name
-  const normalizedWalletAddress = input.walletAddress ?? currentUser.name
+  const identity = getCurrentIdentity()
+  const normalizedUser = (input.user ?? identity.id).trim()
+  const normalizedWalletAddress = (input.walletAddress ?? identity.id).trim()
 
   if (matchHasIdentity(match, normalizedUser) || matchHasIdentity(match, normalizedWalletAddress)) {
     throw new Error("Players cannot bet on their own match")
@@ -2429,23 +2486,19 @@ export function getRankColors(rank: RankTier): RankColors {
       "bg-amber-400/10"
     )
   }
-
-  if (rank === "Diamond II" || rank === "Platinum I") {
+  if (rank.startsWith("Diamond") || rank.startsWith("Platinum")) {
     return makeRankColors("text-sky-300", "ring-sky-300/30", "bg-sky-400/10")
   }
-
-  if (rank === "Gold III" || rank === "Gold I") {
+  if (rank.startsWith("Gold")) {
     return makeRankColors(
       "text-emerald-300",
       "ring-emerald-300/30",
       "bg-emerald-400/10"
     )
   }
-
-  if (rank === "Silver II") {
+  if (rank.startsWith("Silver")) {
     return makeRankColors("text-slate-200", "ring-white/20", "bg-white/10")
   }
-
   return makeRankColors(
     "text-orange-200",
     "ring-orange-300/20",

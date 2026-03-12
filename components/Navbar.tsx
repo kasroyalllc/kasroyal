@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { currentUser, getWalletActiveMatch } from "@/lib/mock/arena-data"
+import { getWalletActiveMatch } from "@/lib/mock/arena-data"
 import {
   clearAppWalletConnectionState,
   clearStoredSelectedWalletKey,
@@ -293,7 +293,7 @@ export default function Navbar() {
         spectators,
       })
 
-      const active = getWalletActiveMatch(currentUser.name)
+      const active = getWalletActiveMatch()
       setActiveMatch(active ? { id: active.id, game: active.game, status: active.status } : null)
     }
 

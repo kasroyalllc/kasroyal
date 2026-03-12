@@ -1,12 +1,22 @@
 export type GameType = "Chess Duel" | "Connect 4" | "Tic-Tac-Toe"
 
+/** Full ranked ladder: Bronze III → Grandmaster. XP bar per rank; wins/losses/forfeits affect XP. */
 export type RankTier =
+  | "Bronze III"
+  | "Bronze II"
   | "Bronze I"
+  | "Silver III"
   | "Silver II"
-  | "Gold I"
+  | "Silver I"
   | "Gold III"
+  | "Gold II"
+  | "Gold I"
+  | "Platinum III"
+  | "Platinum II"
   | "Platinum I"
+  | "Diamond III"
   | "Diamond II"
+  | "Diamond I"
   | "Master"
   | "Grandmaster"
 
@@ -68,6 +78,10 @@ export type ArenaMatch = {
 
   host: PlayerProfile
   challenger: PlayerProfile | null
+  /** Canonical identity for host (wallet address or guest id). Used for active-match and turn logic. */
+  hostIdentityId?: string
+  /** Canonical identity for challenger. */
+  challengerIdentityId?: string
 
   hostSideLabel: string
   challengerSideLabel: string

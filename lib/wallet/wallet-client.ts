@@ -114,6 +114,7 @@ const KAS_DECIMALS = 18
 
 const SELECTED_PROVIDER_STORAGE_KEY = "kasroyal_selected_wallet_provider_key"
 const APP_CONNECTED_STORAGE_KEY = "kasroyal_app_wallet_connected"
+const APP_CONNECTED_ACCOUNT_KEY = "kasroyal_connected_account"
 const APP_SIGNATURE_STORAGE_KEY = "kasroyal_app_wallet_signature"
 const APP_MESSAGE_STORAGE_KEY = "kasroyal_app_wallet_message"
 
@@ -457,9 +458,25 @@ export function setAppWalletConnected(value: boolean) {
   }
 }
 
+export function getStoredConnectedAccount(): string | null {
+  if (!isBrowser()) return null
+  const raw = window.localStorage.getItem(APP_CONNECTED_ACCOUNT_KEY)
+  return raw && ADDRESS_REGEX.test(raw) ? raw : null
+}
+
+export function setStoredConnectedAccount(account: string | null) {
+  if (!isBrowser()) return
+  if (!account || !ADDRESS_REGEX.test(account)) {
+    window.localStorage.removeItem(APP_CONNECTED_ACCOUNT_KEY)
+    return
+  }
+  window.localStorage.setItem(APP_CONNECTED_ACCOUNT_KEY, account)
+}
+
 export function clearAppWalletConnectionState() {
   if (!isBrowser()) return
   window.localStorage.removeItem(APP_CONNECTED_STORAGE_KEY)
+  window.localStorage.removeItem(APP_CONNECTED_ACCOUNT_KEY)
   window.localStorage.removeItem(APP_SIGNATURE_STORAGE_KEY)
   window.localStorage.removeItem(APP_MESSAGE_STORAGE_KEY)
 }
@@ -838,6 +855,7 @@ export async function connectInjectedWallet(
 
   setStoredAppMessage(signMessage)
   setStoredAppSignature(signature)
+  setStoredConnectedAccount(session.account)
   setAppWalletConnected(true)
 
   return {
