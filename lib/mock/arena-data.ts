@@ -115,6 +115,9 @@ const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
 const SPECTATOR_TICKETS_STORAGE_KEY = "kasroyal_spectator_tickets"
 const SPECTATOR_TICKETS_EVENT = "kasroyal-spectator-tickets-updated"
 
+const ENABLE_DEV_SEED = process.env.NEXT_PUBLIC_ENABLE_DEV_SEED === "true"
+const ENABLE_DEV_BOTS = process.env.NEXT_PUBLIC_ENABLE_DEV_BOTS === "true"
+
 const now = Date.now()
 
 export const currentUser: PlayerProfile & { walletBalance: number } = {
@@ -207,7 +210,7 @@ export const gameMeta: Record<GameType, GameMeta> = {
   },
 }
 
-export const initialArenaMatches: ArenaMatch[] = normalizeArenaMatches(
+const seededArenaMatches: ArenaMatch[] = normalizeArenaMatches(
   [
     {
       id: "arena-1",
@@ -339,6 +342,10 @@ export const initialArenaMatches: ArenaMatch[] = normalizeArenaMatches(
   ],
   now
 )
+
+export const initialArenaMatches: ArenaMatch[] = ENABLE_DEV_SEED
+  ? seededArenaMatches
+  : []
 
 const leaderboardSeed: LeaderboardEntry[] = [
   {
@@ -580,7 +587,8 @@ function mapDbMatchToArenaMatch(dbMatch: {
     id: dbMatch.id,
     game,
     status: dbStatusToArenaStatus(dbMatch.status),
-    bettingStatus: challenger && dbMatch.status === "Ready to Start" ? "open" : "disabled",
+    bettingStatus:
+      challenger && dbMatch.status === "Ready to Start" ? "open" : "disabled",
     marketVisibility: challenger ? "featured" : "watch-only",
     isFeaturedMarket: !!challenger,
     bestOf: bestOfForGame(game),
@@ -743,7 +751,7 @@ if (isBrowser()) {
   loadTicketsFromLocalStorage()
 
   const loaded = readArenaMatches()
-  if (!loaded.length) {
+  if (!loaded.length && initialArenaMatches.length) {
     persistMatches(initialArenaMatches)
   }
 
@@ -997,6 +1005,10 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
 }
 
 export function autoFillArenaMatch(matchId: string): ArenaMatch | null {
+  if (!ENABLE_DEV_BOTS) {
+    return getArenaById(matchId)
+  }
+
   const match = getArenaById(matchId)
 
   if (!match || match.challenger) {
@@ -1233,8 +1245,10 @@ export function buildFeaturedSpectateMarkets(matches = readArenaMatches()) {
         (match.status === "Ready to Start" || match.status === "Live")
     )
     .sort((a, b) => {
-      const aPriority = a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
-      const bPriority = b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0
+      const aPriority =
+        a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
+      const bPriority =
+        b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0
 
       if (bPriority !== aPriority) return bPriority - aPriority
 
@@ -1319,6 +1333,28 @@ export function buildLeaderboardFromArena(
 
 export function getLeaderboard(): LeaderboardEntry[] {
   return buildLeaderboardFromArena(readArenaMatches())
+}
+
+export function clearArenaLocalState() {
+  arenaMatchesCache = []
+  spectatorTicketsCache = []
+
+  if (!isBrowser()) return
+
+  window.localStorage.removeItem(ARENA_MATCHES_STORAGE_KEY)
+  window.localStorage.removeItem(SPECTATOR_TICKETS_STORAGE_KEY)
+
+  emitStorageEvent(ARENA_MATCHES_EVENT)
+  emitStorageEvent(SPECTATOR_TICKETS_EVENT)
+}
+
+export function seedDevArenaMatches() {
+  if (!ENABLE_DEV_SEED) {
+    return []
+  }
+
+  persistMatches(seededArenaMatches)
+  return readArenaMatches()
 }
 
 function cryptoSafeId() {
