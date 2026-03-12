@@ -19,8 +19,8 @@ import {
   type RankTier,
 } from "@/lib/mock/arena-data"
 
-type TicketWithMatch = {
-  ticket: PersistedBetTicket
+type BetRecordWithMatch = {
+  bet: PersistedBetTicket
   match: ArenaMatch | null
 }
 
@@ -126,10 +126,10 @@ function TonePill({
   )
 }
 
-function getTicketStatus(match: ArenaMatch | null) {
+function getBetStatus(match: ArenaMatch | null) {
   if (!match) return "Archived"
   if (match.status === "Waiting for Opponent") return "Open Room"
-  if (match.status === "Ready to Start") return "Betting Window"
+  if (match.status === "Ready to Start") return "Pre-Match"
   if (match.status === "Live") return "Live"
   if (match.status === "Finished") return "Finished"
   return "Unknown"
@@ -200,7 +200,7 @@ function OpenMarketCard({
         selectedSide === "host" ? match.host.name : match.challenger?.name ?? "Challenger"
 
       setMessage(
-        `Bet placed: ${betAmount} KAS on ${backed}. Watch it from My Bets or Spectate once betting locks.`
+        `Bet placed: ${betAmount} KAS on ${backed}. You can track it below in My Bets.`
       )
       setBetAmountInput("5")
       setSelectedSide(null)
@@ -235,7 +235,7 @@ function OpenMarketCard({
 
           <div className="mt-5 grid gap-3 text-sm text-white/60 sm:grid-cols-2 xl:grid-cols-4">
             <div>Player pot: {match.playerPot.toFixed(2)} KAS</div>
-            <div>Total pool: {totalPool.toFixed(2)} KAS</div>
+            <div>Total spectator pool: {totalPool.toFixed(2)} KAS</div>
             <div>Spectators: {match.spectators}</div>
             <div>Status: {match.statusText}</div>
           </div>
@@ -399,57 +399,51 @@ function OpenMarketCard({
   )
 }
 
-function MyBetCard({ ticket, match }: TicketWithMatch) {
-  const status = getTicketStatus(match)
-  const player =
+function MyBetCard({ bet, match }: BetRecordWithMatch) {
+  const status = getBetStatus(match)
+  const backedPlayer =
     !match
-      ? ticket.side === "host"
+      ? bet.side === "host"
         ? "Host"
         : "Challenger"
-      : ticket.side === "host"
+      : bet.side === "host"
         ? match.host.name
         : match.challenger?.name ?? "Challenger"
 
   const multiplier = match
-    ? getMultiplier(match.spectatorPool.host, match.spectatorPool.challenger, ticket.side)
+    ? getMultiplier(match.spectatorPool.host, match.spectatorPool.challenger, bet.side)
     : 0
 
-  const projected = multiplier > 0 ? ticket.amount * multiplier : 0
+  const projected = multiplier > 0 ? bet.amount * multiplier : 0
+  const tone =
+    status === "Pre-Match"
+      ? "gold"
+      : status === "Live"
+        ? "green"
+        : status === "Open Room"
+          ? "sky"
+          : "neutral"
 
   return (
     <div className="rounded-[30px] border border-white/8 bg-white/[0.03] p-5 shadow-[0_0_40px_rgba(0,255,200,0.03)]">
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <TonePill tone="gold">{ticket.game}</TonePill>
-            <TonePill
-              tone={
-                status === "Betting Window"
-                  ? "gold"
-                  : status === "Live"
-                    ? "green"
-                    : status === "Finished"
-                      ? "neutral"
-                      : "sky"
-              }
-            >
-              {status}
-            </TonePill>
-            <TonePill tone="sky">Backed {player}</TonePill>
+            <TonePill tone="gold">{bet.game}</TonePill>
+            <TonePill tone={tone}>{status}</TonePill>
+            <TonePill tone="sky">Backed {backedPlayer}</TonePill>
           </div>
 
           <h3 className="mt-4 text-2xl font-black">
             {match
               ? `${match.host.name} vs ${match.challenger?.name ?? "Waiting Opponent"}`
-              : ticket.matchId}
+              : bet.matchId}
           </h3>
 
           <div className="mt-5 grid gap-3 text-sm text-white/60 sm:grid-cols-2 xl:grid-cols-4">
-            <div>Placed: {formatDate(ticket.createdAt)}</div>
-            <div>Amount: {ticket.amount.toFixed(2)} KAS</div>
-            <div>
-              Current return: {projected > 0 ? `${projected.toFixed(2)} KAS` : "--"}
-            </div>
+            <div>Placed: {formatDate(bet.createdAt)}</div>
+            <div>Amount: {bet.amount.toFixed(2)} KAS</div>
+            <div>Projected return: {projected > 0 ? `${projected.toFixed(2)} KAS` : "--"}</div>
             <div>Multiplier: {multiplier > 0 ? `${multiplier.toFixed(2)}x` : "--"}</div>
           </div>
         </div>
@@ -486,23 +480,23 @@ function MyBetCard({ ticket, match }: TicketWithMatch) {
 
 export default function BetsPage() {
   const [matches, setMatches] = useState<ArenaMatch[]>([])
-  const [tickets, setTickets] = useState<PersistedBetTicket[]>([])
+  const [bets, setBets] = useState<PersistedBetTicket[]>([])
   const [, setTick] = useState(0)
 
   useEffect(() => {
     const sync = () => {
       setMatches(readArenaMatches())
-      setTickets(readCurrentUserTickets(currentUser.name))
+      setBets(readCurrentUserTickets(currentUser.name))
     }
 
     sync()
 
     const unsubscribeMatches = subscribeArenaMatches(sync)
-    const unsubscribeTickets = subscribeSpectatorTickets(sync)
+    const unsubscribeBets = subscribeSpectatorTickets(sync)
 
     return () => {
       unsubscribeMatches()
-      unsubscribeTickets()
+      unsubscribeBets()
     }
   }, [])
 
@@ -510,7 +504,7 @@ export default function BetsPage() {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
       setMatches(readArenaMatches())
-      setTickets(readCurrentUserTickets(currentUser.name))
+      setBets(readCurrentUserTickets(currentUser.name))
     }, 1000)
 
     return () => clearInterval(timer)
@@ -534,20 +528,22 @@ export default function BetsPage() {
       })
   }, [matches])
 
-  const myBets = useMemo<TicketWithMatch[]>(() => {
-    return tickets
-      .map((ticket) => ({
-        ticket,
-        match: matches.find((match) => match.id === ticket.matchId) ?? null,
+  const myBetRecords = useMemo<BetRecordWithMatch[]>(() => {
+    return bets
+      .map((bet) => ({
+        bet,
+        match: matches.find((match) => match.id === bet.matchId) ?? null,
       }))
-      .sort((a, b) => b.ticket.createdAt - a.ticket.createdAt)
-  }, [tickets, matches])
+      .sort((a, b) => b.bet.createdAt - a.bet.createdAt)
+  }, [bets, matches])
 
-  const activeMyBets = myBets.filter(
+  const activeMyBets = myBetRecords.filter(
     ({ match }) => match?.status === "Ready to Start" || match?.status === "Live"
   )
-  const finishedMyBets = myBets.filter(
-    ({ match }) => !match || match.status === "Finished" || match.status === "Waiting for Opponent"
+
+  const betHistory = myBetRecords.filter(
+    ({ match }) =>
+      !match || match.status === "Finished" || match.status === "Waiting for Opponent"
   )
 
   const totalOpenPools = openMarkets.reduce(
@@ -555,16 +551,16 @@ export default function BetsPage() {
     0
   )
 
-  const totalMyExposure = tickets.reduce((sum, ticket) => sum + ticket.amount, 0)
+  const totalMyExposure = bets.reduce((sum, bet) => sum + bet.amount, 0)
 
-  const totalProjected = myBets.reduce((sum, item) => {
+  const totalProjected = myBetRecords.reduce((sum, item) => {
     if (!item.match) return sum
     const multiplier = getMultiplier(
       item.match.spectatorPool.host,
       item.match.spectatorPool.challenger,
-      item.ticket.side
+      item.bet.side
     )
-    return sum + item.ticket.amount * multiplier
+    return sum + item.bet.amount * multiplier
   }, 0)
 
   return (
@@ -585,8 +581,7 @@ export default function BetsPage() {
             </h1>
 
             <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-              Open markets live here during the official countdown window. Once the window closes,
-              follow your positions from My Bets and watch them from the room or Spectate.
+              Open markets live here during the pre-match countdown. Once betting closes, track your positions in My Bets and follow the action from the room or Spectate.
             </p>
           </div>
 
@@ -650,7 +645,7 @@ export default function BetsPage() {
                     match={match}
                     onBetPlaced={() => {
                       setMatches(readArenaMatches())
-                      setTickets(readCurrentUserTickets(currentUser.name))
+                      setBets(readCurrentUserTickets(currentUser.name))
                     }}
                   />
                 ))
@@ -662,14 +657,14 @@ export default function BetsPage() {
             <SectionHeader
               title="My Bets"
               count={activeMyBets.length}
-              subtitle="Your active positions. Watch these rooms directly from here."
+              subtitle="Your active betting positions. Watch these rooms directly from here."
             />
             <div className="space-y-4">
               {activeMyBets.length === 0 ? (
                 <EmptyState text="You do not have any active bets right now." />
               ) : (
-                activeMyBets.map(({ ticket, match }) => (
-                  <MyBetCard key={ticket.id} ticket={ticket} match={match} />
+                activeMyBets.map(({ bet, match }) => (
+                  <MyBetCard key={bet.id} bet={bet} match={match} />
                 ))
               )}
             </div>
@@ -677,16 +672,16 @@ export default function BetsPage() {
 
           <section>
             <SectionHeader
-              title="Archived Bets"
-              count={finishedMyBets.length}
+              title="Bet History"
+              count={betHistory.length}
               subtitle="Older or inactive bet records kept lightweight for reference."
             />
             <div className="space-y-4">
-              {finishedMyBets.length === 0 ? (
-                <EmptyState text="No archived bets yet." />
+              {betHistory.length === 0 ? (
+                <EmptyState text="No bet history yet." />
               ) : (
-                finishedMyBets.map(({ ticket, match }) => (
-                  <MyBetCard key={ticket.id} ticket={ticket} match={match} />
+                betHistory.map(({ bet, match }) => (
+                  <MyBetCard key={bet.id} bet={bet} match={match} />
                 ))
               )}
             </div>
