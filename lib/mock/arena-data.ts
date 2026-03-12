@@ -110,6 +110,20 @@ type GameMeta = {
   glow: string
 }
 
+type Connect4BoardState = {
+  mode: "connect4-live"
+  board: (ArenaSide | null)[][]
+  turn: ArenaSide
+  turnDeadlineTs: number
+}
+
+type TttBoardState = {
+  mode: "ttt-live"
+  board: ("X" | "O" | null)[]
+  turn: "X" | "O"
+  turnDeadlineTs: number
+}
+
 const ARENA_MATCHES_STORAGE_KEY = "kasroyal_arena_matches"
 const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
 const SPECTATOR_TICKETS_STORAGE_KEY = "kasroyal_spectator_tickets"
@@ -414,6 +428,37 @@ function emitStorageEvent(name: string) {
   window.dispatchEvent(new CustomEvent(name))
 }
 
+function isConnect4BoardState(value: unknown): value is Connect4BoardState {
+  if (!value || typeof value !== "object") return false
+  const state = value as Connect4BoardState
+  return (
+    state.mode === "connect4-live" &&
+    Array.isArray(state.board) &&
+    state.board.length === 6 &&
+    state.board.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === 7 &&
+        row.every((cell) => cell === "host" || cell === "challenger" || cell === null)
+    ) &&
+    (state.turn === "host" || state.turn === "challenger") &&
+    Number.isFinite(state.turnDeadlineTs)
+  )
+}
+
+function isTttBoardState(value: unknown): value is TttBoardState {
+  if (!value || typeof value !== "object") return false
+  const state = value as TttBoardState
+  return (
+    state.mode === "ttt-live" &&
+    Array.isArray(state.board) &&
+    state.board.length === 9 &&
+    state.board.every((cell) => cell === "X" || cell === "O" || cell === null) &&
+    (state.turn === "X" || state.turn === "O") &&
+    Number.isFinite(state.turnDeadlineTs)
+  )
+}
+
 function createLiveBoardState(game: GameType) {
   if (game === "Connect 4") {
     return {
@@ -463,38 +508,87 @@ function getLiveStatusText(
   return challengerName ? `${hostName} vs ${challengerName} live` : "Match is live"
 }
 
+function resolveTimedOutLiveMatch(match: ArenaMatch, nowTs: number): ArenaMatch {
+  if (match.status !== "Live" || !match.challenger) {
+    return match
+  }
+
+  if (match.game === "Connect 4" && isConnect4BoardState(match.boardState)) {
+    if (match.boardState.turnDeadlineTs > nowTs) return match
+
+    const loser = match.boardState.turn
+    const winner: ArenaSide = loser === "host" ? "challenger" : "host"
+    const winnerName = winner === "host" ? match.host.name : match.challenger.name
+    const loserName = loser === "host" ? match.host.name : match.challenger.name
+
+    return {
+      ...match,
+      status: "Finished",
+      bettingStatus: "locked",
+      finishedAt: nowTs,
+      result: winner,
+      statusText: `${loserName} timed out`,
+      moveText: `${winnerName} wins by timeout`,
+    }
+  }
+
+  if (match.game === "Tic-Tac-Toe" && isTttBoardState(match.boardState)) {
+    if (match.boardState.turnDeadlineTs > nowTs) return match
+
+    const loser = match.boardState.turn === "X" ? "host" : "challenger"
+    const winner: ArenaSide = loser === "host" ? "challenger" : "host"
+    const winnerName = winner === "host" ? match.host.name : match.challenger.name
+    const loserName = loser === "host" ? match.host.name : match.challenger.name
+
+    return {
+      ...match,
+      status: "Finished",
+      bettingStatus: "locked",
+      finishedAt: nowTs,
+      result: winner,
+      statusText: `${loserName} timed out`,
+      moveText: `${winnerName} wins by timeout`,
+    }
+  }
+
+  return match
+}
+
 function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMatch[] {
   return normalizeArenaMatches(
-    matches.map((match) => {
+    matches.map((originalMatch) => {
+      let match = originalMatch
+
       const shouldAutoLaunch =
         !!match.challenger &&
         match.status === "Ready to Start" &&
         !!match.bettingClosesAt &&
         match.bettingClosesAt <= nowTs
 
-      if (!shouldAutoLaunch) {
-        return match
+      if (shouldAutoLaunch) {
+        match = {
+          ...match,
+          status: "Live" as ArenaStatus,
+          bettingStatus: "locked",
+          marketVisibility: "featured",
+          isFeaturedMarket: true,
+          seatedAt: match.seatedAt ?? nowTs,
+          countdownStartedAt: match.countdownStartedAt ?? nowTs,
+          bettingClosesAt: match.bettingClosesAt ?? nowTs,
+          startedAt: match.startedAt ?? nowTs,
+          finishedAt: undefined,
+          statusText: getLiveStatusText(
+            match.game,
+            match.host.name,
+            match.challenger?.name ?? null
+          ),
+          moveText: getLiveMoveText(match.game),
+          boardState: createLiveBoardState(match.game),
+        }
       }
 
-      return {
-        ...match,
-        status: "Live" as ArenaStatus,
-        bettingStatus: "locked",
-        marketVisibility: "featured",
-        isFeaturedMarket: true,
-        seatedAt: match.seatedAt ?? nowTs,
-        countdownStartedAt: match.countdownStartedAt ?? nowTs,
-        bettingClosesAt: match.bettingClosesAt ?? nowTs,
-        startedAt: match.startedAt ?? nowTs,
-        finishedAt: undefined,
-        statusText: getLiveStatusText(
-          match.game,
-          match.host.name,
-          match.challenger?.name ?? null
-        ),
-        moveText: getLiveMoveText(match.game),
-        boardState: createLiveBoardState(match.game),
-      }
+      match = resolveTimedOutLiveMatch(match, nowTs)
+      return match
     }),
     nowTs
   )
