@@ -4,13 +4,20 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import {
   arenaFeedSeed,
+  clampBetAmount,
   currentUser,
+  DEFAULT_BET,
   gameDisplayOrder,
   gameMeta,
+  getMultiplier,
   getRankColors,
+  getSideShare,
+  isArenaBettable,
+  placeArenaSpectatorBet,
   readArenaMatches,
   subscribeArenaMatches,
   type ArenaMatch,
+  type ArenaSide,
   type GameType,
   type RankTier,
 } from "@/lib/mock/arena-data"
@@ -108,6 +115,7 @@ function LiveMatchCard({
 }) {
   const meta = gameMeta[match.game]
   const totalPool = match.spectatorPool.host + match.spectatorPool.challenger
+  const bettingOpen = isArenaBettable(match)
 
   return (
     <button
@@ -129,7 +137,12 @@ function LiveMatchCard({
           </div>
         </div>
 
-        <TonePill tone="green">Live</TonePill>
+        <div className="flex flex-col items-end gap-2">
+          <TonePill tone="green">Live</TonePill>
+          <TonePill tone={bettingOpen ? "gold" : "neutral"}>
+            {bettingOpen ? "Betting Open" : "Betting Closed"}
+          </TonePill>
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -165,6 +178,11 @@ export default function SpectatePage() {
     "FlashMove: Center control looks huge here.",
     "KasWatcher: Crowd is leaning toward the favorite.",
   ])
+  const [betAmountInput, setBetAmountInput] = useState(String(DEFAULT_BET))
+  const [selectedSide, setSelectedSide] = useState<ArenaSide | null>(null)
+  const [message, setMessage] = useState(
+    "Select a live room to watch and place spectator bets when betting is open."
+  )
   const [, setTick] = useState(0)
 
   useEffect(() => {
@@ -196,8 +214,14 @@ export default function SpectatePage() {
 
   const liveMatches = useMemo(() => {
     return filteredMatches
-      .filter((match) => match.status === "Live")
+      .filter(
+        (match) => match.status === "Live" || match.status === "Ready to Start"
+      )
       .sort((a, b) => {
+        const aPriority = a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
+        const bPriority = b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0
+        if (bPriority !== aPriority) return bPriority - aPriority
+
         const aPool = a.spectatorPool.host + a.spectatorPool.challenger
         const bPool = b.spectatorPool.host + b.spectatorPool.challenger
 
@@ -225,12 +249,101 @@ export default function SpectatePage() {
 
   const totalLiveViewers = liveMatches.reduce((sum, match) => sum + match.spectators, 0)
 
+  const betAmount = clampBetAmount(Number(betAmountInput))
+  const activeTotalPool = activeLiveMatch
+    ? activeLiveMatch.spectatorPool.host + activeLiveMatch.spectatorPool.challenger
+    : 0
+  const hostShare = activeLiveMatch
+    ? getSideShare(
+        activeLiveMatch.spectatorPool.host,
+        activeLiveMatch.spectatorPool.challenger,
+        "host"
+      )
+    : 0
+  const challengerShare = activeLiveMatch
+    ? getSideShare(
+        activeLiveMatch.spectatorPool.host,
+        activeLiveMatch.spectatorPool.challenger,
+        "challenger"
+      )
+    : 0
+
+  const hostMultiplier = activeLiveMatch
+    ? getMultiplier(
+        activeLiveMatch.spectatorPool.host,
+        activeLiveMatch.spectatorPool.challenger,
+        "host"
+      )
+    : 0
+
+  const challengerMultiplier = activeLiveMatch
+    ? getMultiplier(
+        activeLiveMatch.spectatorPool.host,
+        activeLiveMatch.spectatorPool.challenger,
+        "challenger"
+      )
+    : 0
+
+  const isSelectedMatchBettable = activeLiveMatch ? isArenaBettable(activeLiveMatch) : false
+  const isCurrentUserPlayerInSelectedMatch = activeLiveMatch
+    ? currentUser.name === activeLiveMatch.host.name ||
+      currentUser.name === activeLiveMatch.challenger?.name
+    : false
+
   function sendChatMessage() {
     const trimmed = chatInput.trim()
     if (!trimmed) return
 
     setChatMessages((prev) => [`${currentUser.name}: ${trimmed}`, ...prev].slice(0, 24))
     setChatInput("")
+  }
+
+  async function handlePlaceBet() {
+    if (!activeLiveMatch) {
+      setMessage("No live match selected.")
+      return
+    }
+
+    if (isCurrentUserPlayerInSelectedMatch) {
+      setMessage("You cannot bet on your own match.")
+      return
+    }
+
+    if (!isSelectedMatchBettable) {
+      setMessage("Betting is closed for this match.")
+      return
+    }
+
+    if (!selectedSide) {
+      setMessage("Select a side before placing a bet.")
+      return
+    }
+
+    if (betAmount > currentUser.walletBalance) {
+      setMessage("Insufficient KAS balance for that spectator bet.")
+      return
+    }
+
+    try {
+      await placeArenaSpectatorBet({
+        matchId: activeLiveMatch.id,
+        side: selectedSide,
+        amount: betAmount,
+        user: currentUser.name,
+        walletAddress: currentUser.name,
+      })
+
+      setAllMatches(readArenaMatches())
+      const sideName =
+        selectedSide === "host"
+          ? activeLiveMatch.host.name
+          : activeLiveMatch.challenger?.name ?? "Opponent"
+
+      setMessage(`Placed ${betAmount} KAS on ${sideName}.`)
+      setBetAmountInput(String(DEFAULT_BET))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to place spectator bet.")
+    }
   }
 
   return (
@@ -248,7 +361,7 @@ export default function SpectatePage() {
               </div>
               <h1 className="mt-2 text-4xl font-semibold">Spectate</h1>
               <p className="mt-3 max-w-3xl text-white/65">
-                Live-match only viewing. If a room is not live yet, it should stay out of this page.
+                Live and pre-start watch floor. Spectators can track momentum, pools, and active rooms in one place.
               </p>
             </div>
 
@@ -269,10 +382,10 @@ export default function SpectatePage() {
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <HeaderStat label="Live Matches" value={`${liveMatches.length}`} tone="green" />
+            <HeaderStat label="Tracked Matches" value={`${liveMatches.length}`} tone="green" />
             <HeaderStat label="Live Viewers" value={`${totalLiveViewers}`} tone="white" />
             <HeaderStat
-              label="Live Pool Volume"
+              label="Pool Volume"
               value={`${totalLivePools.toFixed(0)} KAS`}
               tone="gold"
             />
@@ -307,11 +420,11 @@ export default function SpectatePage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-sm uppercase tracking-[0.3em] text-emerald-300">
-                    Live Matches
+                    Watch Floor
                   </div>
-                  <h2 className="mt-2 text-3xl font-semibold">Watch Active Rooms</h2>
+                  <h2 className="mt-2 text-3xl font-semibold">Tracked Rooms</h2>
                   <p className="mt-2 text-white/60">
-                    This page should stay clean. Only live rooms belong here.
+                    Live matches and countdown rooms with active markets are surfaced here.
                   </p>
                 </div>
 
@@ -339,8 +452,8 @@ export default function SpectatePage() {
               ) : (
                 <div className="mt-6">
                   <EmptySection
-                    title="No live matches yet"
-                    text="Once a real countdown finishes and a room goes live, it will show here automatically."
+                    title="No tracked rooms yet"
+                    text="Once countdown or live rooms are active, they will show here automatically."
                   />
                 </div>
               )}
@@ -355,15 +468,17 @@ export default function SpectatePage() {
                     Live Watch Panel
                   </div>
                   <h2 className="mt-2 text-3xl font-semibold">
-                    {activeLiveMatch ? activeLiveMatch.game : "No Live Match Selected"}
+                    {activeLiveMatch ? activeLiveMatch.game : "No Match Selected"}
                   </h2>
                   <p className="mt-2 text-white/60">
-                    Watch the current room and jump straight into the full match page.
+                    Watch the room, check live pools, and place spectator bets if the market is open.
                   </p>
                 </div>
 
                 {activeLiveMatch ? (
-                  <TonePill tone="green">Live Now</TonePill>
+                  <TonePill tone={activeLiveMatch.status === "Live" ? "green" : "gold"}>
+                    {activeLiveMatch.status === "Live" ? "Live Now" : "Starting Soon"}
+                  </TonePill>
                 ) : (
                   <TonePill tone="neutral">Idle</TonePill>
                 )}
@@ -374,10 +489,7 @@ export default function SpectatePage() {
                   <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <HeaderStat
                       label="Spectator Pool"
-                      value={`${(
-                        activeLiveMatch.spectatorPool.host +
-                        activeLiveMatch.spectatorPool.challenger
-                      ).toFixed(0)} KAS`}
+                      value={`${activeTotalPool.toFixed(0)} KAS`}
                       tone="gold"
                     />
                     <HeaderStat
@@ -400,7 +512,9 @@ export default function SpectatePage() {
                   <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <TonePill tone="gold">{activeLiveMatch.game}</TonePill>
-                      <TonePill tone="green">Live Match</TonePill>
+                      <TonePill tone={activeLiveMatch.status === "Live" ? "green" : "gold"}>
+                        {activeLiveMatch.status === "Live" ? "Live Match" : "Ready To Start"}
+                      </TonePill>
                       <TonePill tone="sky">{activeLiveMatch.statusText}</TonePill>
                     </div>
 
@@ -437,12 +551,200 @@ export default function SpectatePage() {
                       </Link>
                     </div>
                   </div>
+
+                  <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm uppercase tracking-[0.3em] text-amber-300">
+                          Spectator Bet Slip
+                        </div>
+                        <h3 className="mt-2 text-2xl font-black">Back a Side</h3>
+                      </div>
+
+                      <TonePill tone={isSelectedMatchBettable ? "green" : "neutral"}>
+                        {isSelectedMatchBettable ? "Betting Open" : "Betting Closed"}
+                      </TonePill>
+                    </div>
+
+                    {isCurrentUserPlayerInSelectedMatch ? (
+                      <div className="mt-5 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm font-semibold text-red-200">
+                        You cannot bet on your own match.
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                      <div className="rounded-2xl border border-amber-300/15 bg-amber-300/5 p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-sm uppercase tracking-[0.16em] text-white/45">
+                              Back Host
+                            </div>
+                            <div className="mt-2 text-2xl font-black">{activeLiveMatch.host.name}</div>
+                            <div className="mt-2 text-sm text-white/55">
+                              Side: {activeLiveMatch.hostSideLabel}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSide("host")}
+                            disabled={!isSelectedMatchBettable || isCurrentUserPlayerInSelectedMatch}
+                            className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                              selectedSide === "host"
+                                ? "bg-gradient-to-r from-amber-400 to-yellow-300 text-black"
+                                : "border border-white/10 bg-white/5 text-white"
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            Back Host
+                          </button>
+                        </div>
+
+                        <div className="mt-5">
+                          <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-white/45">
+                            <span>Market Share</span>
+                            <span>{hostShare.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-3 overflow-hidden rounded-full bg-white/5">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-300"
+                              style={{ width: `${hostShare}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-white/45">
+                              Pool
+                            </div>
+                            <div className="mt-2 text-2xl font-black text-amber-300">
+                              {activeLiveMatch.spectatorPool.host.toFixed(0)} KAS
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-white/45">
+                              Multiplier
+                            </div>
+                            <div className="mt-2 text-2xl font-black">
+                              {hostMultiplier > 0 ? `${hostMultiplier.toFixed(2)}x` : "0.00x"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-sm uppercase tracking-[0.16em] text-white/45">
+                              Back Challenger
+                            </div>
+                            <div className="mt-2 text-2xl font-black">
+                              {activeLiveMatch.challenger?.name ?? "Waiting Opponent"}
+                            </div>
+                            <div className="mt-2 text-sm text-white/55">
+                              Side: {activeLiveMatch.challengerSideLabel}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSide("challenger")}
+                            disabled={
+                              !isSelectedMatchBettable ||
+                              isCurrentUserPlayerInSelectedMatch ||
+                              !activeLiveMatch.challenger
+                            }
+                            className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                              selectedSide === "challenger"
+                                ? "bg-gradient-to-r from-emerald-300 to-emerald-500 text-black"
+                                : "border border-white/10 bg-white/5 text-white"
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            Back Challenger
+                          </button>
+                        </div>
+
+                        <div className="mt-5">
+                          <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-white/45">
+                            <span>Market Share</span>
+                            <span>{challengerShare.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-3 overflow-hidden rounded-full bg-white/5">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-emerald-500"
+                              style={{ width: `${challengerShare}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-white/45">
+                              Pool
+                            </div>
+                            <div className="mt-2 text-2xl font-black text-emerald-300">
+                              {activeLiveMatch.spectatorPool.challenger.toFixed(0)} KAS
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-white/45">
+                              Multiplier
+                            </div>
+                            <div className="mt-2 text-2xl font-black">
+                              {challengerMultiplier > 0
+                                ? `${challengerMultiplier.toFixed(2)}x`
+                                : "0.00x"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        step={1}
+                        inputMode="numeric"
+                        value={betAmountInput}
+                        onChange={(event) => setBetAmountInput(event.target.value)}
+                        disabled={!isSelectedMatchBettable || isCurrentUserPlayerInSelectedMatch}
+                        placeholder="Bet amount (KAS)"
+                        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-300/30 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setBetAmountInput(String(5))}
+                        disabled={!isSelectedMatchBettable || isCurrentUserPlayerInSelectedMatch}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        5 KAS
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePlaceBet}
+                        disabled={
+                          !isSelectedMatchBettable ||
+                          isCurrentUserPlayerInSelectedMatch ||
+                          !selectedSide
+                        }
+                        className="rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 px-5 py-3 text-sm font-black text-black transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Place Bet
+                      </button>
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-white/85">
+                      {message}
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div className="mt-6">
                   <EmptySection
-                    title="No live room selected"
-                    text="Choose a live room once matches are active."
+                    title="No room selected"
+                    text="Choose a tracked room once matches are active."
                   />
                 </div>
               )}
