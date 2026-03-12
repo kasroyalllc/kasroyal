@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import {
   clampBetAmount,
@@ -15,23 +15,26 @@ import {
   getProjectedState,
   getRankColors,
   getSideShare,
+  getTicketsForMatch,
   getWinProbability,
   HOUSE_RAKE,
-  initialArenaMatches,
   isArenaBettable,
   MAX_BET,
   MAX_PAUSES_PER_SIDE,
   MIN_BET,
   PAUSE_DURATION_SECONDS,
   pauseArenaMatch,
+  placeArenaSpectatorBet,
   readArenaMatches,
+  readCurrentUserTickets,
   resumeArenaMatch,
   subscribeArenaMatches,
+  subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
   type PauseState,
+  type PersistedBetTicket,
   type RankTier,
-  type SpectatorTicket,
   updateArenaMatch,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
@@ -55,19 +58,20 @@ type PersistedConnect4BoardState = {
   mode: "connect4-live"
   board: Connect4Cell[][]
   turn: ArenaSide
-  turnDeadlineTs: number
+  turnDeadlineTs: number | null
 }
 
 type PersistedTttBoardState = {
   mode: "ttt-live"
   board: TttCell[]
   turn: "X" | "O"
-  turnDeadlineTs: number
+  turnDeadlineTs: number | null
 }
 
 type PersistedChessPreviewState = {
   mode: "chess-preview"
   fen?: string
+  turnDeadlineTs?: null
 }
 
 type MatchBoardState =
@@ -76,6 +80,7 @@ type MatchBoardState =
   | PersistedChessPreviewState
   | Record<string, unknown>
   | undefined
+  | null
 
 function normalizePauseState(pauseState?: Partial<PauseState> | null): PauseState {
   return {
@@ -84,9 +89,10 @@ function normalizePauseState(pauseState?: Partial<PauseState> | null): PauseStat
       pauseState?.pausedBy === "host" || pauseState?.pausedBy === "challenger"
         ? pauseState.pausedBy
         : null,
-    pauseExpiresAt: Number.isFinite(pauseState?.pauseExpiresAt)
-      ? Number(pauseState?.pauseExpiresAt)
-      : null,
+    pauseExpiresAt:
+      typeof pauseState?.pauseExpiresAt === "number" && Number.isFinite(pauseState.pauseExpiresAt)
+        ? Number(pauseState.pauseExpiresAt)
+        : null,
     pauseCountHost:
       typeof pauseState?.pauseCountHost === "number" &&
       Number.isFinite(pauseState.pauseCountHost)
@@ -98,63 +104,6 @@ function normalizePauseState(pauseState?: Partial<PauseState> | null): PauseStat
         ? Math.max(0, Math.floor(pauseState.pauseCountChallenger))
         : 0,
   }
-}
-
-function createFallbackMatch(matchId: string): ArenaMatch {
-  return {
-    id: matchId,
-    game: "Connect 4",
-    status: "Waiting for Opponent",
-    bettingStatus: "disabled",
-    marketVisibility: "watch-only",
-    isFeaturedMarket: false,
-    bestOf: 3,
-    wager: 5,
-    createdAt: Date.now(),
-    spectators: 0,
-    playerPot: 5,
-    host: {
-      name: currentUser.name,
-      rank: currentUser.rank,
-      rating: currentUser.rating,
-      winRate: currentUser.winRate,
-      last10: currentUser.last10,
-    },
-    challenger: null,
-    hostSideLabel: "Red",
-    challengerSideLabel: "Yellow",
-    statusText: "Open seat available",
-    moveText: "Waiting for join",
-    roundScore: { host: 0, challenger: 0 },
-    spectatorPool: { host: 0, challenger: 0 },
-    bettingWindowSeconds: 25,
-    result: null,
-    moveHistory: [],
-    boardState: {
-      mode: "connect4-live",
-      board: Array.from({ length: 6 }, () => Array.from({ length: 7 }, () => null)),
-      turn: "host",
-      turnDeadlineTs: Date.now() + CONNECT4_MOVE_SECONDS * 1000,
-    },
-    pauseState: {
-      isPaused: false,
-      pausedBy: null,
-      pauseExpiresAt: null,
-      pauseCountHost: 0,
-      pauseCountChallenger: 0,
-    },
-  }
-}
-
-function getSafeInitialMatch(matchId: string): ArenaMatch {
-  const live = readArenaMatches()
-  return (
-    getArenaById(matchId, live) ??
-    initialArenaMatches[1] ??
-    initialArenaMatches[0] ??
-    live[0] ??
-    createFallbackMatch(matchId)
-  )
 }
 
 function RankBadge({ rank }: { rank: RankTier }) {
@@ -446,15 +395,6 @@ function RoomPhaseBanner({
   )
 }
 
-function makeLiveFeed(match: ArenaMatch) {
-  return [
-    `${match.host.name} entered the ${match.game} room.`,
-    `${match.challenger ? match.challenger.name : "The challenger"} is drawing spectator attention.`,
-    `Live move update: ${match.moveText}.`,
-    `${match.spectators} spectators are currently tracking this arena.`,
-  ]
-}
-
 function getEmptyConnect4Board(): Connect4Cell[][] {
   return Array.from({ length: 6 }, () => Array.from({ length: 7 }, () => null))
 }
@@ -544,8 +484,8 @@ function getTttWinner(board: TttCell[]): TttCell {
   return null
 }
 
-function getConnect4State(match: ArenaMatch) {
-  const boardState = match.boardState as MatchBoardState
+function getConnect4State(match: ArenaMatch | null) {
+  const boardState = (match?.boardState ?? null) as MatchBoardState
 
   if (
     boardState &&
@@ -554,13 +494,12 @@ function getConnect4State(match: ArenaMatch) {
     boardState.mode === "connect4-live" &&
     isValidConnect4Board((boardState as PersistedConnect4BoardState).board) &&
     (((boardState as PersistedConnect4BoardState).turn === "host") ||
-      (boardState as PersistedConnect4BoardState).turn === "challenger") &&
-    Number.isFinite((boardState as PersistedConnect4BoardState).turnDeadlineTs)
+      (boardState as PersistedConnect4BoardState).turn === "challenger")
   ) {
     return {
       board: (boardState as PersistedConnect4BoardState).board,
       turn: (boardState as PersistedConnect4BoardState).turn,
-      turnDeadlineTs: (boardState as PersistedConnect4BoardState).turnDeadlineTs,
+      turnDeadlineTs: (boardState as PersistedConnect4BoardState).turnDeadlineTs ?? 0,
       hasPersistedState: true,
     }
   }
@@ -573,8 +512,8 @@ function getConnect4State(match: ArenaMatch) {
   }
 }
 
-function getTttState(match: ArenaMatch) {
-  const boardState = match.boardState as MatchBoardState
+function getTttState(match: ArenaMatch | null) {
+  const boardState = (match?.boardState ?? null) as MatchBoardState
 
   if (
     boardState &&
@@ -583,13 +522,12 @@ function getTttState(match: ArenaMatch) {
     boardState.mode === "ttt-live" &&
     isValidTttBoard((boardState as PersistedTttBoardState).board) &&
     (((boardState as PersistedTttBoardState).turn === "X") ||
-      (boardState as PersistedTttBoardState).turn === "O") &&
-    Number.isFinite((boardState as PersistedTttBoardState).turnDeadlineTs)
+      (boardState as PersistedTttBoardState).turn === "O")
   ) {
     return {
       board: (boardState as PersistedTttBoardState).board,
       turn: (boardState as PersistedTttBoardState).turn,
-      turnDeadlineTs: (boardState as PersistedTttBoardState).turnDeadlineTs,
+      turnDeadlineTs: (boardState as PersistedTttBoardState).turnDeadlineTs ?? 0,
       hasPersistedState: true,
     }
   }
@@ -602,17 +540,29 @@ function getTttState(match: ArenaMatch) {
   }
 }
 
+function makeLiveFeed(match: ArenaMatch | null) {
+  if (!match) {
+    return ["Loading room state..."]
+  }
+
+  return [
+    `${match.host.name} entered the ${match.game} room.`,
+    `${match.challenger ? match.challenger.name : "The challenger"} is drawing spectator attention.`,
+    `Live move update: ${match.moveText}.`,
+    `${match.spectators} spectators are currently tracking this arena.`,
+  ]
+}
+
 export default function ArenaMatchPage() {
   const params = useParams<{ id: string }>()
-  const matchId = typeof params?.id === "string" ? params.id : "arena-2"
+  const matchId = typeof params?.id === "string" ? params.id : ""
 
-  const initialMatch = getSafeInitialMatch(matchId)
-
-  const [match, setMatch] = useState<ArenaMatch>(initialMatch)
+  const [match, setMatch] = useState<ArenaMatch | null>(null)
   const [betAmountInput, setBetAmountInput] = useState(String(DEFAULT_BET))
   const [selectedSide, setSelectedSide] = useState<ArenaSide | null>(null)
-  const [tickets, setTickets] = useState<SpectatorTicket[]>([])
-  const [feed, setFeed] = useState<string[]>(makeLiveFeed(initialMatch))
+  const [tickets, setTickets] = useState<PersistedBetTicket[]>([])
+  const [myTickets, setMyTickets] = useState<PersistedBetTicket[]>([])
+  const [feed, setFeed] = useState<string[]>(["Loading room state..."])
   const [message, setMessage] = useState(
     "Stay in this room once both players are seated. The countdown and live match flow happen here."
   )
@@ -620,46 +570,130 @@ export default function ArenaMatchPage() {
   const [countdownLineIndex, setCountdownLineIndex] = useState(0)
   const [, setTick] = useState(0)
 
+  const previousMatchRef = useRef<ArenaMatch | null>(null)
+
   useEffect(() => {
-    const syncMatch = () => {
-      const latest = getArenaById(matchId, readArenaMatches())
-      if (!latest) return
+    if (!matchId) return
+
+    const syncRoom = () => {
+      const latest = getArenaById(matchId, readArenaMatches()) ?? null
       setMatch(latest)
     }
 
-    syncMatch()
-    const unsubscribe = subscribeArenaMatches(syncMatch)
-    return unsubscribe
+    const syncTickets = () => {
+      setTickets(getTicketsForMatch(matchId))
+      setMyTickets(readCurrentUserTickets(currentUser.name).filter((ticket) => ticket.matchId === matchId))
+    }
+
+    syncRoom()
+    syncTickets()
+
+    const unsubscribeMatches = subscribeArenaMatches(syncRoom)
+    const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
+
+    return () => {
+      unsubscribeMatches()
+      unsubscribeTickets()
+    }
   }, [matchId])
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       setTick((value) => value + 1)
-      const latest = getArenaById(matchId, readArenaMatches())
-      if (latest) {
-        setMatch(latest)
-      }
     }, 1000)
 
-    return () => clearInterval(timer)
-  }, [matchId])
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
-    if (match.status !== "Ready to Start") return
+    if (!match) return
 
-    const interval = setInterval(() => {
+    const prev = previousMatchRef.current
+    if (prev && prev.status !== match.status) {
+      if (match.status === "Ready to Start") {
+        setFeed((items) => [`🚪 Both players seated in ${match.game}`, ...items].slice(0, 12))
+      } else if (match.status === "Live") {
+        setFeed((items) => [`🚀 ${match.game} is now live`, ...items].slice(0, 12))
+      } else if (match.status === "Finished") {
+        setFeed((items) => [`🏁 Match finished: ${match.statusText}`, ...items].slice(0, 12))
+      }
+    }
+
+    if (prev && prev.moveText !== match.moveText && match.status === "Live") {
+      setFeed((items) => [`🎮 ${match.moveText}`, ...items].slice(0, 12))
+    }
+
+    previousMatchRef.current = match
+  }, [match])
+
+  useEffect(() => {
+    if (!match || match.status !== "Ready to Start") return
+
+    const interval = window.setInterval(() => {
       setCountdownLineIndex((value) => (value + 1) % COUNTDOWN_HYPE_LINES.length)
     }, 2200)
 
-    return () => clearInterval(interval)
-  }, [match.status])
+    return () => window.clearInterval(interval)
+  }, [match])
+
+  const connect4State = useMemo(() => getConnect4State(match), [match])
+  const tttState = useMemo(() => getTttState(match), [match])
+
+  if (!matchId) {
+    return (
+      <main className="min-h-screen bg-[#050807] text-white">
+        <div className="mx-auto max-w-5xl px-6 py-16">
+          <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-8">
+            <div className="text-3xl font-black">Invalid room</div>
+            <p className="mt-3 text-white/65">No match ID was found in the route.</p>
+            <Link
+              href="/arena"
+              className="mt-6 inline-flex rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white"
+            >
+              Back to Arena
+            </Link>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (!match) {
+    return (
+      <main className="min-h-screen bg-[#050807] text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.06),transparent_24%)]" />
+        <div className="relative z-10 mx-auto max-w-5xl px-6 py-16">
+          <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-8 shadow-[0_0_50px_rgba(0,255,200,0.05)]">
+            <div className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
+              KasRoyal Match Room
+            </div>
+            <div className="mt-5 text-4xl font-black">Room not loaded yet</div>
+            <p className="mt-4 max-w-2xl text-white/65">
+              This room has not synced into the local engine yet, or the match no longer exists.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/arena"
+                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white"
+              >
+                Arena Lobby
+              </Link>
+              <Link
+                href="/spectate"
+                className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-3 text-sm font-bold text-emerald-200"
+              >
+                Spectate
+              </Link>
+            </div>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   const betAmount = clampBetAmount(Number(betAmountInput))
   const challenger = match.challenger
   const pauseState = normalizePauseState(match.pauseState)
-
-  const connect4State = useMemo(() => getConnect4State(match), [match])
-  const tttState = useMemo(() => getTttState(match), [match])
 
   const connect4Board = connect4State.board
   const connect4Turn = connect4State.turn
@@ -837,8 +871,8 @@ export default function ArenaMatchPage() {
     "challenger"
   )
 
-  const myHostTickets = tickets.filter((ticket) => ticket.side === "host")
-  const myChallengerTickets = tickets.filter((ticket) => ticket.side === "challenger")
+  const myHostTickets = myTickets.filter((ticket) => ticket.side === "host")
+  const myChallengerTickets = myTickets.filter((ticket) => ticket.side === "challenger")
 
   const myHostExposure = myHostTickets.reduce((sum, ticket) => sum + ticket.amount, 0)
   const myChallengerExposure = myChallengerTickets.reduce((sum, ticket) => sum + ticket.amount, 0)
@@ -873,9 +907,11 @@ export default function ArenaMatchPage() {
 
   const marketNeedsOpposingLiquidity = selectedSide !== null && oppositePoolForSelectedSide <= 0
 
-  const recentTickets = [...tickets].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6)
+  const recentTickets = [...myTickets].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6)
 
   function persistPartialMatch(partial: Partial<ArenaMatch>) {
+    if (!match) return
+
     const updated = updateArenaMatch(match.id, (current) => ({
       ...current,
       ...partial,
@@ -889,9 +925,11 @@ export default function ArenaMatchPage() {
   function persistConnect4Board(
     board: Connect4Cell[][],
     turn: ArenaSide,
-    turnDeadlineTs: number,
+    turnDeadlineTs: number | null,
     partial?: Partial<ArenaMatch>
   ) {
+    if (!match) return
+
     const updated = updateArenaMatch(match.id, (current) => ({
       ...current,
       ...partial,
@@ -911,9 +949,11 @@ export default function ArenaMatchPage() {
   function persistTttBoard(
     board: TttCell[],
     turn: "X" | "O",
-    turnDeadlineTs: number,
+    turnDeadlineTs: number | null,
     partial?: Partial<ArenaMatch>
   ) {
+    if (!match) return
+
     const updated = updateArenaMatch(match.id, (current) => ({
       ...current,
       ...partial,
@@ -931,6 +971,8 @@ export default function ArenaMatchPage() {
   }
 
   function handleSelectBetSide(side: ArenaSide) {
+    if (!match) return
+
     if (spectatorBetLockedForPlayers) {
       setMessage("Players cannot bet on their own match. Only spectators can place arena bets.")
       return
@@ -960,7 +1002,9 @@ export default function ArenaMatchPage() {
     setMessage(`Selected ${sideName}. Add to your position before lock if you want more exposure.`)
   }
 
-  function placeBet() {
+  async function placeBet() {
+    if (!match) return
+
     if (spectatorBetLockedForPlayers) {
       setMessage(
         "Players cannot bet on their own match. Spectator betting is for non-participants only."
@@ -996,68 +1040,53 @@ export default function ArenaMatchPage() {
       return
     }
 
-    const ticket: SpectatorTicket = {
-      id: `${Date.now()}`,
-      matchId: match.id,
-      side: selectedSide,
-      amount: betAmount,
-      createdAt: Date.now(),
-    }
+    try {
+      const ticket = await placeArenaSpectatorBet({
+        matchId: match.id,
+        side: selectedSide,
+        amount: betAmount,
+        user: currentUser.name,
+        walletAddress: currentUser.name,
+      })
 
-    setTickets((prev) => [ticket, ...prev])
+      setPoolFlash(selectedSide)
+      window.setTimeout(() => setPoolFlash(null), 700)
 
-    const updated = updateArenaMatch(match.id, (current) => ({
-      ...current,
-      spectators: current.spectators + 1,
-      spectatorPool: {
-        host:
-          selectedSide === "host"
-            ? current.spectatorPool.host + betAmount
-            : current.spectatorPool.host,
-        challenger:
-          selectedSide === "challenger"
-            ? current.spectatorPool.challenger + betAmount
-            : current.spectatorPool.challenger,
-      },
-    }))
+      const selectedPlayer = selectedSide === "host" ? match.host.name : challenger.name
+      const projection = selectedSide === "host" ? hostProjection : challengerProjection
+      const oppositePool =
+        selectedSide === "host" ? match.spectatorPool.challenger : match.spectatorPool.host
 
-    if (updated) {
-      setMatch(updated)
-    }
+      setFeed((prev) => {
+        const whale = betAmount >= WHALE_BET_THRESHOLD
+        const isAddToPosition = myExistingSide === selectedSide
+        const prefix = isAddToPosition ? "➕ Position Added" : whale ? "🔥 WHALE BET" : "⚡ Spectator Bet"
+        const line = `${prefix}: ${ticket.amount} KAS on ${selectedPlayer}`
+        return [line, ...prev].slice(0, 12)
+      })
 
-    setPoolFlash(selectedSide)
-    setTimeout(() => setPoolFlash(null), 700)
+      setBetAmountInput(String(DEFAULT_BET))
 
-    const selectedPlayer = selectedSide === "host" ? match.host.name : challenger.name
-    const projection = selectedSide === "host" ? hostProjection : challengerProjection
-    const oppositePool =
-      selectedSide === "host" ? match.spectatorPool.challenger : match.spectatorPool.host
+      if (oppositePool <= 0) {
+        setMessage(
+          `Position added: ${betAmount} KAS on ${selectedPlayer}. Opposing liquidity is still empty, so projected profit remains 0 KAS until bets arrive on the other side.`
+        )
+        return
+      }
 
-    setFeed((prev) => {
-      const whale = betAmount >= WHALE_BET_THRESHOLD
-      const isAddToPosition = myExistingSide === selectedSide
-      const prefix = isAddToPosition ? "➕ Position Added" : whale ? "🔥 WHALE BET" : "⚡ Spectator Bet"
-      const line = `${prefix}: ${betAmount} KAS on ${selectedPlayer}`
-      return [line, ...prev].slice(0, 12)
-    })
-
-    setBetAmountInput(String(DEFAULT_BET))
-
-    if (oppositePool <= 0) {
       setMessage(
-        `Position added: ${betAmount} KAS on ${selectedPlayer}. Opposing liquidity is still empty, so projected profit remains 0 KAS until bets arrive on the other side.`
+        `Position added: ${betAmount} KAS on ${selectedPlayer}. Projected return: ${projection.multiplier.toFixed(
+          2
+        )}x. Estimated payout if correct: ${projection.payout.toFixed(2)} KAS after rake.`
       )
-      return
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to place spectator bet.")
     }
-
-    setMessage(
-      `Position added: ${betAmount} KAS on ${selectedPlayer}. Projected return: ${projection.multiplier.toFixed(
-        2
-      )}x. Estimated payout if correct: ${projection.payout.toFixed(2)} KAS after rake.`
-    )
   }
 
   function handlePauseMatch() {
+    if (!match) return
+
     if (!currentUserSide) {
       setMessage("Only seated players can pause a live match.")
       return
@@ -1079,6 +1108,8 @@ export default function ArenaMatchPage() {
   }
 
   function handleResumeMatch() {
+    if (!match) return
+
     const resumedBy = currentUserSide ?? "system"
 
     try {
@@ -1100,6 +1131,8 @@ export default function ArenaMatchPage() {
   }
 
   function dropConnect4(col: number) {
+    if (!match) return
+
     if (match.game !== "Connect 4") return
     if (isFinished) return
     if (isCountdown) {
@@ -1143,7 +1176,7 @@ export default function ArenaMatchPage() {
     const winner = getConnect4Winner(next)
     if (winner) {
       const winnerName = winner === "host" ? match.host.name : challenger?.name ?? "Challenger"
-      persistConnect4Board(next, connect4Turn, 0, {
+      persistConnect4Board(next, connect4Turn, null, {
         status: "Finished",
         result: winner,
         moveText: `${winnerName} wins`,
@@ -1155,7 +1188,7 @@ export default function ArenaMatchPage() {
     }
 
     if (isConnect4Full(next)) {
-      persistConnect4Board(next, connect4Turn, 0, {
+      persistConnect4Board(next, connect4Turn, null, {
         status: "Finished",
         result: "draw",
         moveText: "Board filled",
@@ -1178,6 +1211,8 @@ export default function ArenaMatchPage() {
   }
 
   function playTtt(index: number) {
+    if (!match) return
+
     if (match.game !== "Tic-Tac-Toe") return
     if (isFinished) return
     if (isCountdown) {
@@ -1211,7 +1246,7 @@ export default function ArenaMatchPage() {
     const winner = getTttWinner(next)
     if (winner) {
       const winnerName = winner === "X" ? match.host.name : challenger?.name ?? "Challenger"
-      persistTttBoard(next, tttTurn, 0, {
+      persistTttBoard(next, tttTurn, null, {
         status: "Finished",
         result: winner === "X" ? "host" : "challenger",
         moveText: `${winnerName} wins`,
@@ -1223,7 +1258,7 @@ export default function ArenaMatchPage() {
     }
 
     if (next.every((cell) => cell !== null)) {
-      persistTttBoard(next, tttTurn, 0, {
+      persistTttBoard(next, tttTurn, null, {
         status: "Finished",
         result: "draw",
         moveText: "Board filled",
@@ -1246,6 +1281,8 @@ export default function ArenaMatchPage() {
   }
 
   function resetCurrentGame() {
+    if (!match) return
+
     if (isSpectatorOnly) {
       setMessage("Only seated players should reset a playable board.")
       return
@@ -1284,14 +1321,14 @@ export default function ArenaMatchPage() {
       boardState: {
         mode: "chess-preview",
         fen: "startpos",
+        turnDeadlineTs: null,
       },
     })
     setMessage("Chess preview reset.")
   }
 
   useEffect(() => {
-    if (match.status !== "Live") return
-    if (!challenger) return
+    if (!match || match.status !== "Live" || !challenger) return
 
     if (match.game === "Connect 4" && !hasPersistedConnect4State) {
       persistConnect4Board(getEmptyConnect4Board(), "host", Date.now() + CONNECT4_MOVE_SECONDS * 1000, {
@@ -1369,7 +1406,7 @@ export default function ArenaMatchPage() {
         <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-400/15 bg-emerald-400/8">
           <div className="whitespace-nowrap py-3 text-sm font-semibold text-emerald-200">
             <div className="animate-[marquee_24s_linear_infinite] [@keyframes_marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}]">
-              {feed.join("   •   ")}
+              {feed.length ? feed.join("   •   ") : makeLiveFeed(match).join("   •   ")}
             </div>
           </div>
         </div>
@@ -2220,7 +2257,7 @@ export default function ArenaMatchPage() {
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">Live Feed</div>
 
                   <div className="mt-3 max-h-[260px] space-y-3 overflow-y-auto text-sm text-white/80">
-                    {feed.map((item, idx) => (
+                    {(feed.length ? feed : makeLiveFeed(match)).map((item, idx) => (
                       <div key={`${item}-${idx}`} className="rounded-xl bg-white/[0.03] px-3 py-3">
                         {item}
                       </div>
