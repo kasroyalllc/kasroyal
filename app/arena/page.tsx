@@ -11,6 +11,8 @@ import {
   gameMeta,
   getArenaBettingSecondsLeft,
   getRankColors,
+  getWalletActiveMatch,
+  hasWalletActiveMatch,
   joinArenaMatch,
   readArenaMatches,
   subscribeArenaMatches,
@@ -168,14 +170,82 @@ function ResumeMatchBanner({
   )
 }
 
+function ActiveWalletLockBanner({
+  match,
+}: {
+  match: ArenaMatch
+}) {
+  const opponent =
+    match.host.name === currentUser.name ? match.challenger?.name ?? "Opponent" : match.host.name
+  const isLive = match.status === "Live"
+  const isReady = match.status === "Ready to Start"
+  const tone = isLive
+    ? "border-red-300/20 bg-red-500/[0.05]"
+    : "border-emerald-300/20 bg-emerald-400/[0.05]"
+
+  return (
+    <div className={`mb-6 rounded-[30px] border p-6 ${tone}`}>
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${
+                isLive
+                  ? "border-red-300/20 bg-red-500/10 text-red-300"
+                  : "border-emerald-300/20 bg-emerald-400/10 text-emerald-300"
+              }`}
+            >
+              One Active Match Per Wallet
+            </span>
+            <StatusPill status={match.status} />
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
+              {match.game}
+            </span>
+          </div>
+
+          <h2 className="mt-4 text-3xl font-black">You already have an active match</h2>
+
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65">
+            {isLive
+              ? `Your ${match.game} match against ${opponent} is live right now. New host and join actions are locked until that game finishes.`
+              : isReady
+                ? `Your ${match.game} room against ${opponent} is already set and counting down. New host and join actions are locked until that match finishes.`
+                : `Your ${match.game} room is still active. New host and join actions are locked until that match finishes.`}
+          </p>
+        </div>
+
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+          <Link
+            href={`/arena/match/${match.id}`}
+            className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-6 py-4 text-sm font-black text-black transition hover:scale-[1.01]"
+          >
+            {isLive ? "Resume Active Match" : "Open Active Match"}
+          </Link>
+
+          <Link
+            href="/spectate"
+            className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm font-bold text-white transition hover:bg-white/10"
+          >
+            Spectate Instead
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MatchCard({
   match,
   onJoin,
   onFill,
+  walletLocked,
+  activeMatchId,
 }: {
   match: ArenaMatch
   onJoin: (matchId: string) => void
   onFill: (matchId: string) => void
+  walletLocked: boolean
+  activeMatchId: string | null
 }) {
   const meta = gameMeta[match.game]
   const isOpen = match.status === "Waiting for Opponent"
@@ -194,6 +264,9 @@ function MatchCard({
         : isOpen
           ? "Open seat"
           : "Room status"
+
+  const joinBlockedByWalletLock =
+    walletLocked && activeMatchId !== null && activeMatchId !== match.id && isOpen && !isHost
 
   return (
     <div
@@ -231,6 +304,11 @@ function MatchCard({
             {isChallenger ? (
               <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-300">
                 Joined by You
+              </span>
+            ) : null}
+            {joinBlockedByWalletLock ? (
+              <span className="rounded-full border border-red-300/20 bg-red-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-red-300">
+                Wallet Locked
               </span>
             ) : null}
           </div>
@@ -307,9 +385,14 @@ function MatchCard({
               <button
                 type="button"
                 onClick={() => onJoin(match.id)}
-                className="rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 px-5 py-4 text-sm font-black text-black transition hover:scale-[1.01]"
+                disabled={joinBlockedByWalletLock}
+                className={`rounded-2xl px-5 py-4 text-sm font-black transition ${
+                  joinBlockedByWalletLock
+                    ? "cursor-not-allowed border border-red-300/20 bg-red-500/10 text-red-300 opacity-70"
+                    : "bg-gradient-to-r from-amber-400 to-yellow-300 text-black hover:scale-[1.01]"
+                }`}
               >
-                Join for {match.wager} KAS
+                {joinBlockedByWalletLock ? "Locked: Active Match" : `Join for ${match.wager} KAS`}
               </button>
             )
           ) : (
@@ -372,6 +455,8 @@ export default function ArenaPage() {
   }, [])
 
   const wager = clampWager(Number(wagerInput))
+  const activeWalletMatch = useMemo(() => getWalletActiveMatch(currentUser.name), [matches])
+  const walletLocked = useMemo(() => hasWalletActiveMatch(currentUser.name), [matches])
 
   const filteredMatches = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -426,7 +511,7 @@ export default function ArenaPage() {
     [filteredMatches]
   )
 
-  const priorityResumeMatch = myReadyMatches[0] ?? myLiveMatches[0] ?? null
+  const priorityResumeMatch = myReadyMatches[0] ?? myLiveMatches[0] ?? activeWalletMatch ?? null
 
   const joinableMatches = useMemo(
     () =>
@@ -489,6 +574,11 @@ export default function ArenaPage() {
   }
 
   function handleCreateMatch() {
+    if (walletLocked) {
+      setMessage("You already have an active match. Resume or finish it before creating another one.")
+      return
+    }
+
     if (!Number.isFinite(Number(wagerInput)) || String(wagerInput).trim() === "") {
       setMessage("Enter a valid wager amount before creating a match.")
       return
@@ -501,26 +591,35 @@ export default function ArenaPage() {
       return
     }
 
-    const created = createArenaMatch({
-      game: selectedGame,
-      wager: safeWager,
-      bestOf,
-    })
+    try {
+      const created = createArenaMatch({
+        game: selectedGame,
+        wager: safeWager,
+        bestOf,
+      })
 
-    setMatches(readArenaMatches())
-    setOwnershipFilter("Mine")
-    setGameFilter(selectedGame)
-    setMessage(
-      `Created ${created.game} for ${created.wager} KAS. Your new room is now under My Matches.`
-    )
-    setWagerInput("5")
-    setBestOf(1)
-    setCustomMode(false)
+      setMatches(readArenaMatches())
+      setOwnershipFilter("Mine")
+      setGameFilter(selectedGame)
+      setMessage(
+        `Created ${created.game} for ${created.wager} KAS. Your new room is now under My Matches.`
+      )
+      setWagerInput("5")
+      setBestOf(1)
+      setCustomMode(false)
 
-    window.location.href = `/arena/match/${created.id}`
+      window.location.href = `/arena/match/${created.id}`
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to create arena.")
+    }
   }
 
   function handleJoinMatch(matchId: string) {
+    if (walletLocked && activeWalletMatch?.id !== matchId) {
+      setMessage("You already have an active match. Resume or finish it before joining another one.")
+      return
+    }
+
     try {
       const joined = joinArenaMatch(matchId)
 
@@ -599,6 +698,8 @@ export default function ArenaPage() {
         </div>
 
         {priorityResumeMatch ? <ResumeMatchBanner match={priorityResumeMatch} /> : null}
+
+        {activeWalletMatch ? <ActiveWalletLockBanner match={activeWalletMatch} /> : null}
 
         <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
           <aside className="xl:sticky xl:top-6 xl:self-start">
@@ -735,9 +836,14 @@ export default function ArenaPage() {
 
                 <button
                   onClick={handleCreateMatch}
-                  className="w-full rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 px-5 py-4 text-base font-black text-black transition hover:scale-[1.01]"
+                  disabled={walletLocked}
+                  className={`w-full rounded-2xl px-5 py-4 text-base font-black transition ${
+                    walletLocked
+                      ? "cursor-not-allowed border border-red-300/20 bg-red-500/10 text-red-300 opacity-70"
+                      : "bg-gradient-to-r from-amber-400 to-yellow-300 text-black hover:scale-[1.01]"
+                  }`}
                 >
-                  Create Arena Match
+                  {walletLocked ? "Locked: Active Match In Progress" : "Create Arena Match"}
                 </button>
 
                 <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
@@ -770,6 +876,8 @@ export default function ArenaPage() {
                       match={match}
                       onJoin={handleJoinMatch}
                       onFill={handleFillOpponent}
+                      walletLocked={walletLocked}
+                      activeMatchId={activeWalletMatch?.id ?? null}
                     />
                   ))
                 ) : (
@@ -865,6 +973,8 @@ export default function ArenaPage() {
                       match={match}
                       onJoin={handleJoinMatch}
                       onFill={handleFillOpponent}
+                      walletLocked={walletLocked}
+                      activeMatchId={activeWalletMatch?.id ?? null}
                     />
                   ))
                 ) : (
@@ -890,6 +1000,8 @@ export default function ArenaPage() {
                       match={match}
                       onJoin={handleJoinMatch}
                       onFill={handleFillOpponent}
+                      walletLocked={walletLocked}
+                      activeMatchId={activeWalletMatch?.id ?? null}
                     />
                   ))
                 ) : (
