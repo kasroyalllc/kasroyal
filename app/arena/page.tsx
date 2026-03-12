@@ -91,6 +91,83 @@ function EmptyState({
   )
 }
 
+function ResumeMatchBanner({
+  match,
+}: {
+  match: ArenaMatch
+}) {
+  const isReady = match.status === "Ready to Start"
+  const isLive = match.status === "Live"
+  const countdown = getArenaBettingSecondsLeft(match)
+  const opponent =
+    match.host.name === currentUser.name ? match.challenger?.name ?? "Opponent" : match.host.name
+
+  return (
+    <div
+      className={`mb-6 rounded-[30px] border p-6 ${
+        isLive
+          ? "border-red-300/20 bg-red-500/[0.05]"
+          : "border-fuchsia-300/20 bg-fuchsia-300/[0.05]"
+      }`}
+    >
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${
+                isLive
+                  ? "border-red-300/20 bg-red-500/10 text-red-300"
+                  : "border-fuchsia-300/20 bg-fuchsia-300/10 text-fuchsia-300"
+              }`}
+            >
+              {isLive ? "Resume Active Match" : "Enter Your Ready Match"}
+            </span>
+            <StatusPill status={match.status} />
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
+              {match.game}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
+              BO{match.bestOf}
+            </span>
+          </div>
+
+          <h2 className="mt-4 text-3xl font-black">
+            {match.host.name} vs {match.challenger?.name ?? "Waiting Opponent"}
+          </h2>
+
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65">
+            {isReady
+              ? `${opponent} is seated. Your room is ready and the countdown is already running${
+                  countdown > 0 ? ` (${countdown}s left)` : ""
+                }. Enter now so you do not miss the start.`
+              : "Your match is already live. Jump back into the room right now."}
+          </p>
+        </div>
+
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+          <Link
+            href={`/arena/match/${match.id}`}
+            className={`inline-flex items-center justify-center rounded-2xl px-6 py-4 text-sm font-black transition hover:scale-[1.01] ${
+              isLive
+                ? "bg-gradient-to-r from-red-400 to-rose-400 text-white"
+                : "bg-gradient-to-r from-fuchsia-300 to-amber-300 text-black"
+            }`}
+          >
+            {isLive ? "Resume Live Match" : "Enter Match Now"}
+          </Link>
+
+          <Link
+            href="/spectate"
+            className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm font-bold text-white transition hover:bg-white/10"
+          >
+            Open Spectate
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MatchCard({
   match,
   onJoin,
@@ -154,11 +231,6 @@ function MatchCard({
             {isChallenger ? (
               <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-300">
                 Joined by You
-              </span>
-            ) : null}
-            {isReady ? (
-              <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-fuchsia-300">
-                Enter Now
               </span>
             ) : null}
           </div>
@@ -330,7 +402,7 @@ export default function ArenaPage() {
       })
   }, [matches, gameFilter, ownershipFilter, search])
 
-  const readyMatches = useMemo(
+  const myReadyMatches = useMemo(
     () =>
       filteredMatches
         .filter(
@@ -341,6 +413,20 @@ export default function ArenaPage() {
         .sort((a, b) => b.createdAt - a.createdAt),
     [filteredMatches]
   )
+
+  const myLiveMatches = useMemo(
+    () =>
+      filteredMatches
+        .filter(
+          (match) =>
+            match.status === "Live" &&
+            (match.host.name === currentUser.name || match.challenger?.name === currentUser.name)
+        )
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [filteredMatches]
+  )
+
+  const priorityResumeMatch = myReadyMatches[0] ?? myLiveMatches[0] ?? null
 
   const joinableMatches = useMemo(
     () =>
@@ -358,8 +444,7 @@ export default function ArenaPage() {
       filteredMatches
         .filter(
           (match) =>
-            (match.host.name === currentUser.name || match.challenger?.name === currentUser.name) &&
-            match.status !== "Ready to Start"
+            match.host.name === currentUser.name || match.challenger?.name === currentUser.name
         )
         .sort((a, b) => b.createdAt - a.createdAt),
     [filteredMatches]
@@ -431,6 +516,8 @@ export default function ArenaPage() {
     setWagerInput("5")
     setBestOf(1)
     setCustomMode(false)
+
+    window.location.href = `/arena/match/${created.id}`
   }
 
   function handleJoinMatch(matchId: string) {
@@ -490,14 +577,14 @@ export default function ArenaPage() {
               </h1>
 
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-                Real match creation, real room joins, real live arenas. Ready rooms are surfaced first so hosts can enter immediately.
+                Real match creation, real room joins, real live arenas. Your next active match is always surfaced first.
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-4">
               <MetricCard
                 label="Ready to Enter"
-                value={`${readyMatches.length}`}
+                value={`${myReadyMatches.length}`}
                 accent="text-fuchsia-300"
               />
               <MetricCard
@@ -510,6 +597,8 @@ export default function ArenaPage() {
             </div>
           </div>
         </div>
+
+        {priorityResumeMatch ? <ResumeMatchBanner match={priorityResumeMatch} /> : null}
 
         <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
           <aside className="xl:sticky xl:top-6 xl:self-start">
@@ -669,13 +758,13 @@ export default function ArenaPage() {
                 </p>
                 <h2 className="mt-2 text-2xl font-black">Countdown Rooms</h2>
                 <p className="mt-2 text-sm text-white/60">
-                  If someone joined your room, it will show up here immediately so you can enter fast.
+                  If someone joined your room, it shows here immediately so you can enter fast.
                 </p>
               </div>
 
               <div className="grid gap-4">
-                {readyMatches.length ? (
-                  readyMatches.map((match) => (
+                {myReadyMatches.length ? (
+                  myReadyMatches.map((match) => (
                     <MatchCard
                       key={match.id}
                       match={match}
@@ -807,33 +896,6 @@ export default function ArenaPage() {
                   <EmptyState
                     title="No personal matches yet"
                     text="Once you create or join a room, it will appear here."
-                  />
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
-              <div className="mb-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">
-                  Live Arenas
-                </p>
-                <h2 className="mt-2 text-2xl font-black">Currently Playing</h2>
-              </div>
-
-              <div className="grid gap-4">
-                {liveMatches.length ? (
-                  liveMatches.map((match) => (
-                    <MatchCard
-                      key={match.id}
-                      match={match}
-                      onJoin={handleJoinMatch}
-                      onFill={handleFillOpponent}
-                    />
-                  ))
-                ) : (
-                  <EmptyState
-                    title="No live arenas"
-                    text="Once a countdown finishes and a match launches, it will appear here."
                   />
                 )}
               </div>
