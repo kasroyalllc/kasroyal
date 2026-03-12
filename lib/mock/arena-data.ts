@@ -4,6 +4,7 @@ import {
   type ArenaStatus,
   type GameType,
   type LeaderboardEntry,
+  type PauseState,
   type PlayerProfile,
   type RankTier,
   type SpectatorTicket,
@@ -50,6 +51,7 @@ export type {
   ArenaStatus,
   GameType,
   LeaderboardEntry,
+  PauseState,
   PlayerProfile,
   RankTier,
   SpectatorTicket,
@@ -128,6 +130,12 @@ const ARENA_MATCHES_STORAGE_KEY = "kasroyal_arena_matches"
 const ARENA_MATCHES_EVENT = "kasroyal-arena-matches-updated"
 const SPECTATOR_TICKETS_STORAGE_KEY = "kasroyal_spectator_tickets"
 const SPECTATOR_TICKETS_EVENT = "kasroyal-spectator-tickets-updated"
+
+export const MAX_PAUSES_PER_SIDE = 2
+export const PAUSE_DURATION_SECONDS = 30
+
+const CONNECT4_MOVE_SECONDS = 20
+const TTT_MOVE_SECONDS = 10
 
 const ENABLE_DEV_SEED = process.env.NEXT_PUBLIC_ENABLE_DEV_SEED === "true"
 const ENABLE_DEV_BOTS = process.env.NEXT_PUBLIC_ENABLE_DEV_BOTS === "true"
@@ -224,187 +232,37 @@ export const gameMeta: Record<GameType, GameMeta> = {
   },
 }
 
-const seededArenaMatches: ArenaMatch[] = normalizeArenaMatches(
-  [
-    {
-      id: "arena-1",
-      game: "Chess Duel",
-      status: "Live",
-      bettingStatus: "locked",
-      marketVisibility: "featured",
-      isFeaturedMarket: true,
-      bestOf: 3,
-      wager: 10,
-      createdAt: now - 1000 * 60 * 18,
-      seatedAt: now - 1000 * 60 * 17,
-      countdownStartedAt: now - 1000 * 60 * 16,
-      bettingClosesAt: now - 1000 * 60 * 15,
-      startedAt: now - 1000 * 60 * 15,
-      spectators: 38,
-      playerPot: 20,
-      host: {
-        name: "CryptoCrush44",
-        rank: "Gold I",
-        rating: 1528,
-        winRate: 53,
-        last10: "5-5",
-      },
-      challenger: {
-        name: "KasKing01",
-        rank: "Diamond II",
-        rating: 1842,
-        winRate: 61,
-        last10: "7-3",
-      },
-      hostSideLabel: "White",
-      challengerSideLabel: "Black",
-      statusText: "Match is live",
-      moveText: "17... Qe7",
-      roundScore: { host: 0, challenger: 1 },
-      spectatorPool: { host: 31, challenger: 42 },
-      bettingWindowSeconds: 60,
-      result: null,
-      moveHistory: ["1. e4", "1... c5", "2. Nf3", "2... d6", "17... Qe7"],
-      boardState: {
-        mode: "chess-preview",
-        fen: "rnbq1rk1/pp3ppp/3bpn2/2pp4/2P5/2N1PN2/PP1PBPPP/R1BQ1RK1 w - - 0 8",
-      },
-    },
-    {
-      id: "arena-2",
-      game: "Connect 4",
-      status: "Ready to Start",
-      bettingStatus: "open",
-      marketVisibility: "featured",
-      isFeaturedMarket: true,
-      bestOf: 3,
-      wager: 5,
-      createdAt: now - 1000 * 60 * 4,
-      seatedAt: now - 1000 * 20,
-      countdownStartedAt: now - 1000 * 20,
-      bettingClosesAt: now + 1000 * 9,
-      spectators: 24,
-      playerPot: 10,
-      host: {
-        name: "TurboBetGuy",
-        rank: "Gold III",
-        rating: 1492,
-        winRate: 57,
-        last10: "6-4",
-      },
-      challenger: {
-        name: "LuckyDog23",
-        rank: "Platinum I",
-        rating: 1608,
-        winRate: 59,
-        last10: "7-3",
-      },
-      hostSideLabel: "Red",
-      challengerSideLabel: "Yellow",
-      statusText: "Featured market open",
-      moveText: "Starts in 0:09",
-      roundScore: { host: 0, challenger: 0 },
-      spectatorPool: { host: 14, challenger: 27 },
-      bettingWindowSeconds: 25,
-      result: null,
-      moveHistory: [],
-      boardState: {
-        mode: "connect4-live",
-        board: Array.from({ length: 6 }, () =>
-          Array.from({ length: 7 }, () => null as ArenaSide | null)
-        ),
-        turn: "host" as ArenaSide,
-        turnDeadlineTs: now + 1000 * 29,
-      },
-    },
-    {
-      id: "arena-3",
-      game: "Tic-Tac-Toe",
-      status: "Waiting for Opponent",
-      bettingStatus: "disabled",
-      marketVisibility: "watch-only",
-      isFeaturedMarket: false,
-      bestOf: 1,
-      wager: 3,
-      createdAt: now - 1000 * 60 * 2,
-      spectators: 7,
-      playerPot: 3,
-      host: {
-        name: "FlashMove",
-        rank: "Silver II",
-        rating: 1318,
-        winRate: 48,
-        last10: "4-6",
-      },
-      challenger: null,
-      hostSideLabel: "X",
-      challengerSideLabel: "O",
-      statusText: "Open seat available",
-      moveText: "Waiting for join",
-      roundScore: { host: 0, challenger: 0 },
-      spectatorPool: { host: 0, challenger: 0 },
-      bettingWindowSeconds: 12,
-      result: null,
-      moveHistory: [],
-      boardState: {
-        mode: "ttt-live",
-        board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
-        turn: "X",
-        turnDeadlineTs: now + 1000 * 12,
-      },
-    },
-  ],
-  now
-)
+function createInitialPauseState(): PauseState {
+  return {
+    isPaused: false,
+    pausedBy: null,
+    pauseExpiresAt: null,
+    pauseCountHost: 0,
+    pauseCountChallenger: 0,
+  }
+}
 
-export const initialArenaMatches: ArenaMatch[] = ENABLE_DEV_SEED
-  ? seededArenaMatches
-  : []
-
-const leaderboardSeed: LeaderboardEntry[] = [
-  {
-    id: "lb-1",
-    name: "KasKing01",
-    rank: "Diamond II",
-    rating: 1842,
-    winRate: 61,
-    wins: 148,
-    losses: 94,
-    streak: "W4",
-    favoriteGame: "Chess Duel",
-    earnings: 412.8,
-    avatarGlow: "emerald",
-  },
-  {
-    id: "lb-2",
-    name: "StakeLord",
-    rank: "Master",
-    rating: 1910,
-    winRate: 67,
-    wins: 203,
-    losses: 101,
-    streak: "W7",
-    favoriteGame: "Connect 4",
-    earnings: 621.2,
-    avatarGlow: "amber",
-  },
-  {
-    id: "lb-3",
-    name: "LuckyDog23",
-    rank: "Platinum I",
-    rating: 1608,
-    winRate: 59,
-    wins: 131,
-    losses: 91,
-    streak: "W2",
-    favoriteGame: "Tic-Tac-Toe",
-    earnings: 214.6,
-    avatarGlow: "sky",
-  },
-]
-
-let arenaMatchesCache: ArenaMatch[] = [...initialArenaMatches]
-let spectatorTicketsCache: PersistedBetTicket[] = []
+function normalizePauseState(value?: Partial<PauseState> | null): PauseState {
+  return {
+    isPaused: value?.isPaused === true,
+    pausedBy:
+      value?.pausedBy === "host" || value?.pausedBy === "challenger"
+        ? value.pausedBy
+        : null,
+    pauseExpiresAt: Number.isFinite(value?.pauseExpiresAt)
+      ? Number(value?.pauseExpiresAt)
+      : null,
+    pauseCountHost:
+      typeof value?.pauseCountHost === "number" && Number.isFinite(value.pauseCountHost)
+        ? Math.max(0, Math.floor(value.pauseCountHost))
+        : 0,
+    pauseCountChallenger:
+      typeof value?.pauseCountChallenger === "number" &&
+      Number.isFinite(value.pauseCountChallenger)
+        ? Math.max(0, Math.floor(value.pauseCountChallenger))
+        : 0,
+  }
+}
 
 function isBrowser() {
   return typeof window !== "undefined"
@@ -462,26 +320,26 @@ function isTttBoardState(value: unknown): value is TttBoardState {
 function createLiveBoardState(game: GameType) {
   if (game === "Connect 4") {
     return {
-      mode: "connect4-live",
+      mode: "connect4-live" as const,
       board: Array.from({ length: 6 }, () =>
         Array.from({ length: 7 }, () => null as ArenaSide | null)
       ),
       turn: "host" as ArenaSide,
-      turnDeadlineTs: Date.now() + 20_000,
+      turnDeadlineTs: Date.now() + CONNECT4_MOVE_SECONDS * 1000,
     }
   }
 
   if (game === "Tic-Tac-Toe") {
     return {
-      mode: "ttt-live",
+      mode: "ttt-live" as const,
       board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
       turn: "X" as "X" | "O",
-      turnDeadlineTs: Date.now() + 10_000,
+      turnDeadlineTs: Date.now() + TTT_MOVE_SECONDS * 1000,
     }
   }
 
   return {
-    mode: "chess-preview",
+    mode: "chess-preview" as const,
     fen: "start",
   }
 }
@@ -492,72 +350,196 @@ function getLiveMoveText(game: GameType) {
   return "Opening move"
 }
 
+function getCurrentTurnSide(match: ArenaMatch): ArenaSide | null {
+  if (match.game === "Connect 4" && isConnect4BoardState(match.boardState)) {
+    return match.boardState.turn
+  }
+
+  if (match.game === "Tic-Tac-Toe" && isTttBoardState(match.boardState)) {
+    return match.boardState.turn === "X" ? "host" : "challenger"
+  }
+
+  return null
+}
+
+function getCurrentTurnName(match: ArenaMatch) {
+  const turnSide = getCurrentTurnSide(match)
+
+  if (turnSide === "host") return match.host.name
+  if (turnSide === "challenger") return match.challenger?.name ?? "Challenger"
+
+  if (match.game === "Connect 4" || match.game === "Tic-Tac-Toe") {
+    return match.host.name
+  }
+
+  return match.challenger ? `${match.host.name} vs ${match.challenger.name}` : match.host.name
+}
+
 function getLiveStatusText(
   game: GameType,
   hostName: string,
-  challengerName?: string | null
+  challengerName?: string | null,
+  currentTurnName?: string | null
 ) {
-  if (game === "Connect 4") {
-    return `${hostName} to move`
-  }
-
-  if (game === "Tic-Tac-Toe") {
-    return `${hostName} to move`
+  if (game === "Connect 4" || game === "Tic-Tac-Toe") {
+    return `${currentTurnName ?? hostName} to move`
   }
 
   return challengerName ? `${hostName} vs ${challengerName} live` : "Match is live"
 }
 
+function resetBoardTimer(game: GameType, boardState: unknown, nowTs: number) {
+  if (game === "Connect 4" && isConnect4BoardState(boardState)) {
+    return {
+      ...boardState,
+      turnDeadlineTs: nowTs + CONNECT4_MOVE_SECONDS * 1000,
+    }
+  }
+
+  if (game === "Tic-Tac-Toe" && isTttBoardState(boardState)) {
+    return {
+      ...boardState,
+      turnDeadlineTs: nowTs + TTT_MOVE_SECONDS * 1000,
+    }
+  }
+
+  return boardState
+}
+
+function withNormalizedPauseState(match: ArenaMatch): ArenaMatch {
+  return {
+    ...match,
+    pauseState: normalizePauseState(match.pauseState),
+  }
+}
+
+function resumePausedMatchInternal(
+  match: ArenaMatch,
+  nowTs: number,
+  reason: "manual" | "expired"
+): ArenaMatch {
+  const normalized = withNormalizedPauseState(match)
+  const activeTurnName = getCurrentTurnName(normalized)
+
+  return {
+    ...normalized,
+    boardState: resetBoardTimer(normalized.game, normalized.boardState, nowTs),
+    pauseState: {
+      ...normalizePauseState(normalized.pauseState),
+      isPaused: false,
+      pausedBy: null,
+      pauseExpiresAt: null,
+    },
+    statusText: getLiveStatusText(
+      normalized.game,
+      normalized.host.name,
+      normalized.challenger?.name ?? null,
+      activeTurnName
+    ),
+    moveText: reason === "expired" ? "Pause expired • timer reset" : "Pause ended • timer reset",
+  }
+}
+
+function resolvePausedMatch(match: ArenaMatch, nowTs: number): ArenaMatch {
+  if (match.status !== "Live") {
+    return withNormalizedPauseState(match)
+  }
+
+  const normalized = withNormalizedPauseState(match)
+  const pauseState = normalizePauseState(normalized.pauseState)
+
+  if (!pauseState.isPaused || !pauseState.pauseExpiresAt) {
+    return normalized
+  }
+
+  if (pauseState.pauseExpiresAt > nowTs) {
+    return normalized
+  }
+
+  return resumePausedMatchInternal(normalized, nowTs, "expired")
+}
+
 function resolveTimedOutLiveMatch(match: ArenaMatch, nowTs: number): ArenaMatch {
   if (match.status !== "Live" || !match.challenger) {
-    return match
+    return withNormalizedPauseState(match)
   }
 
-  if (match.game === "Connect 4" && isConnect4BoardState(match.boardState)) {
-    if (match.boardState.turnDeadlineTs > nowTs) return match
+  const normalized = withNormalizedPauseState(match)
+  const pauseState = normalizePauseState(normalized.pauseState)
 
-    const loser = match.boardState.turn
+  if (pauseState.isPaused) {
+    return normalized
+  }
+
+  if (normalized.game === "Connect 4" && isConnect4BoardState(normalized.boardState)) {
+    if (normalized.boardState.turnDeadlineTs > nowTs) return normalized
+
+    const loser = normalized.boardState.turn
     const winner: ArenaSide = loser === "host" ? "challenger" : "host"
-    const winnerName = winner === "host" ? match.host.name : match.challenger.name
-    const loserName = loser === "host" ? match.host.name : match.challenger.name
+    const winnerName =
+      winner === "host"
+        ? normalized.host.name
+        : normalized.challenger?.name ?? "Challenger"
+    const loserName =
+      loser === "host"
+        ? normalized.host.name
+        : normalized.challenger?.name ?? "Challenger"
 
     return {
-      ...match,
+      ...normalized,
       status: "Finished",
       bettingStatus: "locked",
       finishedAt: nowTs,
       result: winner,
       statusText: `${loserName} timed out`,
       moveText: `${winnerName} wins by timeout`,
+      pauseState: {
+        ...pauseState,
+        isPaused: false,
+        pausedBy: null,
+        pauseExpiresAt: null,
+      },
     }
   }
 
-  if (match.game === "Tic-Tac-Toe" && isTttBoardState(match.boardState)) {
-    if (match.boardState.turnDeadlineTs > nowTs) return match
+  if (normalized.game === "Tic-Tac-Toe" && isTttBoardState(normalized.boardState)) {
+    if (normalized.boardState.turnDeadlineTs > nowTs) return normalized
 
-    const loser = match.boardState.turn === "X" ? "host" : "challenger"
+    const loser = normalized.boardState.turn === "X" ? "host" : "challenger"
     const winner: ArenaSide = loser === "host" ? "challenger" : "host"
-    const winnerName = winner === "host" ? match.host.name : match.challenger.name
-    const loserName = loser === "host" ? match.host.name : match.challenger.name
+    const winnerName =
+      winner === "host"
+        ? normalized.host.name
+        : normalized.challenger?.name ?? "Challenger"
+    const loserName =
+      loser === "host"
+        ? normalized.host.name
+        : normalized.challenger?.name ?? "Challenger"
 
     return {
-      ...match,
+      ...normalized,
       status: "Finished",
       bettingStatus: "locked",
       finishedAt: nowTs,
       result: winner,
       statusText: `${loserName} timed out`,
       moveText: `${winnerName} wins by timeout`,
+      pauseState: {
+        ...pauseState,
+        isPaused: false,
+        pausedBy: null,
+        pauseExpiresAt: null,
+      },
     }
   }
 
-  return match
+  return normalized
 }
 
 function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMatch[] {
   return normalizeArenaMatches(
     matches.map((originalMatch) => {
-      let match = originalMatch
+      let match = withNormalizedPauseState(originalMatch)
 
       const shouldAutoLaunch =
         !!match.challenger &&
@@ -580,23 +562,39 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
           statusText: getLiveStatusText(
             match.game,
             match.host.name,
-            match.challenger?.name ?? null
+            match.challenger?.name ?? null,
+            match.host.name
           ),
           moveText: getLiveMoveText(match.game),
           boardState: createLiveBoardState(match.game),
+          pauseState: normalizePauseState(match.pauseState),
         }
       }
 
+      match = resolvePausedMatch(match, nowTs)
       match = resolveTimedOutLiveMatch(match, nowTs)
-      return match
+
+      return {
+        ...match,
+        pauseState: normalizePauseState(match.pauseState),
+      }
     }),
     nowTs
-  )
+  ).map((match) => ({
+    ...match,
+    pauseState: normalizePauseState(match.pauseState),
+  }))
 }
 
 function persistMatches(matches: ArenaMatch[]) {
   arenaMatchesCache = applyArenaLifecycle(
-    normalizeArenaMatches(matches, Date.now()),
+    normalizeArenaMatches(
+      matches.map((match) => ({
+        ...match,
+        pauseState: normalizePauseState(match.pauseState),
+      })),
+      Date.now()
+    ),
     Date.now()
   )
 
@@ -628,7 +626,13 @@ function loadMatchesFromLocalStorage() {
   )
 
   arenaMatchesCache = applyArenaLifecycle(
-    normalizeArenaMatches(stored, Date.now()),
+    normalizeArenaMatches(
+      stored.map((match) => ({
+        ...match,
+        pauseState: normalizePauseState(match.pauseState),
+      })),
+      Date.now()
+    ),
     Date.now()
   )
 
@@ -698,26 +702,26 @@ function bestOfForGame(game: GameType, explicit?: 1 | 3 | 5): 1 | 3 | 5 {
 function createDefaultBoardState(game: GameType) {
   if (game === "Connect 4") {
     return {
-      mode: "connect4-live",
+      mode: "connect4-live" as const,
       board: Array.from({ length: 6 }, () =>
         Array.from({ length: 7 }, () => null as ArenaSide | null)
       ),
       turn: "host" as ArenaSide,
-      turnDeadlineTs: Date.now() + 20_000,
+      turnDeadlineTs: Date.now() + CONNECT4_MOVE_SECONDS * 1000,
     }
   }
 
   if (game === "Tic-Tac-Toe") {
     return {
-      mode: "ttt-live",
+      mode: "ttt-live" as const,
       board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
       turn: "X" as "X" | "O",
-      turnDeadlineTs: Date.now() + 10_000,
+      turnDeadlineTs: Date.now() + TTT_MOVE_SECONDS * 1000,
     }
   }
 
   return {
-    mode: "chess-preview",
+    mode: "chess-preview" as const,
     fen: "start",
   }
 }
@@ -740,9 +744,15 @@ function upsertMatchLocally(match: ArenaMatch) {
   const index = next.findIndex((item) => item.id === match.id)
 
   if (index >= 0) {
-    next[index] = match
+    next[index] = {
+      ...match,
+      pauseState: normalizePauseState(match.pauseState),
+    }
   } else {
-    next.unshift(match)
+    next.unshift({
+      ...match,
+      pauseState: normalizePauseState(match.pauseState),
+    })
   }
 
   persistMatches(next)
@@ -824,6 +834,7 @@ function mapDbMatchToArenaMatch(dbMatch: {
     result: null,
     moveHistory: [],
     boardState: createDefaultBoardState(game),
+    pauseState: createInitialPauseState(),
   }
 }
 
@@ -859,6 +870,7 @@ function applyBetsToMatches(
 
       return {
         ...match,
+        pauseState: normalizePauseState(match.pauseState),
         bettingStatus:
           match.status === "Ready to Start" &&
           !!match.bettingClosesAt &&
@@ -878,7 +890,9 @@ function applyBetsToMatches(
           match.status === "Ready to Start"
             ? "Countdown active"
             : match.status === "Live"
-              ? "Match is live"
+              ? normalizePauseState(match.pauseState).isPaused
+                ? "Pause active"
+                : "Match is live"
               : match.status === "Finished"
                 ? "Match finished"
                 : "Open seat available",
@@ -891,7 +905,10 @@ function applyBetsToMatches(
       }
     }),
     Date.now()
-  )
+  ).map((match) => ({
+    ...match,
+    pauseState: normalizePauseState(match.pauseState),
+  }))
 }
 
 async function hydrateMatchesFromSupabase() {
@@ -939,6 +956,194 @@ async function hydrateTicketsForMatchFromSupabase(matchId: string) {
   }
 }
 
+const seededArenaMatches: ArenaMatch[] = applyArenaLifecycle(
+  normalizeArenaMatches(
+    [
+      {
+        id: "arena-1",
+        game: "Chess Duel",
+        status: "Live",
+        bettingStatus: "locked",
+        marketVisibility: "featured",
+        isFeaturedMarket: true,
+        bestOf: 3,
+        wager: 10,
+        createdAt: now - 1000 * 60 * 18,
+        seatedAt: now - 1000 * 60 * 17,
+        countdownStartedAt: now - 1000 * 60 * 16,
+        bettingClosesAt: now - 1000 * 60 * 15,
+        startedAt: now - 1000 * 60 * 15,
+        spectators: 38,
+        playerPot: 20,
+        host: {
+          name: "CryptoCrush44",
+          rank: "Gold I",
+          rating: 1528,
+          winRate: 53,
+          last10: "5-5",
+        },
+        challenger: {
+          name: "KasKing01",
+          rank: "Diamond II",
+          rating: 1842,
+          winRate: 61,
+          last10: "7-3",
+        },
+        hostSideLabel: "White",
+        challengerSideLabel: "Black",
+        statusText: "Match is live",
+        moveText: "17... Qe7",
+        roundScore: { host: 0, challenger: 1 },
+        spectatorPool: { host: 31, challenger: 42 },
+        bettingWindowSeconds: 60,
+        result: null,
+        moveHistory: ["1. e4", "1... c5", "2. Nf3", "2... d6", "17... Qe7"],
+        boardState: {
+          mode: "chess-preview",
+          fen: "rnbq1rk1/pp3ppp/3bpn2/2pp4/2P5/2N1PN2/PP1PBPPP/R1BQ1RK1 w - - 0 8",
+        },
+        pauseState: createInitialPauseState(),
+      },
+      {
+        id: "arena-2",
+        game: "Connect 4",
+        status: "Ready to Start",
+        bettingStatus: "open",
+        marketVisibility: "featured",
+        isFeaturedMarket: true,
+        bestOf: 3,
+        wager: 5,
+        createdAt: now - 1000 * 60 * 4,
+        seatedAt: now - 1000 * 20,
+        countdownStartedAt: now - 1000 * 20,
+        bettingClosesAt: now + 1000 * 9,
+        spectators: 24,
+        playerPot: 10,
+        host: {
+          name: "TurboBetGuy",
+          rank: "Gold III",
+          rating: 1492,
+          winRate: 57,
+          last10: "6-4",
+        },
+        challenger: {
+          name: "LuckyDog23",
+          rank: "Platinum I",
+          rating: 1608,
+          winRate: 59,
+          last10: "7-3",
+        },
+        hostSideLabel: "Red",
+        challengerSideLabel: "Yellow",
+        statusText: "Featured market open",
+        moveText: "Starts in 0:09",
+        roundScore: { host: 0, challenger: 0 },
+        spectatorPool: { host: 14, challenger: 27 },
+        bettingWindowSeconds: 25,
+        result: null,
+        moveHistory: [],
+        boardState: {
+          mode: "connect4-live",
+          board: Array.from({ length: 6 }, () =>
+            Array.from({ length: 7 }, () => null as ArenaSide | null)
+          ),
+          turn: "host" as ArenaSide,
+          turnDeadlineTs: now + 1000 * 29,
+        },
+        pauseState: createInitialPauseState(),
+      },
+      {
+        id: "arena-3",
+        game: "Tic-Tac-Toe",
+        status: "Waiting for Opponent",
+        bettingStatus: "disabled",
+        marketVisibility: "watch-only",
+        isFeaturedMarket: false,
+        bestOf: 1,
+        wager: 3,
+        createdAt: now - 1000 * 60 * 2,
+        spectators: 7,
+        playerPot: 3,
+        host: {
+          name: "FlashMove",
+          rank: "Silver II",
+          rating: 1318,
+          winRate: 48,
+          last10: "4-6",
+        },
+        challenger: null,
+        hostSideLabel: "X",
+        challengerSideLabel: "O",
+        statusText: "Open seat available",
+        moveText: "Waiting for join",
+        roundScore: { host: 0, challenger: 0 },
+        spectatorPool: { host: 0, challenger: 0 },
+        bettingWindowSeconds: 12,
+        result: null,
+        moveHistory: [],
+        boardState: {
+          mode: "ttt-live",
+          board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
+          turn: "X",
+          turnDeadlineTs: now + 1000 * 12,
+        },
+        pauseState: createInitialPauseState(),
+      },
+    ],
+    now
+  ),
+  now
+)
+
+export const initialArenaMatches: ArenaMatch[] = ENABLE_DEV_SEED
+  ? seededArenaMatches
+  : []
+
+const leaderboardSeed: LeaderboardEntry[] = [
+  {
+    id: "lb-1",
+    name: "KasKing01",
+    rank: "Diamond II",
+    rating: 1842,
+    winRate: 61,
+    wins: 148,
+    losses: 94,
+    streak: "W4",
+    favoriteGame: "Chess Duel",
+    earnings: 412.8,
+    avatarGlow: "emerald",
+  },
+  {
+    id: "lb-2",
+    name: "StakeLord",
+    rank: "Master",
+    rating: 1910,
+    winRate: 67,
+    wins: 203,
+    losses: 101,
+    streak: "W7",
+    favoriteGame: "Connect 4",
+    earnings: 621.2,
+    avatarGlow: "amber",
+  },
+  {
+    id: "lb-3",
+    name: "LuckyDog23",
+    rank: "Platinum I",
+    rating: 1608,
+    winRate: 59,
+    wins: 131,
+    losses: 91,
+    streak: "W2",
+    favoriteGame: "Tic-Tac-Toe",
+    earnings: 214.6,
+    avatarGlow: "sky",
+  },
+]
+
+let arenaMatchesCache: ArenaMatch[] = [...initialArenaMatches]
+let spectatorTicketsCache: PersistedBetTicket[] = []
+
 if (isBrowser()) {
   loadMatchesFromLocalStorage()
   loadTicketsFromLocalStorage()
@@ -982,7 +1187,16 @@ export function readArenaMatches() {
     }
   }
 
-  return normalizeArenaMatches([...arenaMatchesCache], Date.now())
+  return normalizeArenaMatches(
+    [...arenaMatchesCache].map((match) => ({
+      ...match,
+      pauseState: normalizePauseState(match.pauseState),
+    })),
+    Date.now()
+  ).map((match) => ({
+    ...match,
+    pauseState: normalizePauseState(match.pauseState),
+  }))
 }
 
 export function readSpectatorTickets() {
@@ -1028,6 +1242,9 @@ export function updateArenaMatch(
     return {
       ...match,
       ...patch,
+      pauseState: normalizePauseState(
+        "pauseState" in patch ? patch.pauseState : match.pauseState
+      ),
     }
   })
 
@@ -1132,6 +1349,7 @@ export function createArenaMatch(input: {
         result: null,
         moveHistory: [],
         boardState: createDefaultBoardState(input.game),
+        pauseState: createInitialPauseState(),
       },
     ],
     Date.now()
@@ -1152,6 +1370,7 @@ export function createArenaMatch(input: {
       mapped.bestOf = resolvedBestOf
       mapped.hostSideLabel = labels.host
       mapped.challengerSideLabel = labels.challenger
+      mapped.pauseState = createInitialPauseState()
 
       const current = readArenaMatches()
       const withoutTemp = current.filter((match) => match.id !== localMatch.id)
@@ -1195,6 +1414,7 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
     playerPot: current.wager * 2,
     statusText: "Countdown active",
     moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(current.game))}`,
+    pauseState: normalizePauseState(current.pauseState),
   }))
 
   void (async () => {
@@ -1214,6 +1434,7 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
         finishedAt: undefined,
         statusText: "Countdown active",
         moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(mapped.game))}`,
+        pauseState: createInitialPauseState(),
       })
     } catch (error) {
       console.error("KasRoyal joinArenaMatch background sync failed", error)
@@ -1256,6 +1477,7 @@ export function autoFillArenaMatch(matchId: string): ArenaMatch | null {
     playerPot: current.wager * 2,
     statusText: "Countdown active",
     moveText: `Starts in ${formatTime(getGameBettingWindowSeconds(current.game))}`,
+    pauseState: normalizePauseState(current.pauseState),
   }))
 }
 
@@ -1281,11 +1503,132 @@ export function launchArenaMatch(matchId: string): ArenaMatch | null {
     statusText: getLiveStatusText(
       current.game,
       current.host.name,
-      current.challenger?.name ?? null
+      current.challenger?.name ?? null,
+      current.host.name
     ),
     moveText: getLiveMoveText(current.game),
     boardState: createLiveBoardState(current.game),
+    pauseState: normalizePauseState(current.pauseState),
   }))
+}
+
+export function pauseArenaMatch(matchId: string, side: ArenaSide): ArenaMatch | null {
+  const match = getArenaById(matchId)
+
+  if (!match) {
+    throw new Error("Match not found")
+  }
+
+  if (match.status !== "Live") {
+    throw new Error("Pause is only available during live matches")
+  }
+
+  if (!match.challenger) {
+    throw new Error("Pause is unavailable until both players are seated")
+  }
+
+  if (match.game === "Chess Duel") {
+    throw new Error("Pause is not available for chess preview yet")
+  }
+
+  const pauseState = normalizePauseState(match.pauseState)
+
+  if (pauseState.isPaused) {
+    throw new Error("Match is already paused")
+  }
+
+  const currentTurnSide = getCurrentTurnSide(match)
+
+  if (!currentTurnSide) {
+    throw new Error("Pause is unavailable for this board state")
+  }
+
+  if (currentTurnSide !== side) {
+    throw new Error("Only the player whose turn it is can pause")
+  }
+
+  const usedPauses =
+    side === "host" ? pauseState.pauseCountHost : pauseState.pauseCountChallenger
+
+  if (usedPauses >= MAX_PAUSES_PER_SIDE) {
+    throw new Error("No pauses remaining for this player")
+  }
+
+  const pauseExpiresAt = Date.now() + PAUSE_DURATION_SECONDS * 1000
+  const playerName = side === "host" ? match.host.name : match.challenger.name
+
+  return updateArenaMatch(matchId, (current) => {
+    const currentPauseState = normalizePauseState(current.pauseState)
+
+    return {
+      pauseState: {
+        ...currentPauseState,
+        isPaused: true,
+        pausedBy: side,
+        pauseExpiresAt,
+        pauseCountHost:
+          side === "host"
+            ? currentPauseState.pauseCountHost + 1
+            : currentPauseState.pauseCountHost,
+        pauseCountChallenger:
+          side === "challenger"
+            ? currentPauseState.pauseCountChallenger + 1
+            : currentPauseState.pauseCountChallenger,
+      },
+      statusText: `${playerName} paused • ${PAUSE_DURATION_SECONDS}s`,
+      moveText: "Pause active",
+    }
+  })
+}
+
+export function resumeArenaMatch(
+  matchId: string,
+  resumedBy?: ArenaSide | "system"
+): ArenaMatch | null {
+  const match = getArenaById(matchId)
+
+  if (!match) {
+    throw new Error("Match not found")
+  }
+
+  if (match.status !== "Live") {
+    throw new Error("Only live matches can be resumed")
+  }
+
+  const pauseState = normalizePauseState(match.pauseState)
+
+  if (!pauseState.isPaused) {
+    throw new Error("Match is not currently paused")
+  }
+
+  if (
+    resumedBy &&
+    resumedBy !== "system" &&
+    resumedBy !== "host" &&
+    resumedBy !== "challenger"
+  ) {
+    throw new Error("Invalid resume side")
+  }
+
+  const nowTs = Date.now()
+
+  return updateArenaMatch(matchId, (current) => {
+    const resumed = resumePausedMatchInternal(current, nowTs, "manual")
+    const resumerName =
+      resumedBy === "host"
+        ? current.host.name
+        : resumedBy === "challenger"
+          ? current.challenger?.name ?? "Challenger"
+          : null
+
+    return {
+      ...resumed,
+      moveText:
+        resumedBy && resumedBy !== "system" && resumerName
+          ? `${resumerName} resumed • timer reset`
+          : "Pause ended • timer reset",
+    }
+  })
 }
 
 export async function placeArenaSpectatorBet(input: {
