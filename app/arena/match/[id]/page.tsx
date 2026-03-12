@@ -1507,24 +1507,24 @@ export default function ArenaMatchPage() {
           </div>
         </div>
 
-        <div className="mb-8 rounded-[32px] border border-white/8 bg-white/[0.03] p-6 shadow-[0_0_50px_rgba(0,255,200,0.05)]">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mb-6 rounded-[28px] border border-white/8 bg-white/[0.03] p-4 shadow-[0_0_50px_rgba(0,255,200,0.05)] sm:mb-8 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
             <div className="max-w-3xl">
-              <div className="mb-4 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
+              <div className="mb-2 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300 sm:mb-4 sm:px-4 sm:py-2 sm:text-xs">
                 KasRoyal Live Match Room
               </div>
 
-              <h1 className="text-4xl font-black leading-none sm:text-5xl xl:text-6xl">
+              <h1 className="text-3xl font-black leading-none sm:text-5xl xl:text-6xl">
                 {match.game}
               </h1>
 
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60 sm:mt-4 sm:text-base sm:leading-7 xl:text-lg">
                 Stay in the match room from the moment both players are seated. Watch the countdown,
                 enjoy the pre-match hype, and jump right into the live game when the match starts.
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-6 sm:gap-3">
               <StatCard label="Phase" value={formatArenaPhase(match.status)} accent="text-emerald-300" />
               <StatCard label="Player Pot" value={`${totalPlayerPot} KAS`} accent="text-amber-300" />
               <StatCard label="Spectators" value={`${match.spectators}`} accent="text-sky-300" />
@@ -1579,8 +1579,8 @@ export default function ArenaMatchPage() {
           pausedByName={pausedByName}
         />
 
-        <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_390px]">
-          <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)_400px] xl:grid-rows-[auto_auto_auto]">
+          <aside className="order-2 space-y-6 xl:order-1 xl:sticky xl:top-6 xl:row-span-1 xl:self-start">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
               <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player One</p>
               <div className="mt-4 text-3xl font-black">{match.host.name}</div>
@@ -1668,7 +1668,7 @@ export default function ArenaMatchPage() {
             ) : null}
           </aside>
 
-          <section className="space-y-6">
+          <section className="order-3 space-y-6 xl:order-2 xl:col-start-2 xl:row-span-3 xl:row-start-1">
             <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-6 shadow-[0_0_40px_rgba(0,255,200,0.05)]">
               <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -1854,47 +1854,52 @@ export default function ArenaMatchPage() {
                     />
                   ) : null}
 
-                  <div className="grid w-full max-w-[420px] grid-cols-3 gap-3">
-                    {tttBoard.map((cell, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => playTtt(index)}
-                        disabled={
-                          isCountdown ||
-                          isPaused ||
-                          cell !== null ||
-                          match.status !== "Live" ||
-                          tttWinner !== null ||
-                          !canCurrentUserMove
+                  <div className="flex w-full flex-col items-center justify-center">
+                    <div className="grid w-full max-w-[380px] grid-cols-3 gap-4 rounded-3xl border border-emerald-300/15 bg-[#07100e] p-6 shadow-[inset_0_0_32px_rgba(0,255,200,0.04)] sm:gap-5 sm:p-8">
+                      {tttBoard.map((cell, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => playTtt(index)}
+                          disabled={
+                            isCountdown ||
+                            isPaused ||
+                            cell !== null ||
+                            match.status !== "Live" ||
+                            tttWinner !== null ||
+                            !canCurrentUserMove
+                          }
+                          className={`aspect-square rounded-2xl border text-4xl font-black transition sm:text-5xl disabled:opacity-70 ${
+                            cell === "X"
+                              ? "border-amber-300/30 bg-amber-300/10 text-amber-200 shadow-[0_0_20px_rgba(255,215,0,0.12)]"
+                              : cell === "O"
+                                ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-200 shadow-[0_0_20px_rgba(0,255,200,0.12)]"
+                                : "border-white/10 bg-black/35 text-white/20 hover:bg-white/[0.06]"
+                          }`}
+                        >
+                          {cell ?? ""}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                      <StatCard label={`Host ${match.hostSideLabel}`} value="X" accent="text-amber-300" />
+                      <StatCard label={`Challenger ${match.challengerSideLabel}`} value="O" accent="text-emerald-300" />
+                      <StatCard label="Turn" value={boardTurnLabel} accent="text-sky-300" />
+                      <StatCard
+                        label="Clock"
+                        value={boardClockLabel}
+                        accent={
+                          isPaused
+                            ? "text-sky-300"
+                            : isCountdown
+                              ? "text-fuchsia-300"
+                              : !isFinished && moveSecondsLeft <= 5
+                                ? "text-red-300"
+                                : "text-amber-300"
                         }
-                        className={`aspect-square rounded-[24px] border border-white/10 bg-black/35 text-4xl font-black transition hover:bg-white/[0.05] disabled:opacity-70 ${
-                          cell === "X" ? "text-amber-200" : cell === "O" ? "text-emerald-200" : "text-white/20"
-                        }`}
-                      >
-                        {cell ?? ""}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-8 grid w-full max-w-4xl gap-4 md:grid-cols-5">
-                    <StatCard label={`Host ${match.hostSideLabel}`} value="X" accent="text-amber-300" />
-                    <StatCard label={`Challenger ${match.challengerSideLabel}`} value="O" accent="text-emerald-300" />
-                    <StatCard label="Turn" value={boardTurnLabel} accent="text-sky-300" />
-                    <StatCard
-                      label="Clock"
-                      value={boardClockLabel}
-                      accent={
-                        isPaused
-                          ? "text-sky-300"
-                          : isCountdown
-                            ? "text-fuchsia-300"
-                            : !isFinished && moveSecondsLeft <= 5
-                              ? "text-red-300"
-                              : "text-amber-300"
-                      }
-                    />
-                    <StatCard label="State" value={boardStateLabel} accent="text-amber-300" />
+                      />
+                      <StatCard label="State" value={boardStateLabel} accent="text-amber-300" />
+                    </div>
                   </div>
                 </GameBoardShell>
               ) : (
@@ -1937,12 +1942,15 @@ export default function ArenaMatchPage() {
                 </GameBoardShell>
               )}
             </div>
+          </section>
 
-            <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-6 shadow-[0_0_30px_rgba(255,200,80,0.04)]">
+          {/* Right column: Live Arena Betting (top), Chat, Feed — visible above the fold on desktop */}
+          <div className="order-1 space-y-6 xl:order-3 xl:col-start-3 xl:row-start-1 xl:sticky xl:top-6 xl:self-start">
+            <div className="rounded-[32px] border border-amber-300/20 bg-gradient-to-br from-[#0c1210] to-[#080c0a] p-6 shadow-[0_0_40px_rgba(255,200,80,0.12)] ring-1 ring-amber-300/10">
               <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Spectator Market</p>
-                  <h3 className="mt-2 text-3xl font-black">Live Arena Betting</h3>
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-amber-300/90">Live Arena Betting</p>
+                  <h3 className="mt-2 text-2xl font-black text-white sm:text-3xl">Spectator Market</h3>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -2194,9 +2202,7 @@ export default function ArenaMatchPage() {
                 </div>
               </div>
             </div>
-          </section>
 
-          <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
               <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Bet Slip</p>
 
@@ -2349,72 +2355,86 @@ export default function ArenaMatchPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Live Feed</div>
-
-                  <div className="mt-3 max-h-[260px] space-y-3 overflow-y-auto text-sm text-white/80">
-                    {(feed.length ? feed : makeLiveFeed(match)).map((item, idx) => (
-                      <div key={`${item}-${idx}`} className="rounded-xl bg-white/[0.03] px-3 py-3">
-                        {item}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Room Chat</div>
-                  <div className="mt-3 max-h-[200px] space-y-2 overflow-y-auto text-sm">
-                    {chatMessages.length === 0 ? (
-                      <div className="rounded-xl bg-white/[0.03] px-3 py-3 text-white/45">
-                        No messages yet. Say something!
-                      </div>
-                    ) : (
-                      chatMessages.map((msg) => (
-                        <div key={msg.id} className="rounded-xl bg-white/[0.03] px-3 py-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-emerald-300/90">{msg.user}</span>
-                            <span className="text-[10px] uppercase tracking-wider text-white/40">
-                              {new Date(msg.ts).toLocaleTimeString(undefined, {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </div>
-                          <div className="mt-1 break-words text-white/85">{msg.text}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <form
-                    className="mt-3 flex gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      const text = chatInput.trim()
-                      if (!text) return
-                      appendRoomChat(matchId, { user: currentUser.name, text })
-                      setChatInput("")
-                    }}
-                  >
-                    <input
-                      type="text"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Type a message…"
-                      maxLength={500}
-                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!chatInput.trim()}
-                      className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-4 py-2.5 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Send
-                    </button>
-                  </form>
-                </div>
               </div>
             </div>
-          </aside>
+          </div>
+
+          {/* Room Chat — premium, prominent */}
+          <div className="order-4 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-6">
+            <div className="rounded-[28px] border border-emerald-300/15 bg-[#080c0a] p-5 shadow-[0_0_32px_rgba(0,255,200,0.06)] ring-1 ring-emerald-300/10">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
+                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-200">
+                  Live
+                </span>
+              </div>
+              <div className="max-h-[320px] min-h-[200px] space-y-3 overflow-y-auto rounded-2xl border border-white/5 bg-black/30 p-3">
+                {chatMessages.length === 0 ? (
+                  <div className="flex min-h-[160px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45">
+                    No messages yet. Say something!
+                  </div>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3 transition hover:bg-white/[0.05]"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-emerald-300">{msg.user}</span>
+                        <span className="text-xs uppercase tracking-wider text-white/40">
+                          {new Date(msg.ts).toLocaleTimeString(undefined, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                      <div className="mt-2 break-words text-sm leading-snug text-white/90">{msg.text}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <form
+                className="mt-4 flex gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const text = chatInput.trim()
+                  if (!text) return
+                  appendRoomChat(matchId, { user: currentUser.name, text })
+                  setChatInput("")
+                }}
+              >
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Type a message…"
+                  maxLength={500}
+                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Live Feed */}
+          <div className="order-5 xl:col-start-3 xl:row-start-3">
+            <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
+              <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/45">Live Feed</div>
+              <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto text-sm text-white/80">
+                {(feed.length ? feed : makeLiveFeed(match)).map((item, idx) => (
+                  <div key={`${item}-${idx}`} className="rounded-xl bg-white/[0.03] px-3 py-2.5">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
