@@ -108,6 +108,7 @@ function MatchCard({
   const isChallenger = match.challenger?.name === currentUser.name
   const isMine = isHost || isChallenger
   const countdownSeconds = getArenaBettingSecondsLeft(match)
+
   const countdownLabel =
     isReady && countdownSeconds > 0
       ? `Starts in ${countdownSeconds}s`
@@ -120,9 +121,11 @@ function MatchCard({
   return (
     <div
       className={`rounded-[24px] border p-5 transition ${
-        isMine
-          ? "border-emerald-300/20 bg-emerald-400/[0.04]"
-          : "border-white/10 bg-white/[0.03]"
+        isReady
+          ? "border-amber-300/20 bg-amber-300/[0.04]"
+          : isMine
+            ? "border-emerald-300/20 bg-emerald-400/[0.04]"
+            : "border-white/10 bg-white/[0.03]"
       }`}
     >
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -151,6 +154,11 @@ function MatchCard({
             {isChallenger ? (
               <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-300">
                 Joined by You
+              </span>
+            ) : null}
+            {isReady ? (
+              <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-fuchsia-300">
+                Enter Now
               </span>
             ) : null}
           </div>
@@ -322,6 +330,18 @@ export default function ArenaPage() {
       })
   }, [matches, gameFilter, ownershipFilter, search])
 
+  const readyMatches = useMemo(
+    () =>
+      filteredMatches
+        .filter(
+          (match) =>
+            match.status === "Ready to Start" &&
+            (match.host.name === currentUser.name || match.challenger?.name === currentUser.name)
+        )
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [filteredMatches]
+  )
+
   const joinableMatches = useMemo(
     () =>
       filteredMatches
@@ -338,7 +358,8 @@ export default function ArenaPage() {
       filteredMatches
         .filter(
           (match) =>
-            match.host.name === currentUser.name || match.challenger?.name === currentUser.name
+            (match.host.name === currentUser.name || match.challenger?.name === currentUser.name) &&
+            match.status !== "Ready to Start"
         )
         .sort((a, b) => b.createdAt - a.createdAt),
     [filteredMatches]
@@ -469,11 +490,16 @@ export default function ArenaPage() {
               </h1>
 
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-                Real match creation, real room joins, real live arenas. No more mixed mock board.
+                Real match creation, real room joins, real live arenas. Ready rooms are surfaced first so hosts can enter immediately.
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-4">
+              <MetricCard
+                label="Ready to Enter"
+                value={`${readyMatches.length}`}
+                accent="text-fuchsia-300"
+              />
               <MetricCard
                 label="Joinable"
                 value={`${joinableMatches.length}`}
@@ -481,12 +507,6 @@ export default function ArenaPage() {
               />
               <MetricCard label="My Matches" value={`${myMatches.length}`} accent="text-sky-300" />
               <MetricCard label="Live Arenas" value={`${liveMatches.length}`} accent="text-emerald-300" />
-              <Link
-                href="/spectate"
-                className="flex items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 px-5 py-4 text-sm font-bold text-amber-300 transition hover:bg-amber-300/15"
-              >
-                Go to Spectate
-              </Link>
             </div>
           </div>
         </div>
@@ -642,6 +662,36 @@ export default function ArenaPage() {
           </aside>
 
           <section className="space-y-6">
+            <div className="rounded-[28px] border border-fuchsia-300/15 bg-fuchsia-300/[0.04] p-5">
+              <div className="mb-5">
+                <p className="text-sm uppercase tracking-[0.2em] text-fuchsia-300/80">
+                  Ready to Enter
+                </p>
+                <h2 className="mt-2 text-2xl font-black">Countdown Rooms</h2>
+                <p className="mt-2 text-sm text-white/60">
+                  If someone joined your room, it will show up here immediately so you can enter fast.
+                </p>
+              </div>
+
+              <div className="grid gap-4">
+                {readyMatches.length ? (
+                  readyMatches.map((match) => (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      onJoin={handleJoinMatch}
+                      onFill={handleFillOpponent}
+                    />
+                  ))
+                ) : (
+                  <EmptyState
+                    title="No ready rooms"
+                    text="When a second player joins one of your matches, it will show here."
+                  />
+                )}
+              </div>
+            </div>
+
             <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
