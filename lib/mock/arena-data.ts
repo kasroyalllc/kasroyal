@@ -413,6 +413,61 @@ function withNormalizedPauseState(match: ArenaMatch): ArenaMatch {
   }
 }
 
+function normalizePlayerIdentity(value?: string) {
+  const raw = (value ?? currentUser.name).trim()
+  if (!raw) return currentUser.name
+  if (raw === `${currentUser.name}-wallet`) return currentUser.name
+  return raw
+}
+
+function isActiveMatchStatus(status: ArenaStatus) {
+  return (
+    status === "Waiting for Opponent" ||
+    status === "Ready to Start" ||
+    status === "Live"
+  )
+}
+
+function matchHasIdentity(match: ArenaMatch, identity: string) {
+  const normalizedIdentity = normalizePlayerIdentity(identity)
+  const hostName = normalizePlayerIdentity(match.host.name)
+  const challengerName = normalizePlayerIdentity(match.challenger?.name)
+
+  return hostName === normalizedIdentity || challengerName === normalizedIdentity
+}
+
+function getActiveMatchForIdentity(identity?: string, excludeMatchId?: string) {
+  const normalizedIdentity = normalizePlayerIdentity(identity)
+
+  return (
+    readArenaMatches().find((match) => {
+      if (excludeMatchId && match.id === excludeMatchId) return false
+      if (!isActiveMatchStatus(match.status)) return false
+      return matchHasIdentity(match, normalizedIdentity)
+    }) ?? null
+  )
+}
+
+export function getWalletActiveMatch(identity?: string) {
+  return getActiveMatchForIdentity(identity)
+}
+
+export function hasWalletActiveMatch(identity?: string, excludeMatchId?: string) {
+  return !!getActiveMatchForIdentity(identity, excludeMatchId)
+}
+
+function assertNoOtherActiveMatch(identity?: string, excludeMatchId?: string) {
+  const activeMatch = getActiveMatchForIdentity(identity, excludeMatchId)
+
+  if (!activeMatch) {
+    return
+  }
+
+  throw new Error(
+    `Only one active game per wallet is allowed. Finish or leave your current ${activeMatch.game} match first.`
+  )
+}
+
 function resumePausedMatchInternal(
   match: ArenaMatch,
   nowTs: number,
@@ -1318,7 +1373,10 @@ export function createArenaMatch(input: {
   hostWallet?: string
 }) {
   const wager = clampWager(input.wager)
-  const hostWallet = input.hostWallet ?? currentUser.name
+  const hostWallet = normalizePlayerIdentity(input.hostWallet ?? currentUser.name)
+
+  assertNoOtherActiveMatch(hostWallet)
+
   const profile = buildProfileFromWallet(hostWallet, currentUser.name)
   const labels = sideLabelsForGame(input.game)
   const resolvedBestOf = bestOfForGame(input.game, input.bestOf)
@@ -1384,7 +1442,7 @@ export function createArenaMatch(input: {
 }
 
 export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | null {
-  const walletAddress = wallet ?? `${currentUser.name}-wallet`
+  const walletAddress = normalizePlayerIdentity(wallet ?? currentUser.name)
   const existing = getArenaById(matchId)
 
   if (!existing) {
@@ -1394,6 +1452,8 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
   if (existing.challenger) {
     return existing
   }
+
+  assertNoOtherActiveMatch(walletAddress, matchId)
 
   const challengerProfile = buildProfileFromWallet(walletAddress, currentUser.name)
   const countdownStartedAt = Date.now()
