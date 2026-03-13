@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 import { createInitialBoardState } from "@/lib/rooms/game-board"
 import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
     const room = await getRoomById(supabase, roomId)
 
     if (!room) {

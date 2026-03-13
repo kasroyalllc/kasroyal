@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { sendRoomMessage } from "@/lib/rooms/rooms-service"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
     const room = await getRoomById(supabase, matchId)
     if (!room) {
       return NextResponse.json(
