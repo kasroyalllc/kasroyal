@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   arenaFeedSeed,
   clampBetAmount,
@@ -18,14 +18,15 @@ import {
   isArenaSpectatable,
   isRealSpectatableMatch,
   placeArenaSpectatorBet,
-  readActiveArenaMatches,
-  subscribeArenaMatches,
   type ArenaMatch,
   type ArenaSide,
   type GameType,
   type RankTier,
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
+import { createClient } from "@/lib/supabase/client"
+import { listSpectateRooms } from "@/lib/rooms/rooms-service"
+import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 type SpectateFilter = "All" | GameType
 
@@ -208,29 +209,41 @@ export default function SpectatePage() {
   )
   const [, setTick] = useState(0)
 
-  useEffect(() => {
-    const syncMatches = () => {
-      setAllMatches(readActiveArenaMatches())
-    }
-
-    syncMatches()
-    const unsubscribeMatches = subscribeArenaMatches(() => {
-      setAllMatches(readActiveArenaMatches())
-    })
-
-    return () => {
-      unsubscribeMatches()
-    }
+  const refreshMatches = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const supabase = createClient()
+    const rooms = await listSpectateRooms(supabase)
+    const matches = rooms.map(roomToArenaMatch)
+    setAllMatches(matches)
   }, [])
+
+  useEffect(() => {
+    refreshMatches()
+  }, [refreshMatches])
+
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel("spectate-matches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => { void refreshMatches() }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [refreshMatches])
 
   useEffect(() => {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
-      setAllMatches(readActiveArenaMatches())
-    }, 1000)
+      void refreshMatches()
+    }, 2000)
 
     return () => clearInterval(timer)
-  }, [])
+  }, [refreshMatches])
 
   const filteredMatches = useMemo(() => {
     const spectatable = allMatches.filter((match) => isRealSpectatableMatch(match))
@@ -365,7 +378,7 @@ export default function SpectatePage() {
         walletAddress: getCurrentIdentity().id,
       })
 
-      setAllMatches(readActiveArenaMatches())
+      await refreshMatches()
 
       const sideName =
         selectedSide === "host"

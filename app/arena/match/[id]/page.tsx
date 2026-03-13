@@ -2,26 +2,19 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import {
-  appendRoomChat,
-  cancelOpenRoom,
   clampBetAmount,
   DEFAULT_BET,
-  forfeitArenaMatch,
   forceEmitArenaStoreUpdate,
-  forceHydrateArenaFromRemote,
   formatArenaPhase,
   getArenaBettingSecondsLeft,
-  getArenaById,
-  getArenaByIdAsync,
   getCurrentUser,
   getFavoriteData,
   getMultiplier,
   getProjectedState,
   getRankColors,
-  getRoomChat,
   getSideShare,
   getTicketsForMatch,
   getWinProbability,
@@ -34,12 +27,8 @@ import {
   TIMEOUT_STRIKES_TO_LOSE,
   pauseArenaMatch,
   placeArenaSpectatorBet,
-  readArenaMatches,
   readCurrentUserTickets,
   resumeArenaMatch,
-  sendRoomChatMessage,
-  subscribeArenaMatches,
-  subscribeRoomChat,
   subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
@@ -48,9 +37,13 @@ import {
   type RankTier,
   type RoomChatMessage,
   updateArenaMatch,
+  upsertMatchLocally,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
+import { createClient } from "@/lib/supabase/client"
+import { getRoomById, listRoomMessages } from "@/lib/rooms/rooms-service"
+import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 type Connect4Cell = "host" | "challenger" | null
 type TttCell = "X" | "O" | null
@@ -668,40 +661,49 @@ export default function ArenaMatchPage() {
     setMounted(true)
   }, [])
 
+  const refreshRoom = useCallback(async () => {
+    if (!matchId || typeof window === "undefined") return
+    const supabase = createClient()
+    const room = await getRoomById(supabase, matchId)
+    if (room) {
+      const arenaMatch = roomToArenaMatch(room)
+      upsertMatchLocally(arenaMatch)
+      setMatch(arenaMatch)
+    } else {
+      setMatch(null)
+    }
+  }, [matchId])
+
   useEffect(() => {
     if (!matchId) return
-
-    const syncRoomFromStore = () => {
-      const latest = getArenaById(matchId, readArenaMatches()) ?? null
-      setMatch(latest)
-    }
 
     const syncTickets = () => {
       setTickets(getTicketsForMatch(matchId))
       setMyTickets(readCurrentUserTickets(getCurrentIdentity().id).filter((ticket) => ticket.matchId === matchId))
     }
 
-    syncRoomFromStore()
+    refreshRoom()
     syncTickets()
 
-    const unsubscribeMatches = subscribeArenaMatches(syncRoomFromStore)
     const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`room-${matchId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
+        () => { void refreshRoom() }
+      )
+      .subscribe()
 
-    const storePollInterval = window.setInterval(syncRoomFromStore, 300)
-
-    const remotePollInterval = window.setInterval(() => {
-      getArenaByIdAsync(matchId).then((latest) => {
-        if (latest) setMatch(latest)
-      })
-    }, 1500)
+    const pollInterval = window.setInterval(() => { void refreshRoom() }, 2000)
 
     return () => {
-      unsubscribeMatches()
       unsubscribeTickets()
-      window.clearInterval(storePollInterval)
-      window.clearInterval(remotePollInterval)
+      supabase.removeChannel(channel)
+      window.clearInterval(pollInterval)
     }
-  }, [matchId])
+  }, [matchId, refreshRoom])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -710,15 +712,6 @@ export default function ArenaMatchPage() {
 
     return () => window.clearInterval(timer)
   }, [])
-
-  useEffect(() => {
-    if (!matchId || !match) return
-    if (match.status !== "Waiting for Opponent") return
-    const interval = window.setInterval(() => {
-      forceHydrateArenaFromRemote()
-    }, 2000)
-    return () => window.clearInterval(interval)
-  }, [matchId, match?.status])
 
   useEffect(() => {
     if (!match || (match.status !== "Ready to Start" && match.status !== "Live")) return
@@ -780,17 +773,37 @@ export default function ArenaMatchPage() {
     return base
   }, [matchId])
 
+  const refreshChat = useCallback(async () => {
+    if (!matchId || typeof window === "undefined") return
+    const supabase = createClient()
+    const messages = await listRoomMessages(supabase, matchId)
+    const uiMessages: RoomChatMessage[] = messages.map((m) => ({
+      id: m.id,
+      user: m.senderDisplayName,
+      text: m.message,
+      ts: m.createdAt,
+    }))
+    setChatMessages(uiMessages)
+  }, [matchId])
+
   useEffect(() => {
     if (!matchId) return
-    const syncChat = () => setChatMessages(getRoomChat(matchId))
-    syncChat()
-    const unsub = subscribeRoomChat(matchId, syncChat)
-    const poll = window.setInterval(syncChat, 400)
+    refreshChat()
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`chat-${matchId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "match_messages", filter: `match_id=eq.${matchId}` },
+        () => { void refreshChat() }
+      )
+      .subscribe()
+    const poll = window.setInterval(() => { void refreshChat() }, 1500)
     return () => {
-      unsub()
+      supabase.removeChannel(channel)
       window.clearInterval(poll)
     }
-  }, [matchId])
+  }, [matchId, refreshChat])
 
   useEffect(() => {
     if (!match || match.status !== "Live" || !match.challenger) return
@@ -1363,32 +1376,55 @@ export default function ArenaMatchPage() {
     }
   }
 
-  function handleCancelOpenRoom() {
+  async function handleCancelOpenRoom() {
     setShowCancelRoomConfirm(false)
     if (!matchId || !match) return
     if (match.challenger) return
     if (!isHostUser) return
-    const done = cancelOpenRoom(matchId, getCurrentIdentity().id)
-    if (done) {
-      setMessage("Room cancelled. You can create a new match from the Arena.")
-      router.push("/arena")
-    } else {
+    try {
+      const res = await fetch("/api/rooms/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room_id: matchId, host_identity_id: getCurrentIdentity().id }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setMessage("Room cancelled. You can create a new match from the Arena.")
+        router.push("/arena")
+      } else {
+        setMessage(data.error ?? "Could not cancel room.")
+      }
+    } catch {
       setMessage("Could not cancel room. Only the host can cancel an open room with no challenger.")
     }
   }
 
-  function handleForfeit() {
+  async function handleForfeit() {
     setShowForfeitConfirm(false)
     if (!match || !currentUserSide) return
     if (!challenger) return
     if (match.status !== "Ready to Start" && match.status !== "Live") return
-    const updated = forfeitArenaMatch(match.id, currentUserSide)
-    if (updated) {
-      setMatch(updated)
-      const winnerName = currentUserSide === "host" ? challenger.name : match.host.name
-      setFeed((prev) => [`🏳️ You forfeited. ${winnerName} wins.`, ...prev].slice(0, 12))
-      setMessage(`You forfeited. ${winnerName} wins the match.`)
-    } else {
+    try {
+      const res = await fetch("/api/rooms/forfeit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: match.id,
+          forfeiter_identity_id: getCurrentIdentity().id,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok && data.room) {
+        const updated = roomToArenaMatch(data.room)
+        setMatch(updated)
+        upsertMatchLocally(updated)
+        const winnerName = currentUserSide === "host" ? challenger.name : match.host.name
+        setFeed((prev) => [`🏳️ You forfeited. ${winnerName} wins.`, ...prev].slice(0, 12))
+        setMessage(`You forfeited. ${winnerName} wins the match.`)
+      } else {
+        setMessage(data.error ?? "Forfeit failed.")
+      }
+    } catch {
       setMessage("Forfeit failed. Only seated players can forfeit in Ready to Start or Live.")
     }
   }
@@ -2255,16 +2291,28 @@ export default function ArenaMatchPage() {
                   </div>
                   <form
                     className="mt-4 flex gap-3"
-                    onSubmit={(e) => {
+                    onSubmit={async (e) => {
                       e.preventDefault()
                       const text = chatInput.trim()
                       if (!text) return
-                      sendRoomChatMessage(matchId, {
-                        user: currentUserProfile.name,
-                        text,
-                      })
-                      setChatMessages(getRoomChat(matchId))
-                      setChatInput("")
+                      try {
+                        const res = await fetch("/api/chat/send", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            match_id: matchId,
+                            sender_identity_id: getCurrentIdentity().id,
+                            sender_display_name: currentUserProfile.name,
+                            message: text,
+                          }),
+                        })
+                        if (res.ok) {
+                          setChatInput("")
+                          await refreshChat()
+                        }
+                      } catch {
+                        // keep input on error
+                      }
                     }}
                   >
                     <input

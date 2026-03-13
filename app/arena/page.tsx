@@ -2,30 +2,27 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  autoFillArenaMatch,
   clampWager,
-  createArenaMatch,
   formatAge,
   gameMeta,
   getArenaBettingSecondsLeft,
   getCurrentUser,
   getMatchResultLabel,
   getRankColors,
-  getWalletActiveMatch,
-  hasWalletActiveMatch,
   isValidActiveMatch,
-  joinArenaMatch,
-  readArenaMatches,
   resetAllArenaState,
-  subscribeArenaMatches,
   type ArenaMatch,
   type ArenaStatus,
   type GameType,
   type RankTier,
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
+import { createClient } from "@/lib/supabase/client"
+import type { Room } from "@/lib/engine/match/types"
+import { listActiveRooms, listHistoryRooms } from "@/lib/rooms/rooms-service"
+import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 type GameFilter = "All" | GameType
 type OwnershipFilter = "All" | "Mine" | "Hosted" | "Joined"
@@ -474,7 +471,7 @@ function dedupeMatchesById(matches: ArenaMatch[]): ArenaMatch[] {
 export default function ArenaPage() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
-  const [matches, setMatches] = useState<ArenaMatch[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
   const [selectedGame, setSelectedGame] = useState<GameType>("Connect 4")
   const [wagerInput, setWagerInput] = useState("5")
   const [bestOf, setBestOf] = useState<1 | 3 | 5>(1)
@@ -488,51 +485,81 @@ export default function ArenaPage() {
   const [arenaMode, setArenaMode] = useState<"quick" | "ranked">("quick")
   const [, setTick] = useState(0)
 
+  const refreshRooms = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const supabase = createClient()
+    const [active, history] = await Promise.all([
+      listActiveRooms(supabase),
+      listHistoryRooms(supabase),
+    ])
+    setRooms([...active, ...history])
+  }, [])
+
   useEffect(() => {
     setMounted(true)
   }, [])
 
   useEffect(() => {
-    setMatches(readArenaMatches())
-    const unsubscribe = subscribeArenaMatches(() => {
-      setMatches(readArenaMatches())
-    })
-    return unsubscribe
-  }, [])
+    refreshRooms()
+  }, [refreshRooms])
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTick((value) => value + 1)
-      setMatches(readArenaMatches())
-    }, 500)
+    if (!mounted) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel("arena-matches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => {
+          refreshRooms()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [mounted, refreshRooms])
 
+  useEffect(() => {
+    const timer = setInterval(() => refreshRooms(), 2000)
     return () => clearInterval(timer)
-  }, [])
+  }, [refreshRooms])
 
   const wager = clampWager(Number(wagerInput))
 
   /** Arena = active only. No Finished/duplicates in main lists. */
   const activeMatches = useMemo(() => {
-    const list = matches.filter(
-      (m) =>
-        (m.status === "Waiting for Opponent" ||
-          m.status === "Ready to Start" ||
-          m.status === "Live") &&
-        isValidActiveMatch(m)
+    const activeRooms = rooms.filter(
+      (r) =>
+        r.status === "Waiting for Opponent" ||
+        r.status === "Ready to Start" ||
+        r.status === "Live"
     )
+    const list = activeRooms.map(roomToArenaMatch).filter(isValidActiveMatch)
     return dedupeMatchesById(list)
-  }, [matches])
+  }, [rooms])
 
   /** Match History = finished only, deduplicated. */
   const historyMatches = useMemo(() => {
-    const list = matches.filter((m) => m.status === "Finished")
+    const finishedRooms = rooms.filter((r) => r.status === "Finished")
+    const list = finishedRooms.map(roomToArenaMatch)
     return dedupeMatchesById(list).sort(
       (a, b) => (b.finishedAt ?? b.createdAt ?? 0) - (a.finishedAt ?? a.createdAt ?? 0)
     )
-  }, [matches])
+  }, [rooms])
 
-  const activeWalletMatch = useMemo(() => getWalletActiveMatch(), [matches])
-  const walletLocked = useMemo(() => hasWalletActiveMatch(), [matches])
+  const identityId = getCurrentIdentity().id.toLowerCase()
+  const activeWalletMatch = useMemo(
+    () =>
+      activeMatches.find(
+        (m) =>
+          (m.hostIdentityId && m.hostIdentityId.toLowerCase() === identityId) ||
+          (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === identityId)
+      ) ?? null,
+    [activeMatches, identityId]
+  )
+  const walletLocked = !!activeWalletMatch
 
   const filteredMatches = useMemo(() => {
     if (!mounted) return []
@@ -667,23 +694,35 @@ export default function ArenaPage() {
     }
   }
 
-  function handleCreateMatch() {
+  async function handleCreateMatch() {
     if (arenaMode === "quick") {
       if (walletLocked) {
         setMessage("You already have an active match. Resume or finish it before creating another one.")
         return
       }
       try {
-        const created = createArenaMatch({
-          game: selectedGame,
-          matchMode: "quick",
-          bestOf,
+        const identity = getCurrentIdentity()
+        const res = await fetch("/api/rooms/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "quick",
+            game_type: selectedGame,
+            host_identity_id: identity.id,
+            host_display_name: identity.displayName,
+            wager_amount: 0,
+          }),
         })
-        setMatches(readArenaMatches())
+        const data = await res.json()
+        if (!data.ok) {
+          setMessage(data.error ?? "Failed to create quick match.")
+          return
+        }
+        await refreshRooms()
         setOwnershipFilter("Mine")
         setGameFilter(selectedGame)
-        setMessage(`Quick Match created: ${created.game}. Share the room or wait for someone to join.`)
-        router.push(`/arena/match/${created.id}`)
+        setMessage(`Quick Match created: ${selectedGame}. Share the room or wait for someone to join.`)
+        router.push(`/arena/match/${data.room.id}`)
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Failed to create quick match.")
       }
@@ -708,65 +747,87 @@ export default function ArenaPage() {
     }
 
     try {
-      const created = createArenaMatch({
-        game: selectedGame,
-        wager: safeWager,
-        bestOf,
+      const identity = getCurrentIdentity()
+      const res = await fetch("/api/rooms/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "ranked",
+          game_type: selectedGame,
+          host_identity_id: identity.id,
+          host_display_name: identity.displayName,
+          wager_amount: safeWager,
+        }),
       })
-
-      setMatches(readArenaMatches())
+      const data = await res.json()
+      if (!data.ok) {
+        setMessage(data.error ?? "Failed to create ranked match.")
+        return
+      }
+      await refreshRooms()
       setOwnershipFilter("Mine")
       setGameFilter(selectedGame)
-      setMessage(
-        `Created ${created.game} for ${created.wager} KAS. Your new room is now under My Matches.`
-      )
+      setMessage(`Created ${selectedGame} for ${safeWager} KAS. Your new room is now under My Matches.`)
       setWagerInput("5")
       setBestOf(1)
       setCustomMode(false)
-
-      router.push(`/arena/match/${created.id}`)
+      router.push(`/arena/match/${data.room.id}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to create arena.")
     }
   }
 
-  function handleJoinMatch(matchId: string) {
+  async function handleJoinMatch(matchId: string) {
     if (walletLocked && activeWalletMatch?.id !== matchId) {
       setMessage("You already have an active match. Resume or finish it before joining another one.")
       return
     }
 
     try {
-      const joined = joinArenaMatch(matchId)
-
-      if (!joined) {
-        setMessage("Match not found.")
+      const identity = getCurrentIdentity()
+      const res = await fetch("/api/rooms/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: matchId,
+          challenger_identity_id: identity.id,
+          challenger_display_name: identity.displayName,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setMessage(data.error ?? "Failed to join match.")
         return
       }
-
-      setMatches(readArenaMatches())
+      await refreshRooms()
       setOwnershipFilter("Mine")
-      setMessage(`Joined ${joined.game}. Countdown should now begin automatically.`)
+      setMessage(`Joined ${data.room.game}. Countdown should now begin automatically.`)
       router.push(`/arena/match/${matchId}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to join arena.")
     }
   }
 
-  function handleFillOpponent(matchId: string) {
+  async function handleFillOpponent(matchId: string) {
+    if (!DEV_BOTS_ENABLED) return
     try {
-      const filled = autoFillArenaMatch(matchId)
-
-      if (!filled) {
-        setMessage("Match not found.")
+      const res = await fetch("/api/rooms/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: matchId,
+          challenger_identity_id: "dev-bot-" + Date.now(),
+          challenger_display_name: "DevBot",
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setMessage(data.error ?? "Failed to fill opponent.")
         return
       }
-
-      setMatches(readArenaMatches())
+      await refreshRooms()
       setOwnershipFilter("Mine")
-      setMessage(
-        `Dev fill complete: ${filled.challenger?.name ?? "Mock challenger"} joined ${filled.game}.`
-      )
+      setMessage(`Dev fill complete: DevBot joined ${data.room.game}.`)
       router.push(`/arena/match/${matchId}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to fill opponent.")

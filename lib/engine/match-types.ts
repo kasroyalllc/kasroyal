@@ -140,7 +140,6 @@ export type LeaderboardEntry = {
   earnings: number
   avatarGlow?: "amber" | "emerald" | "sky" | "fuchsia"
 }
-
 export type MatchEvent =
   | { type: "ROOM_CREATED"; matchId: string; ts: number }
   | { type: "PLAYERS_SEATED"; matchId: string; ts: number }

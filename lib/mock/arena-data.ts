@@ -1417,7 +1417,8 @@ function readTicketsFromStore() {
   return readArenaStore().tickets
 }
 
-function upsertMatchLocally(match: ArenaMatch) {
+/** Write a match into the local store (e.g. after fetching from Supabase). Exported for room-page hydration. */
+export function upsertMatchLocally(match: ArenaMatch) {
   mutateArenaStore((store) => {
     const next = [...store.matches]
     const index = next.findIndex((item) => item.id === match.id)
