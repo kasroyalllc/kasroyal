@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   getArenaBettingSecondsLeft,
   getBetSettlement,
@@ -11,9 +11,7 @@ import {
   getUserSettledPayouts,
   isArenaBettable,
   placeArenaSpectatorBet,
-  readArenaMatches,
   readCurrentUserTickets,
-  subscribeArenaMatches,
   subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
@@ -22,6 +20,9 @@ import {
   type RankTier,
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
+import { createClient } from "@/lib/supabase/client"
+import { listActiveRooms, listHistoryRooms } from "@/lib/rooms/rooms-service"
+import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 function RankBadge({ rank }: { rank: RankTier }) {
   const colors = getRankColors(rank)
@@ -481,30 +482,47 @@ export default function BetsPage() {
   const [bets, setBets] = useState<PersistedBetTicket[]>([])
   const [, setTick] = useState(0)
 
-  useEffect(() => {
-    const sync = () => {
-      setMatches(readArenaMatches())
-      setBets(readCurrentUserTickets(getCurrentIdentity().id))
-    }
-
-    sync()
-
-    const unsubscribeMatches = subscribeArenaMatches(sync)
-    const unsubscribeBets = subscribeSpectatorTickets(sync)
-
-    return () => {
-      unsubscribeMatches()
-      unsubscribeBets()
-    }
+  const refreshMatches = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const supabase = createClient()
+    const [active, history] = await Promise.all([
+      listActiveRooms(supabase),
+      listHistoryRooms(supabase),
+    ])
+    const arenaMatches = [...active, ...history].map(roomToArenaMatch)
+    setMatches(arenaMatches)
   }, [])
+
+  useEffect(() => {
+    const syncBets = () => setBets(readCurrentUserTickets(getCurrentIdentity().id))
+    syncBets()
+    const unsubscribeBets = subscribeSpectatorTickets(syncBets)
+    return () => unsubscribeBets()
+  }, [])
+
+  useEffect(() => {
+    refreshMatches()
+    const supabase = createClient()
+    const channel = supabase
+      .channel("bets-matches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => { void refreshMatches() }
+      )
+      .subscribe()
+    const poll = window.setInterval(() => { void refreshMatches() }, 3000)
+    return () => {
+      supabase.removeChannel(channel)
+      window.clearInterval(poll)
+    }
+  }, [refreshMatches])
 
   useEffect(() => {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
-      setMatches(readArenaMatches())
       setBets(readCurrentUserTickets(getCurrentIdentity().id))
     }, 1000)
-
     return () => clearInterval(timer)
   }, [])
 
@@ -646,7 +664,7 @@ export default function BetsPage() {
                     key={match.id}
                     match={match}
                     onBetPlaced={() => {
-                      setMatches(readArenaMatches())
+                      void refreshMatches()
                       setBets(readCurrentUserTickets(getCurrentIdentity().id))
                     }}
                   />

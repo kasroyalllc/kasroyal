@@ -605,12 +605,14 @@ function getActiveMatchForIdentity(identity?: string, excludeMatchId?: string) {
   )
 }
 
-export function getWalletActiveMatch(identity?: string) {
-  return getActiveMatchForIdentity(identity)
+/** @deprecated Use listActiveRooms + find room for current identity. */
+export function getWalletActiveMatch(_identity?: string): ArenaMatch | null {
+  return null
 }
 
-export function hasWalletActiveMatch(identity?: string, excludeMatchId?: string) {
-  return !!getActiveMatchForIdentity(identity, excludeMatchId)
+/** @deprecated Use listActiveRooms for backend-first active-match check. */
+export function hasWalletActiveMatch(_identity?: string, _excludeMatchId?: string): boolean {
+  return false
 }
 
 function assertNoOtherActiveMatch(identity?: string, excludeMatchId?: string) {
@@ -1562,8 +1564,9 @@ export function isArenaBettable(match: ArenaMatch) {
 }
 
 /** Call from match page when Waiting for Opponent so host sees challenger join quickly (cross-device sync). */
+/** @deprecated Room authority is Supabase. No-op. */
 export function forceHydrateArenaFromRemote() {
-  void hydrateMatchesFromSupabase()
+  // no-op
 }
 
 async function hydrateMatchesFromSupabase() {
@@ -1684,10 +1687,9 @@ function startArenaLifecycleTicker() {
 }
 
 /** Force an immediate persist + broadcast of current store (with lifecycle applied). Use after create/join so other tabs see the new match quickly. */
+/** @deprecated Room authority is Supabase. No-op. */
 export function forceEmitArenaStoreUpdate(): void {
-  if (!isBrowser()) return
-  const current = readArenaStore()
-  persistStore({ ...current, updatedAt: Date.now() })
+  // no-op
 }
 
 if (isBrowser()) {
@@ -1724,22 +1726,12 @@ export function readMatchHistory(): ArenaMatch[] {
   return dedupeMatchesById(finished).sort((a, b) => (b.finishedAt ?? b.createdAt ?? 0) - (a.finishedAt ?? a.createdAt ?? 0))
 }
 
-export function readArenaMatches() {
-  startArenaLifecycleTicker()
-  const raw = readMatchesFromStore()
-  const cleaned = dropOrphanMatches(raw)
-  const now = Date.now()
-  const withLifecycle = applyArenaLifecycle(
-    cleaned.map((match) => ({
-      ...match,
-      pauseState: normalizePauseState(match.pauseState),
-    })),
-    now
-  )
-  return withLifecycle.map((match) => ({
-    ...match,
-    pauseState: normalizePauseState(match.pauseState),
-  }))
+/**
+ * @deprecated Room/match authority is Supabase. Use listActiveRooms/listHistoryRooms + roomToArenaMatch.
+ * Returns empty array so no caller treats this as source of truth.
+ */
+export function readArenaMatches(): ArenaMatch[] {
+  return []
 }
 
 export function readSpectatorTickets() {
@@ -1753,58 +1745,30 @@ export function readCurrentUserTickets(user = getCurrentIdentity().id) {
   )
 }
 
-export function getArenaById(matchId: string, matches: ArenaMatch[] = readArenaMatches()) {
+/**
+ * @deprecated Use getRoomById + roomToArenaMatch for room truth.
+ */
+export function getArenaById(matchId: string, matches: ArenaMatch[] = []): ArenaMatch | null {
   return matches.find((match) => match.id === matchId) ?? null
 }
 
-export async function getArenaByIdAsync(matchId: string) {
-  try {
-    const dbMatch = await getDbMatchById(matchId)
-    const mapped = mapDbMatchToArenaMatch(dbMatch)
-    upsertMatchLocally(mapped)
-    await hydrateTicketsForMatchFromSupabase(matchId)
-    return getArenaById(matchId)
-  } catch (error) {
-    console.error("KasRoyal getArenaByIdAsync failed", error)
-    return getArenaById(matchId)
-  }
+/**
+ * @deprecated Use getRoomById + roomToArenaMatch for room truth.
+ */
+export async function getArenaByIdAsync(_matchId: string): Promise<ArenaMatch | null> {
+  return null
 }
 
+/**
+ * @deprecated Room/gameplay authority is Supabase. Use API routes + setState for UI.
+ */
 export function updateArenaMatch(
-  matchId: string,
-  updater:
+  _matchId: string,
+  _updater:
     | Partial<ArenaMatch>
     | ((current: ArenaMatch) => ArenaMatch | Partial<ArenaMatch>)
-) {
-  let updated: ArenaMatch | null = null
-
-  mutateArenaStore((store) => {
-    const nextMatches = store.matches.map((match) => {
-      if (match.id !== matchId) return match
-      const patch = typeof updater === "function" ? updater(match) : updater
-      updated = {
-        ...match,
-        ...patch,
-        pauseState: normalizePauseState(
-          patch && typeof patch === "object" && "pauseState" in patch
-            ? (patch as Partial<ArenaMatch>).pauseState
-            : match.pauseState
-        ),
-      }
-      return updated
-    })
-
-    return {
-      ...store,
-      matches: nextMatches,
-    }
-  })
-
-  if (updated) {
-    void syncMatchToSupabase(updated)
-  }
-
-  return updated
+): ArenaMatch | null {
+  return null
 }
 
 async function syncMatchToSupabase(match: ArenaMatch) {
@@ -1821,42 +1785,12 @@ async function syncMatchToSupabase(match: ArenaMatch) {
   }
 }
 
-export function subscribeArenaMatches(callback: (matches: ArenaMatch[]) => void) {
-  if (!isBrowser()) {
-    callback(readArenaMatches())
-    return () => {}
-  }
-
-  startArenaLifecycleTicker()
-
-  const emit = () => {
-    callback(readArenaMatches())
-  }
-
-  const handler = () => emit()
-
-  const storageHandler = (event: StorageEvent) => {
-    if (event.key === ARENA_STORE_STORAGE_KEY) {
-      emit()
-    }
-  }
-
-  const channel = getBroadcastChannel()
-  const broadcastHandler = () => emit()
-
-  window.addEventListener(ARENA_MATCHES_EVENT, handler)
-  window.addEventListener(ARENA_STORE_EVENT, handler)
-  window.addEventListener("storage", storageHandler)
-  channel?.addEventListener("message", broadcastHandler)
-
-  emit()
-
-  return () => {
-    window.removeEventListener(ARENA_MATCHES_EVENT, handler)
-    window.removeEventListener(ARENA_STORE_EVENT, handler)
-    window.removeEventListener("storage", storageHandler)
-    channel?.removeEventListener("message", broadcastHandler)
-  }
+/**
+ * @deprecated Use Supabase realtime on matches table. No-op subscription.
+ */
+export function subscribeArenaMatches(callback: (matches: ArenaMatch[]) => void): () => void {
+  callback([])
+  return () => {}
 }
 
 export function subscribeSpectatorTickets(callback: (tickets: PersistedBetTicket[]) => void) {
@@ -2796,7 +2730,7 @@ export function buildFeaturedSpectateMarkets(matches = readArenaMatches()) {
 }
 
 export function buildLeaderboardFromArena(
-  matches: ArenaMatch[] = readArenaMatches()
+  matches: ArenaMatch[] = []
 ): LeaderboardEntry[] {
   const baseMap = new Map<string, LeaderboardEntry>()
 
@@ -2866,7 +2800,7 @@ export function buildLeaderboardFromArena(
 }
 
 export function getLeaderboard(): LeaderboardEntry[] {
-  return buildLeaderboardFromArena(readArenaMatches())
+  return buildLeaderboardFromArena([])
 }
 
 export function clearArenaLocalState() {

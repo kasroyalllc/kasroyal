@@ -2,8 +2,10 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useEffect, useMemo, useRef, useState } from "react"
-import { getWalletActiveMatch } from "@/lib/mock/arena-data"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { getCurrentIdentity } from "@/lib/identity"
+import { createClient } from "@/lib/supabase/client"
+import { listActiveRooms } from "@/lib/rooms/rooms-service"
 import {
   clearAppWalletConnectionState,
   clearStoredSelectedWalletKey,
@@ -31,21 +33,12 @@ type WalletPreview = {
   providerLabel: string
 }
 
-type NavbarArenaMatch = {
-  id: string
-  status: "Waiting for Opponent" | "Ready to Start" | "Live" | "Finished"
-  wager: number
-  spectators: number
-}
-
 const defaultProfile: ProfileData = {
   displayName: "KasRoyal User",
   avatarUrl: "",
 }
 
 const DISCONNECT_STORAGE_KEY = "kasroyal_wallet_disconnected"
-const ARENA_STORAGE_KEY = "kasroyal_arena_matches"
-const ARENA_EVENT_NAME = "kasroyal-arena-matches-updated"
 
 const navItems = [
   { href: "/arena", label: "Arena" },
@@ -67,50 +60,6 @@ function setDisconnectFlag(value: boolean) {
     window.localStorage.setItem(DISCONNECT_STORAGE_KEY, "1")
   } else {
     window.localStorage.removeItem(DISCONNECT_STORAGE_KEY)
-  }
-}
-
-function normalizeNavbarArenaMatch(value: unknown): NavbarArenaMatch | null {
-  if (!value || typeof value !== "object") return null
-
-  const match = value as Partial<NavbarArenaMatch>
-
-  if (
-    typeof match.id !== "string" ||
-    (match.status !== "Waiting for Opponent" &&
-      match.status !== "Ready to Start" &&
-      match.status !== "Live" &&
-      match.status !== "Finished")
-  ) {
-    return null
-  }
-
-  return {
-    id: match.id,
-    status: match.status,
-    wager: typeof match.wager === "number" && Number.isFinite(match.wager) ? match.wager : 0,
-    spectators:
-      typeof match.spectators === "number" && Number.isFinite(match.spectators)
-        ? match.spectators
-        : 0,
-  }
-}
-
-function readArenaMatchesForNavbar(): NavbarArenaMatch[] {
-  if (typeof window === "undefined") return []
-
-  try {
-    const raw = window.localStorage.getItem(ARENA_STORAGE_KEY)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-
-    return parsed
-      .map((item) => normalizeNavbarArenaMatch(item))
-      .filter((item): item is NavbarArenaMatch => item !== null)
-  } catch {
-    return []
   }
 }
 
@@ -188,6 +137,32 @@ export default function Navbar() {
 
   const walletMenuRef = useRef<HTMLDivElement | null>(null)
   const walletButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  const refreshArena = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const supabase = createClient()
+    const [activeRooms] = await Promise.all([listActiveRooms(supabase)])
+    const identityId = getCurrentIdentity().id.toLowerCase()
+    const open = activeRooms.filter((r) => r.status === "Waiting for Opponent").length
+    const ready = activeRooms.filter((r) => r.status === "Ready to Start").length
+    const live = activeRooms.filter((r) => r.status === "Live").length
+    const volume = activeRooms.reduce((sum, r) => sum + r.wager, 0)
+    setArenaStats({
+      open,
+      ready,
+      live,
+      volume,
+      spectators: 0,
+    })
+    const myRoom = activeRooms.find(
+      (r) =>
+        r.hostIdentityId.toLowerCase() === identityId ||
+        (r.challengerIdentityId && r.challengerIdentityId.toLowerCase() === identityId)
+    )
+    setActiveMatch(
+      myRoom ? { id: myRoom.id, game: myRoom.game, status: myRoom.status } : null
+    )
+  }, [])
 
   useEffect(() => {
     let mountedRef = true
@@ -272,31 +247,6 @@ export default function Navbar() {
       }
     }
 
-    const syncArenaStats = () => {
-      const matches = readArenaMatchesForNavbar()
-
-      const open = matches.filter((match) => match.status === "Waiting for Opponent").length
-      const ready = matches.filter((match) => match.status === "Ready to Start").length
-      const live = matches.filter((match) => match.status === "Live").length
-      const volume = matches
-        .filter((match) => match.status !== "Finished")
-        .reduce((sum, match) => sum + match.wager, 0)
-      const spectators = matches
-        .filter((match) => match.status !== "Finished")
-        .reduce((sum, match) => sum + match.spectators, 0)
-
-      setArenaStats({
-        open,
-        ready,
-        live,
-        volume,
-        spectators,
-      })
-
-      const active = getWalletActiveMatch()
-      setActiveMatch(active ? { id: active.id, game: active.game, status: active.status } : null)
-    }
-
     const handleProfileChanged = () => {
       syncProfile()
     }
@@ -306,21 +256,27 @@ export default function Navbar() {
       void syncWallet()
     }
 
-    const handleArenaChanged = () => {
-      syncArenaStats()
-    }
-
     syncProfile()
     void syncWalletOptions()
     void syncWallet()
-    syncArenaStats()
+    void refreshArena()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel("navbar-matches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => { void refreshArena() }
+      )
+      .subscribe()
+
+    const arenaPoll = window.setInterval(() => { void refreshArena() }, 4000)
 
     window.addEventListener("storage", handleProfileChanged)
     window.addEventListener("kasroyal-profile-updated", handleProfileChanged as EventListener)
     window.addEventListener("storage", handleWalletChanged)
     window.addEventListener("kasroyal-wallet-changed", handleWalletChanged as EventListener)
-    window.addEventListener("storage", handleArenaChanged)
-    window.addEventListener(ARENA_EVENT_NAME, handleArenaChanged as EventListener)
 
     const cleanupWalletEvents = subscribeWalletEvents(
       {
@@ -348,11 +304,11 @@ export default function Navbar() {
       window.removeEventListener("kasroyal-profile-updated", handleProfileChanged as EventListener)
       window.removeEventListener("storage", handleWalletChanged)
       window.removeEventListener("kasroyal-wallet-changed", handleWalletChanged as EventListener)
-      window.removeEventListener("storage", handleArenaChanged)
-      window.removeEventListener(ARENA_EVENT_NAME, handleArenaChanged as EventListener)
+      supabase.removeChannel(channel)
+      window.clearInterval(arenaPoll)
       cleanupWalletEvents()
     }
-  }, [])
+  }, [refreshArena])
 
   useEffect(() => {
     if (!walletMenuOpen) return

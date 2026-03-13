@@ -1,16 +1,17 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   buildLeaderboardFromArena,
   getCurrentUser,
   getRankColors,
-  readArenaMatches,
-  subscribeArenaMatches,
   type LeaderboardEntry,
   type RankTier,
 } from "@/lib/mock/arena-data"
+import { createClient } from "@/lib/supabase/client"
+import { listActiveRooms, listHistoryRooms } from "@/lib/rooms/rooms-service"
+import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 function RankBadge({ rank }: { rank: RankTier }) {
   return (
@@ -153,16 +154,34 @@ function PodiumCard({
 export default function LeaderboardPage() {
   const [rows, setRows] = useState<LeaderboardEntry[]>([])
 
-  useEffect(() => {
-    const sync = () => {
-      const matches = readArenaMatches()
-      setRows(buildLeaderboardFromArena(matches))
-    }
-
-    sync()
-    const unsubscribe = subscribeArenaMatches(sync)
-    return unsubscribe
+  const refreshLeaderboard = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const supabase = createClient()
+    const [active, history] = await Promise.all([
+      listActiveRooms(supabase),
+      listHistoryRooms(supabase),
+    ])
+    const matches = [...active, ...history].map(roomToArenaMatch)
+    setRows(buildLeaderboardFromArena(matches))
   }, [])
+
+  useEffect(() => {
+    refreshLeaderboard()
+    const supabase = createClient()
+    const channel = supabase
+      .channel("leaderboard-matches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => { void refreshLeaderboard() }
+      )
+      .subscribe()
+    const poll = window.setInterval(() => { void refreshLeaderboard() }, 5000)
+    return () => {
+      supabase.removeChannel(channel)
+      window.clearInterval(poll)
+    }
+  }, [refreshLeaderboard])
 
   const rankedRows = useMemo(
     () =>

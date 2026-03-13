@@ -35,7 +35,6 @@ import {
   type PersistedBetTicket,
   type RankTier,
   type RoomChatMessage,
-  updateArenaMatch,
   upsertMatchLocally,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
@@ -1149,15 +1148,7 @@ export default function ArenaMatchPage() {
 
   function persistPartialMatch(partial: Partial<ArenaMatch>) {
     if (!match) return
-
-    const updated = updateArenaMatch(match.id, (current) => ({
-      ...current,
-      ...partial,
-    }))
-
-    if (updated) {
-      setMatch(updated)
-    }
+    setMatch((prev) => (prev ? { ...prev, ...partial } : null))
   }
 
   function handleSelectBetSide(side: ArenaSide) {
