@@ -2866,6 +2866,59 @@ export function clearArenaLocalState() {
   emitStorageEvent(SPECTATOR_TICKETS_EVENT)
 }
 
+const KASROYAL_STORAGE_PREFIX = "kasroyal_"
+
+/**
+ * Hard reset: remove ALL KasRoyal local/mock state so Arena, Spectate, History, and Navbar are empty.
+ * - Removes every localStorage and sessionStorage key starting with "kasroyal_"
+ *   (arena store, navbar cache, room chat, guest identity, wallet disconnect flag, etc.)
+ * - Sets in-memory arena cache to empty and writes empty store so next read is fresh.
+ * Use for dev/admin only (e.g. "Hard Reset All Matches" button).
+ * After reset, guest identity will be regenerated on next getCurrentIdentity() (new guest).
+ */
+export function resetAllArenaState(): void {
+  const emptyStore: ArenaStore = {
+    revision: 1,
+    updatedAt: Date.now(),
+    matches: [],
+    tickets: [],
+  }
+  arenaStoreCache = emptyStore
+
+  if (!isBrowser()) return
+
+  const keysToRemove: string[] = []
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i)
+    if (key && key.startsWith(KASROYAL_STORAGE_PREFIX)) keysToRemove.push(key)
+  }
+  for (const key of keysToRemove) {
+    window.localStorage.removeItem(key)
+  }
+  keysToRemove.length = 0
+  for (let i = 0; i < window.sessionStorage.length; i++) {
+    const key = window.sessionStorage.key(i)
+    if (key && key.startsWith(KASROYAL_STORAGE_PREFIX)) keysToRemove.push(key)
+  }
+  for (const key of keysToRemove) {
+    window.sessionStorage.removeItem(key)
+  }
+
+  window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(emptyStore))
+  try {
+    window.localStorage.setItem(ARENA_NAVBAR_STORAGE_KEY, "[]")
+  } catch {
+    // ignore
+  }
+
+  emitStorageEvent(ARENA_STORE_EVENT)
+  emitStorageEvent(ARENA_MATCHES_EVENT)
+  emitStorageEvent(SPECTATOR_TICKETS_EVENT)
+
+  const channel = getBroadcastChannel()
+  channel?.postMessage({ type: "arena-store-updated", revision: emptyStore.revision })
+}
+
 export function seedDevArenaMatches() {
   if (!ENABLE_DEV_SEED) {
     return []

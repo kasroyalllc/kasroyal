@@ -18,6 +18,7 @@ import {
   isValidActiveMatch,
   joinArenaMatch,
   readArenaMatches,
+  resetAllArenaState,
   subscribeArenaMatches,
   type ArenaMatch,
   type ArenaStatus,
@@ -30,6 +31,8 @@ type GameFilter = "All" | GameType
 type OwnershipFilter = "All" | "Mine" | "Hosted" | "Joined"
 
 const DEV_BOTS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_BOTS === "true"
+const DEV_RESET_ENABLED =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_RESET === "true" || DEV_BOTS_ENABLED
 
 function RankBadge({ rank }: { rank: RankTier }) {
   const colors = getRankColors(rank)
@@ -824,6 +827,24 @@ export default function ArenaPage() {
               <span className="text-2xl">🎮</span>
               Return to Active Game — {activeWalletMatch.game} ({activeWalletMatch.status})
             </Link>
+          </div>
+        ) : null}
+
+        {DEV_RESET_ENABLED ? (
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                resetAllArenaState()
+                router.push("/arena")
+              }}
+              className="w-full rounded-[24px] border-2 border-red-400/40 bg-red-500/20 px-6 py-4 text-lg font-black text-red-100 shadow-[0_0_40px_rgba(239,68,68,0.15)] transition hover:border-red-400/60 hover:bg-red-500/30 hover:text-red-50"
+            >
+              Hard Reset All Matches
+            </button>
+            <p className="mt-2 text-center text-xs text-white/50">
+              Dev only: wipes all matches, history, chat, guest identity. Redirects to Arena.
+            </p>
           </div>
         ) : null}
 

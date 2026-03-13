@@ -6,10 +6,12 @@ import {
   shortAddress,
 } from "@/lib/wallet/wallet-client"
 
-const GUEST_STORAGE_KEY = "kasroyal_guest_id_v1"
+/** Persisted in localStorage. Cleared only by hard reset, clear site data, or different browser. */
+const GUEST_IDENTITY_STORAGE_KEY = "kasroyal_guest_identity_v1"
 const PROFILE_STORAGE_PREFIX = "kasroyal_profile_v1_"
 
 const GUEST_PREFIX = "Guest-"
+const GUEST_PREFIX_ID = "guest-"
 const GUEST_WORDS = [
   "FrostRook",
   "GoldOx",
@@ -34,9 +36,9 @@ const GUEST_WORDS = [
 ]
 
 export type CurrentIdentity = {
-  /** Canonical id for matching: wallet address or guest id (e.g. Guest-FrostRook-4821) */
+  /** Canonical id for matching: wallet address or guest id (e.g. guest-stormhorse-3065) */
   id: string
-  /** Display name: profile name, short address, or guest id */
+  /** Display name: profile name, short address, or Guest-Word-Num */
   displayName: string
   /** True if no wallet connected */
   isGuest: boolean
@@ -46,23 +48,73 @@ function isBrowser() {
   return typeof window !== "undefined"
 }
 
+type StoredGuestIdentity = { id: string; displayName: string }
+
+function parseStoredGuestIdentity(raw: string | null): StoredGuestIdentity | null {
+  if (!raw || typeof raw !== "string") return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as StoredGuestIdentity).id === "string" &&
+      typeof (parsed as StoredGuestIdentity).displayName === "string"
+    ) {
+      const id = (parsed as StoredGuestIdentity).id.trim().toLowerCase()
+      const displayName = (parsed as StoredGuestIdentity).displayName.trim()
+      if (id.startsWith(GUEST_PREFIX_ID) && displayName.length > 0) return { id, displayName }
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
 /**
- * Generate or read a unique guest id for this session. Format: Guest-{Word}-{Num}
- * Do NOT reuse a shared name like KasKing01.
+ * Generate a stable guest identity once and persist in localStorage.
+ * Reused on every page load until: hard reset, user clears site data, or different browser/incognito.
+ * Format: id = guest-{word}-{num}, displayName = Guest-{Word}-{num}
  */
-export function getGuestId(): string {
+function getStableGuestIdentity(): StoredGuestIdentity {
   if (!isBrowser()) {
-    return `${GUEST_PREFIX}FrostRook-${Math.floor(Math.random() * 9999)}`
+    return { id: "guest-loading", displayName: "Guest-Loading" }
   }
-  let stored = window.sessionStorage.getItem(GUEST_STORAGE_KEY)
-  if (stored && stored.startsWith(GUEST_PREFIX)) {
-    return stored
-  }
+  const stored = window.localStorage.getItem(GUEST_IDENTITY_STORAGE_KEY)
+  const parsed = parseStoredGuestIdentity(stored)
+  if (parsed) return parsed
+
   const word = GUEST_WORDS[Math.floor(Math.random() * GUEST_WORDS.length)]
   const num = Math.floor(1000 + Math.random() * 9000)
-  stored = `${GUEST_PREFIX}${word}-${num}`
-  window.sessionStorage.setItem(GUEST_STORAGE_KEY, stored)
-  return stored
+  const id = `${GUEST_PREFIX_ID}${word.toLowerCase()}-${num}`
+  const displayName = `${GUEST_PREFIX}${word}-${num}`
+  const value: StoredGuestIdentity = { id, displayName }
+  try {
+    window.localStorage.setItem(GUEST_IDENTITY_STORAGE_KEY, JSON.stringify(value))
+  } catch {
+    // ignore
+  }
+  return value
+}
+
+/**
+ * Legacy: returns stable guest id. Use getCurrentIdentity() for full identity.
+ * Guest id is now persisted in localStorage and stable across visits.
+ */
+export function getGuestId(): string {
+  return getStableGuestIdentity().id
+}
+
+/**
+ * Clear stored guest identity (e.g. after hard reset). Next getCurrentIdentity() will create a new guest.
+ * Only call from resetAllArenaState or similar; normally guest identity is persistent.
+ */
+export function clearStoredGuestIdentity(): void {
+  if (!isBrowser()) return
+  try {
+    window.localStorage.removeItem(GUEST_IDENTITY_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -107,14 +159,15 @@ export function setStoredProfileDisplayName(account: string, displayName: string
 /**
  * Authoritative current user identity for arena/match/active-game logic.
  * - If wallet connected: id = account address, displayName = stored profile or short address.
- * - If no wallet: id = unique guest id (Guest-Word-Num), displayName = guest id.
+ * - If no wallet: id = stable guest id (guest-word-num), displayName = Guest-Word-Num.
+ *   Guest identity is generated once and persisted in localStorage; reused on every visit.
  * Use id for one-active-match-per-wallet, host/challenger distinction, and matching.
  */
 export function getCurrentIdentity(): CurrentIdentity {
   if (!isBrowser()) {
     return {
-      id: `${GUEST_PREFIX}FrostRook-0000`,
-      displayName: `${GUEST_PREFIX}FrostRook-0000`,
+      id: "guest-loading",
+      displayName: "Guest-Loading",
       isGuest: true,
     }
   }
@@ -129,10 +182,10 @@ export function getCurrentIdentity(): CurrentIdentity {
       }
     }
   }
-  const guestId = getGuestId()
+  const guest = getStableGuestIdentity()
   return {
-    id: guestId,
-    displayName: guestId,
+    id: guest.id,
+    displayName: guest.displayName,
     isGuest: true,
   }
 }
