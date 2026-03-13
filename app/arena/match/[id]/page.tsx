@@ -380,6 +380,7 @@ function RoomPhaseBanner({
   isPaused,
   pauseSecondsLeft,
   pausedByName,
+  finishedResultCopy,
 }: {
   status: ArenaMatch["status"]
   isPlayer: boolean
@@ -391,6 +392,7 @@ function RoomPhaseBanner({
   isPaused: boolean
   pauseSecondsLeft: number
   pausedByName: string
+  finishedResultCopy?: string
 }) {
   let tone = "border-white/10 bg-white/[0.04] text-white"
   let eyebrow = "Room Status"
@@ -443,8 +445,9 @@ function RoomPhaseBanner({
 
   if (status === "Finished") {
     tone = "border-amber-300/20 bg-amber-300/10 text-amber-100"
-    eyebrow = "Finished"
-    title = "Match complete"
+    const resultCopy = finishedResultCopy ?? "Match complete"
+    eyebrow = resultCopy
+    title = resultCopy === "Draw" ? "Match drawn" : resultCopy.startsWith("You won") ? "You won" : resultCopy.startsWith("You lost") ? "Match over" : "Match complete"
     body = "This arena has resolved. Review the final state, payout context, and feed below."
   }
 
@@ -1519,9 +1522,26 @@ export default function ArenaMatchPage() {
           ? (currentTurnSide === currentUserSide ? `Your turn: ${moveSecondsLeft}s` : `Opponent turn: ${moveSecondsLeft}s`)
           : "—"
 
+  const resultLine =
+    match.status === "Finished"
+      ? getMatchResultCopy(match, getCurrentIdentity().id)
+      : null
+  const winReasonShort =
+    match.status === "Finished" && match.winReason
+      ? match.winReason === "timeout"
+        ? "Won by timeout"
+        : match.winReason === "forfeit"
+          ? "Won by forfeit"
+          : match.winReason === "win"
+            ? "Game win"
+            : match.winReason
+      : null
+
   const boardStateLabel =
     match.status === "Finished"
-      ? "Finished"
+      ? resultLine && winReasonShort && resultLine !== "Draw"
+        ? `${resultLine} • ${winReasonShort}`
+        : resultLine ?? "Finished"
       : isPaused
         ? "Paused"
         : isCountdown
@@ -1729,6 +1749,7 @@ export default function ArenaMatchPage() {
           isPaused={isPaused}
           pauseSecondsLeft={pauseSecondsLeft}
           pausedByName={pausedByName}
+          finishedResultCopy={match.status === "Finished" ? getMatchResultCopy(match, getCurrentIdentity().id) : undefined}
         />
 
         <div className={`grid grid-cols-1 gap-6 xl:grid-rows-[auto_auto_auto] ${isQuickMatch ? "xl:grid-cols-[300px_minmax(0,1fr)]" : "xl:grid-cols-[300px_minmax(0,1fr)_minmax(420px,480px)]"}`}>
@@ -2049,7 +2070,11 @@ export default function ArenaMatchPage() {
                               : "text-amber-300"
                       }
                     />
-                    <StatCard label="State" value={boardStateLabel} accent="text-amber-300" />
+                    <StatCard
+                      label={match.status === "Finished" ? "Result" : "State"}
+                      value={boardStateLabel}
+                      accent={match.status === "Finished" ? "text-amber-300" : "text-amber-300"}
+                    />
                   </div>
                 </GameBoardShell>
               ) : match.game === "Tic-Tac-Toe" ? (
@@ -2117,7 +2142,11 @@ export default function ArenaMatchPage() {
                                 : "text-amber-300"
                         }
                       />
-                      <StatCard label="State" value={boardStateLabel} accent="text-amber-300" />
+                      <StatCard
+                        label={match.status === "Finished" ? "Result" : "State"}
+                        value={boardStateLabel}
+                        accent="text-amber-300"
+                      />
                     </div>
                   </div>
                 </GameBoardShell>
@@ -2149,8 +2178,8 @@ export default function ArenaMatchPage() {
                     <StatCard label="Challenger MMR" value={`${challenger ? challenger.rating : 0}`} />
                     <StatCard label="Live Move" value={match.moveText} accent="text-emerald-300" />
                     <StatCard
-                      label="State"
-                      value={match.status === "Finished" ? "Finished" : isCountdown ? "Starting Soon" : "Preview"}
+                      label={match.status === "Finished" ? "Result" : "State"}
+                      value={match.status === "Finished" ? (resultLine ?? "Finished") : isCountdown ? "Starting Soon" : "Preview"}
                       accent="text-amber-300"
                     />
                   </div>
@@ -2205,10 +2234,10 @@ export default function ArenaMatchPage() {
                       </>
                     )}
                   </div>
-                  {/* Desktop: form inline. Mobile: fixed to viewport bottom so input stays above keyboard; 16px font avoids iOS zoom. */}
+                  {/* Desktop: form inline. Mobile: fixed to viewport bottom, high z-index so input/send stay above keyboard and overlays. */}
                   <form
                     ref={chatFormRef}
-                    className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-30 max-md:mt-0 max-md:rounded-none max-md:border-0 max-md:border-t max-md:border-white/10 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
+                    className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-[100] max-md:mt-0 max-md:rounded-none max-md:border-0 max-md:border-t max-md:border-white/10 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.3)] max-md:isolate"
                     style={{ scrollMarginBottom: 24 }}
                     onSubmit={handleChatSubmit}
                   >
@@ -2220,7 +2249,9 @@ export default function ArenaMatchPage() {
                       placeholder="Type a message…"
                       maxLength={500}
                       autoComplete="off"
-                      className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4"
+                      disabled={false}
+                      readOnly={false}
+                      className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4 touch-manipulation"
                       style={{ fontSize: "16px" }}
                       aria-label="Chat message"
                     />

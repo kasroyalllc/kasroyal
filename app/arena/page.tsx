@@ -877,7 +877,11 @@ export default function ArenaPage() {
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
               <span className="text-emerald-300/90">Quick</span> — free play.{" "}
-              <span className="text-amber-300/90">Ranked</span> — wager and climb. Finished games are in History.
+              <span className="text-amber-300/90">Ranked</span> — wager and climb.{" "}
+              <Link href="/history" className="font-semibold text-sky-300 underline decoration-sky-400/50 underline-offset-2 hover:text-sky-200">
+                Game History
+              </Link>{" "}
+              for completed matches.
             </p>
           </div>
         </div>
@@ -1127,9 +1131,9 @@ export default function ArenaPage() {
 
             <Link
               href="/history"
-              className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center text-sm font-bold text-white/80 transition hover:bg-white/[0.06] hover:text-white"
+              className="flex items-center justify-center gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/10 px-5 py-3.5 text-sm font-bold text-sky-200 transition hover:bg-sky-500/20 hover:text-sky-100"
             >
-              Match History →
+              Game History →
             </Link>
           </aside>
 

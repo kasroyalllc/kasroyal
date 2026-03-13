@@ -71,9 +71,12 @@ function HistoryCard({
   )
 }
 
+type HistoryTab = "ranked" | "quick"
+
 export default function HistoryPage() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [mounted, setMounted] = useState(false)
+  const [activeTab, setActiveTab] = useState<HistoryTab>("ranked")
 
   const refreshHistory = useCallback(async () => {
     if (typeof window === "undefined") return
@@ -109,6 +112,9 @@ export default function HistoryPage() {
   }, [mounted, refreshHistory])
 
   const historyMatches = rooms.map(roomToArenaMatch)
+  const rankedMatches = historyMatches.filter((m) => m.matchMode === "ranked")
+  const quickMatches = historyMatches.filter((m) => m.matchMode === "quick" || m.matchMode === undefined)
+  const displayedMatches = activeTab === "ranked" ? rankedMatches : quickMatches
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
@@ -121,13 +127,13 @@ export default function HistoryPage() {
       <div className="relative z-10 mx-auto max-w-[900px] px-4 py-8 md:px-6 md:py-10">
         <div className="mb-8">
           <div className="mb-3 inline-flex rounded-full border border-sky-400/25 bg-sky-500/10 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300">
-            Match History
+            Game History
           </div>
           <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl">
             Completed Games
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
-            Completed match archive. Results, ended time, and wager info. Active play is on the Arena.
+            Completed match archive by mode. Results, ended time, and wager info. Active play is on the Arena.
           </p>
         </div>
 
@@ -140,16 +146,46 @@ export default function HistoryPage() {
           </Link>
         </div>
 
+        <div className="mb-6 flex rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab("ranked")}
+            className={`flex-1 rounded-xl px-5 py-3 text-sm font-bold transition ${
+              activeTab === "ranked"
+                ? "bg-amber-400/20 text-amber-200"
+                : "text-white/60 hover:text-white/80"
+            }`}
+          >
+            Ranked
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("quick")}
+            className={`flex-1 rounded-xl px-5 py-3 text-sm font-bold transition ${
+              activeTab === "quick"
+                ? "bg-emerald-400/20 text-emerald-200"
+                : "text-white/60 hover:text-white/80"
+            }`}
+          >
+            Quick Match
+          </button>
+        </div>
+
         <section className="space-y-4">
-          {          historyMatches.length > 0 ? (
-            historyMatches.map((match) => (
+          {displayedMatches.length > 0 ? (
+            displayedMatches.map((match) => (
               <HistoryCard key={match.id} match={match} mounted={mounted} />
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-              <p className="text-lg font-bold text-white/90">No completed matches yet</p>
+              <p className="text-lg font-bold text-white/90">
+                {activeTab === "ranked" ? "No ranked matches yet" : "No quick matches yet"}
+              </p>
               <p className="mt-2 text-sm text-white/55">
-                Finished games will appear here. Create or join a match on the Arena to see results.
+                {activeTab === "ranked"
+                  ? "Finished ranked games will appear here."
+                  : "Finished quick games will appear here."}{" "}
+                Create or join a match on the Arena.
               </p>
               <Link
                 href="/arena"

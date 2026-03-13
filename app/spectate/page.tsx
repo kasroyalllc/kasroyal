@@ -375,7 +375,7 @@ export default function SpectatePage() {
       getCurrentUser().name === activeLiveMatch.challenger?.name
     : false
 
-  async function sendChatMessage() {
+  const sendChatMessage = useCallback(async () => {
     const trimmed = chatInput.trim()
     if (!trimmed || !activeLiveMatchId) return
     try {
@@ -389,14 +389,17 @@ export default function SpectatePage() {
           message: trimmed,
         }),
       })
-      if (res.ok) {
+      const data = res.ok ? await res.json().catch(() => ({})) : null
+      if (res.ok && data?.ok) {
         setChatInput("")
         await refreshCrowdChat()
+      } else {
+        setMessage(data?.error ?? "Failed to send message")
       }
-    } catch {
-      // keep input on error
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Failed to send message")
     }
-  }
+  }, [chatInput, activeLiveMatchId, refreshCrowdChat])
 
   async function handlePlaceBet() {
     if (!activeLiveMatch) {
@@ -914,23 +917,29 @@ export default function SpectatePage() {
                   )}
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <form
+                  className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    sendChatMessage()
+                  }}
+                >
                   <input
+                    type="text"
                     value={chatInput}
                     onChange={(event) => setChatInput(event.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChatMessage())}
                     placeholder="Say something about the match..."
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-300/30"
                     aria-label="Crowd talk message"
                   />
                   <button
-                    type="button"
-                    onClick={sendChatMessage}
-                    className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-3 text-sm font-black text-black transition hover:scale-[1.01] touch-manipulation"
+                    type="submit"
+                    disabled={!chatInput.trim()}
+                    className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-3 text-sm font-black text-black transition hover:scale-[1.01] touch-manipulation disabled:opacity-50"
                   >
                     Send
                   </button>
-                </div>
+                </form>
               </div>
             </div>
           </section>
