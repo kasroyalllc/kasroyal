@@ -49,6 +49,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const isGuestIdentity = challengerIdentityId.toLowerCase().startsWith("guest-")
+    if (room.mode === "ranked" && isGuestIdentity) {
+      return NextResponse.json(
+        { ok: false, error: "Ranked matches require a connected wallet. Connect your wallet to join this room." },
+        { status: 400 }
+      )
+    }
+
     const active = await listActiveRooms(supabase)
     const alreadyInMatch = active.some(
       (r) =>

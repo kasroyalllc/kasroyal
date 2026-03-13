@@ -46,7 +46,11 @@ import {
   getMatchBets as getDbMatchBets,
   placeBet as placeDbBet,
 } from "@/lib/db/bets"
-import { getCurrentIdentity } from "@/lib/identity"
+import {
+  getCurrentIdentity,
+  getStoredProfileRank,
+  getStoredProfileRating,
+} from "@/lib/identity"
 
 export type {
   ArenaMatch,
@@ -994,22 +998,43 @@ function rankFromRating(rating: number): RankTier {
   return "Bronze III"
 }
 
+/** Default starting rank/rating for new ranked (wallet) players. Guest keeps seed-based display. */
+const DEFAULT_STARTING_RANK: RankTier = "Bronze III"
+const DEFAULT_STARTING_RATING = 1000
+
 function buildProfileFromWallet(wallet: string, fallbackName?: string): PlayerProfile {
   const short =
     wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet
 
-  const seed = [...wallet].reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  const rating = 1200 + (seed % 700)
-  const winRate = 44 + (seed % 24)
-  const wins = 4 + (seed % 6)
-  const losses = 10 - wins
+  const isGuest = wallet.toLowerCase().startsWith("guest-")
+  if (isGuest) {
+    const seed = [...wallet].reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const rating = 1200 + (seed % 700)
+    const winRate = 44 + (seed % 24)
+    const wins = 4 + (seed % 6)
+    const losses = 10 - wins
+    return {
+      name: fallbackName ?? short,
+      rank: rankFromRating(rating),
+      rating,
+      winRate,
+      last10: `${wins}-${losses}`,
+    }
+  }
+
+  const storedRank = getStoredProfileRank(wallet)
+  const storedRating = getStoredProfileRating(wallet)
+  const rank = (storedRank as RankTier) ?? DEFAULT_STARTING_RANK
+  const rating = storedRating ?? DEFAULT_STARTING_RATING
+  const winRate = 50
+  const last10 = "0-0"
 
   return {
     name: fallbackName ?? short,
-    rank: rankFromRating(rating),
+    rank,
     rating,
     winRate,
-    last10: `${wins}-${losses}`,
+    last10,
   }
 }
 

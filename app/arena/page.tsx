@@ -263,12 +263,14 @@ function MatchCard({
   onFill,
   walletLocked,
   activeMatchId,
+  isGuest,
 }: {
   match: ArenaMatch
   onJoin: (matchId: string) => void
   onFill: (matchId: string) => void
   walletLocked: boolean
   activeMatchId: string | null
+  isGuest: boolean
 }) {
   const meta = gameMeta[match.game]
   const isOpen = match.status === "Waiting for Opponent"
@@ -287,6 +289,8 @@ function MatchCard({
 
   const joinBlockedByWalletLock =
     walletLocked && activeMatchId !== null && activeMatchId !== match.id && isOpen && !isHost
+  const joinBlockedByGuest = isOpen && !isHost && match.matchMode !== "quick" && isGuest
+  const joinDisabled = joinBlockedByWalletLock || joinBlockedByGuest
 
   return (
     <div
@@ -342,6 +346,11 @@ function MatchCard({
             {joinBlockedByWalletLock ? (
               <span className="rounded-full border border-red-300/20 bg-red-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-red-300">
                 Wallet Locked
+              </span>
+            ) : null}
+            {joinBlockedByGuest ? (
+              <span className="rounded-full border border-amber-300/20 bg-amber-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-200">
+                Connect wallet to join
               </span>
             ) : null}
           </div>
@@ -418,18 +427,20 @@ function MatchCard({
               <button
                 type="button"
                 onClick={() => onJoin(match.id)}
-                disabled={joinBlockedByWalletLock}
+                disabled={joinDisabled}
                 className={`rounded-2xl px-5 py-4 text-sm font-black transition ${
-                  joinBlockedByWalletLock
+                  joinDisabled
                     ? "cursor-not-allowed border border-red-300/20 bg-red-500/10 text-red-300 opacity-70"
                     : "bg-gradient-to-r from-amber-400 to-yellow-300 text-black hover:scale-[1.01]"
                 }`}
               >
                 {joinBlockedByWalletLock
                   ? "Locked: Active Match"
-                  : match.matchMode === "quick"
-                    ? "Join (Free)"
-                    : `Join for ${match.wager} KAS`}
+                  : joinBlockedByGuest
+                    ? "Connect wallet to join"
+                    : match.matchMode === "quick"
+                      ? "Join (Free)"
+                      : `Join for ${match.wager} KAS`}
               </button>
             )
           ) : (
@@ -537,7 +548,9 @@ export default function ArenaPage() {
     return dedupeMatchesById(list)
   }, [rooms])
 
-  const identityId = getCurrentIdentity().id.toLowerCase()
+  const identity = getCurrentIdentity()
+  const identityId = identity.id.toLowerCase()
+  const isGuest = identity.isGuest
   const activeWalletMatch = useMemo(
     () =>
       activeMatches.find(
@@ -731,6 +744,11 @@ export default function ArenaPage() {
 
     if (safeWager > getCurrentUser().walletBalance) {
       setMessage("Insufficient KAS balance for that wager.")
+      return
+    }
+
+    if (isGuest) {
+      setMessage("Ranked matches require a connected wallet. Connect your wallet to create a ranked room.")
       return
     }
 
@@ -1064,9 +1082,9 @@ export default function ArenaPage() {
 
                 <button
                   onClick={handleCreateMatch}
-                  disabled={walletLocked}
+                  disabled={walletLocked || (arenaMode === "ranked" && isGuest)}
                   className={`w-full rounded-2xl px-5 py-4 text-base font-black transition ${
-                    walletLocked
+                    walletLocked || (arenaMode === "ranked" && isGuest)
                       ? "cursor-not-allowed border border-red-300/20 bg-red-500/10 text-red-300 opacity-70"
                       : arenaMode === "quick"
                         ? "bg-gradient-to-r from-emerald-400 to-emerald-600 text-white hover:scale-[1.01]"
@@ -1075,9 +1093,11 @@ export default function ArenaPage() {
                 >
                   {walletLocked
                     ? "Locked: Active Match"
-                    : arenaMode === "quick"
-                      ? "Create Quick Match (Free)"
-                      : "Create Ranked Match"}
+                    : arenaMode === "ranked" && isGuest
+                      ? "Connect wallet for Ranked"
+                      : arenaMode === "quick"
+                        ? "Create Quick Match (Free)"
+                        : "Create Ranked Match"}
                 </button>
 
                 <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3.5">
@@ -1128,6 +1148,7 @@ export default function ArenaPage() {
                       onFill={handleFillOpponent}
                       walletLocked={walletLocked}
                       activeMatchId={activeWalletMatch?.id ?? null}
+                      isGuest={isGuest}
                     />
                   ))
                 ) : (
@@ -1232,6 +1253,7 @@ export default function ArenaPage() {
                         onFill={handleFillOpponent}
                         walletLocked={walletLocked}
                         activeMatchId={activeWalletMatch?.id ?? null}
+                        isGuest={isGuest}
                       />
                     ))}
                   </div>
@@ -1252,6 +1274,7 @@ export default function ArenaPage() {
                         onFill={handleFillOpponent}
                         walletLocked={walletLocked}
                         activeMatchId={activeWalletMatch?.id ?? null}
+                        isGuest={isGuest}
                       />
                     ))}
                   </div>
@@ -1282,6 +1305,7 @@ export default function ArenaPage() {
                       onFill={handleFillOpponent}
                       walletLocked={walletLocked}
                       activeMatchId={activeWalletMatch?.id ?? null}
+                      isGuest={isGuest}
                     />
                   ))
                 ) : (

@@ -439,7 +439,7 @@ export default function HomePage() {
               Recently resolved
             </h2>
             <Link
-              href="/arena"
+              href="/history"
               onClick={playClick}
               className="text-xs font-semibold uppercase tracking-wider text-white/50 hover:text-white/70"
             >

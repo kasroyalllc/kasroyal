@@ -52,6 +52,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const isGuestIdentity = hostIdentityId.toLowerCase().startsWith("guest-")
+  if (mode === "ranked" && isGuestIdentity) {
+    return NextResponse.json(
+      { ok: false, error: "Ranked matches require a connected wallet. Connect your wallet to create a ranked room." },
+      { status: 400 }
+    )
+  }
+
   const createPayload = {
     mode,
     game_type: gameType,

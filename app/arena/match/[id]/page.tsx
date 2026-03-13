@@ -875,12 +875,12 @@ export default function ArenaMatchPage() {
               KasRoyal Match Room
             </div>
             <div className="mt-5 text-4xl font-black">
-              {isLoading ? "Loading room…" : "Room not found"}
+              {isLoading ? "Loading room…" : "Room not found or no longer available"}
             </div>
             <p className="mt-4 max-w-2xl text-white/65">
               {isLoading
-                ? "Loading match room from server."
-                : "Room not found or match has ended. It may have been canceled or the ID is invalid."}
+                ? "Loading match room…"
+                : "This match may have ended or been canceled. Return to the Arena to find or create a new match."}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link

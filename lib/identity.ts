@@ -117,51 +117,104 @@ export function clearStoredGuestIdentity(): void {
   }
 }
 
-/**
- * Get stored display name for a wallet address (e.g. from profile).
- * Returns null if none set; app can auto-create profile and allow customization later.
- */
-export function getStoredProfileDisplayName(account: string): string | null {
+function getStoredProfileData(account: string): { displayName?: string; rank?: string; rating?: number } | null {
   if (!isBrowser() || !account) return null
   try {
     const key = `${PROFILE_STORAGE_PREFIX}${account.toLowerCase()}`
     const raw = window.localStorage.getItem(key)
     if (!raw) return null
-    const data = JSON.parse(raw) as { displayName?: string }
-    return typeof data.displayName === "string" && data.displayName.trim()
-      ? data.displayName.trim()
-      : null
+    return JSON.parse(raw) as { displayName?: string; rank?: string; rating?: number }
   } catch {
     return null
   }
+}
+
+function setStoredProfileData(
+  account: string,
+  updates: { displayName?: string | null; rank?: string | null; rating?: number | null }
+) {
+  if (!isBrowser() || !account) return
+  const key = `${PROFILE_STORAGE_PREFIX}${account.toLowerCase()}`
+  try {
+    const existing = window.localStorage.getItem(key)
+    const data = existing ? (JSON.parse(existing) as Record<string, unknown>) : {}
+    if (updates.displayName !== undefined) {
+      if (updates.displayName && String(updates.displayName).trim()) data.displayName = updates.displayName.trim()
+      else delete data.displayName
+    }
+    if (updates.rank !== undefined) {
+      if (updates.rank && String(updates.rank).trim()) data.rank = updates.rank.trim()
+      else delete data.rank
+    }
+    if (updates.rating !== undefined) {
+      if (typeof updates.rating === "number" && Number.isFinite(updates.rating)) data.rating = updates.rating
+      else delete data.rating
+    }
+    if (Object.keys(data).length === 0) {
+      window.localStorage.removeItem(key)
+      return
+    }
+    window.localStorage.setItem(key, JSON.stringify(data))
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Get stored display name for a wallet address (e.g. from profile).
+ * Returns null if none set; app can auto-create profile and allow customization later.
+ */
+export function getStoredProfileDisplayName(account: string): string | null {
+  const data = getStoredProfileData(account)
+  if (!data) return null
+  return typeof data.displayName === "string" && data.displayName.trim() ? data.displayName.trim() : null
 }
 
 /**
  * Save display name for a wallet address. Used for profile customization.
  */
 export function setStoredProfileDisplayName(account: string, displayName: string | null) {
-  if (!isBrowser()) return
-  const key = `${PROFILE_STORAGE_PREFIX}${account.toLowerCase()}`
-  if (!displayName || !displayName.trim()) {
-    window.localStorage.removeItem(key)
-    return
-  }
-  try {
-    const existing = window.localStorage.getItem(key)
-    const data = existing ? { ...JSON.parse(existing) } : {}
-    data.displayName = displayName.trim()
-    window.localStorage.setItem(key, JSON.stringify(data))
-  } catch {
-    window.localStorage.setItem(key, JSON.stringify({ displayName: displayName.trim() }))
-  }
+  setStoredProfileData(account, { displayName })
+}
+
+/**
+ * Get stored rank for a wallet address (ranked progression).
+ * Returns null if none set; new ranked users should default to Bronze III.
+ */
+export function getStoredProfileRank(account: string): string | null {
+  const data = getStoredProfileData(account)
+  if (!data || typeof data.rank !== "string" || !data.rank.trim()) return null
+  return data.rank.trim()
+}
+
+/**
+ * Save rank for a wallet address. Call from wins/losses/XP logic; do not overwrite with a lower rank.
+ */
+export function setStoredProfileRank(account: string, rank: string | null) {
+  setStoredProfileData(account, { rank })
+}
+
+/**
+ * Get stored rating for a wallet address. Returns null if none set; new ranked users use 1000.
+ */
+export function getStoredProfileRating(account: string): number | null {
+  const data = getStoredProfileData(account)
+  if (data == null || typeof data.rating !== "number" || !Number.isFinite(data.rating)) return null
+  return data.rating
+}
+
+/**
+ * Save rating for a wallet address. Used by ranked progression.
+ */
+export function setStoredProfileRating(account: string, rating: number | null) {
+  setStoredProfileData(account, { rating })
 }
 
 /**
  * Authoritative current user identity for arena/match/active-game logic.
- * - If wallet connected: id = account address, displayName = stored profile or short address.
- * - If no wallet: id = stable guest id (guest-word-num), displayName = Guest-Word-Num.
- *   Guest identity is generated once and persisted in localStorage; reused on every visit.
- * Use id for one-active-match-per-wallet, host/challenger distinction, and matching.
+ * Wallet-connected: id = account, displayName = (1) saved profile display name, (2) else shortened wallet address.
+ * Guest names are never used when a wallet is connected; wallet identity is authoritative for ranked play.
+ * No wallet: id = stable guest id (guest-word-num), displayName = Guest-Word-Num (Quick Match).
  */
 export function getCurrentIdentity(): CurrentIdentity {
   if (!isBrowser()) {
