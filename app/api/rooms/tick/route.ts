@@ -8,6 +8,7 @@ import {
 } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
+import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
 
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       if (error) throw error
       if (data) {
+        logRoomAction("ready_to_live", roomId, { game: gameType })
         return NextResponse.json(
           {
             ok: true,
@@ -99,20 +101,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (room.status === "Live") {
+      // Timeout only when authoritative DB deadline has actually passed. No buffer, no computed fallback.
       const turnExpiresAtMs = room.turnExpiresAt ?? null
-      const moveSeconds = room.moveTurnSeconds ?? 0
-      const moveStartMs = room.moveTurnStartedAt
-        ? typeof room.moveTurnStartedAt === "number"
-          ? room.moveTurnStartedAt
-          : new Date(room.moveTurnStartedAt).getTime()
-        : null
-      const computedExpiresMs =
-        moveStartMs != null && moveSeconds > 0
-          ? moveStartMs + moveSeconds * 1000
-          : null
-      const expiresMs = turnExpiresAtMs ?? computedExpiresMs
-
-      if (expiresMs == null || nowMs < expiresMs) {
+      if (turnExpiresAtMs == null || nowMs < turnExpiresAtMs) {
         return NextResponse.json(
           { ok: true, room, transition: null },
           { headers: { "Cache-Control": "no-store" } }
@@ -151,6 +142,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (error) throw error
+        logRoomAction("timeout_finish", roomId, { winner: "challenger", reason: "timeout" })
         return NextResponse.json(
           {
             ok: true,
@@ -177,6 +169,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (error) throw error
+        logRoomAction("timeout_finish", roomId, { winner: "host", reason: "timeout" })
         return NextResponse.json(
           {
             ok: true,
@@ -187,6 +180,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      logRoomAction("timeout_strike", roomId, { strikesHost: newHostStrikes, strikesChallenger: newChallengerStrikes })
       const nextTurnId = isHost ? room.challengerIdentityId : room.hostIdentityId
       const gameType = room.game as GameType
       const nextMoveSeconds = getMoveSecondsForGame(gameType)

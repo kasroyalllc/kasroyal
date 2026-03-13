@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { createPortal } from "react-dom"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import {
@@ -662,18 +663,28 @@ export default function ArenaMatchPage() {
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [roomLoadAttempted, setRoomLoadAttempted] = useState(false)
+  const [isMobileView, setIsMobileView] = useState(false)
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
-  /** Stick to bottom only when user is already near bottom; avoid forcing scroll when user scrolled up or match is over. */
+  /** Stick to bottom only when user is already near bottom; do not force scroll when user scrolled up (active or finished). */
   const isChatNearBottomRef = useRef(true)
+  const prevChatLengthRef = useRef(0)
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+    const check = () => setIsMobileView(typeof window !== "undefined" && window.innerWidth < 768)
+    check()
+    window.addEventListener("resize", check)
+    return () => window.removeEventListener("resize", check)
+  }, [mounted])
 
   const refreshRoom = useCallback(async () => {
     if (!matchId || typeof window === "undefined") return
@@ -861,8 +872,12 @@ export default function ArenaMatchPage() {
   }, [matchId, refreshChat])
 
   useEffect(() => {
+    const len = chatMessages.length
+    const hadNewMessage = len > prevChatLengthRef.current
+    prevChatLengthRef.current = len
     if (match?.status === "Finished") return
     if (!isChatNearBottomRef.current) return
+    if (!hadNewMessage) return
     chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
   }, [chatMessages, match?.status])
 
@@ -870,7 +885,7 @@ export default function ArenaMatchPage() {
     const el = chatScrollContainerRef.current
     if (!el) return
     const { scrollTop, clientHeight, scrollHeight } = el
-    const threshold = 100
+    const threshold = 120
     isChatNearBottomRef.current = scrollTop + clientHeight >= scrollHeight - threshold
   }, [])
 
@@ -1013,10 +1028,16 @@ export default function ArenaMatchPage() {
         : match.game === "Tic-Tac-Toe"
           ? tttTurnDeadlineTs
           : 0
-  const dbTurnExpiresAt = match.turnExpiresAt ?? null
+  // Authoritative timer: only turn_expires_at. Display with ceil so timer shows 0 only when deadline has passed.
+  const turnExpiresAtMs =
+    match.status === "Live" && match.turnExpiresAt != null
+      ? (typeof match.turnExpiresAt === "number"
+          ? match.turnExpiresAt
+          : new Date(String(match.turnExpiresAt)).getTime())
+      : null
   const moveSecondsLeft =
-    match.status === "Live" && !isPaused && dbTurnExpiresAt != null
-      ? Math.max(0, Math.ceil((dbTurnExpiresAt - Date.now()) / 1000))
+    match.status === "Live" && !isPaused && turnExpiresAtMs != null
+      ? Math.max(0, Math.ceil((turnExpiresAtMs - Date.now()) / 1000))
       : 0
 
   const canHostMove =
@@ -2234,36 +2255,74 @@ export default function ArenaMatchPage() {
                       </>
                     )}
                   </div>
-                  {/* Desktop: form inline. Mobile: fixed to viewport bottom, high z-index so input/send stay above keyboard and overlays. */}
-                  <form
-                    ref={chatFormRef}
-                    className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-[100] max-md:mt-0 max-md:rounded-none max-md:border-0 max-md:border-t max-md:border-white/10 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.3)] max-md:isolate"
-                    style={{ scrollMarginBottom: 24 }}
-                    onSubmit={handleChatSubmit}
-                  >
-                    <input
-                      type="text"
-                      inputMode="text"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Type a message…"
-                      maxLength={500}
-                      autoComplete="off"
-                      disabled={false}
-                      readOnly={false}
-                      className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4 touch-manipulation"
-                      style={{ fontSize: "16px" }}
-                      aria-label="Chat message"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!chatInput.trim()}
-                      className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition active:scale-[0.98] hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
-                      aria-label="Send message"
+                  {/* Desktop: form inline. Mobile: form in portal at body so no overflow/z-index blocks focus or send. */}
+                  {isMobileView && mounted && typeof document !== "undefined"
+                    ? createPortal(
+                        <div
+                          className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-white/10 bg-[var(--surface-card)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
+                          style={{ pointerEvents: "auto" }}
+                        >
+                          <form
+                            ref={chatFormRef}
+                            className="flex gap-2"
+                            onSubmit={handleChatSubmit}
+                          >
+                            <input
+                              type="text"
+                              inputMode="text"
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              placeholder="Type a message…"
+                              maxLength={500}
+                              autoComplete="off"
+                              className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 touch-manipulation"
+                              style={{ fontSize: "16px" }}
+                              aria-label="Chat message"
+                            />
+                            <button
+                              type="submit"
+                              disabled={!chatInput.trim()}
+                              className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition active:scale-[0.98] hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label="Send message"
+                            >
+                              Send
+                            </button>
+                          </form>
+                        </div>,
+                        document.body
+                      )
+                    : null}
+                  {isMobileView && mounted ? (
+                    <div className="mt-4 min-h-[52px] shrink-0 md:hidden" aria-hidden />
+                  ) : (
+                    <form
+                      ref={chatFormRef}
+                      className="mt-4 flex shrink-0 gap-2 md:gap-3"
+                      style={{ scrollMarginBottom: 24 }}
+                      onSubmit={handleChatSubmit}
                     >
-                      Send
-                    </button>
-                  </form>
+                      <input
+                        type="text"
+                        inputMode="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        placeholder="Type a message…"
+                        maxLength={500}
+                        autoComplete="off"
+                        className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4 touch-manipulation"
+                        style={{ fontSize: "16px" }}
+                        aria-label="Chat message"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!chatInput.trim()}
+                        className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
+                        aria-label="Send message"
+                      >
+                        Send
+                      </button>
+                    </form>
+                  )}
                 </div>
               </div>
             </div>

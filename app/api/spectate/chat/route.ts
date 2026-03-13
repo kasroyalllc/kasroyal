@@ -33,8 +33,9 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {
+    const errMsg = e instanceof Error ? e.message : "Send message failed"
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "Send message failed" },
+      { ok: false, error: errMsg },
       { status: 500 }
     )
   }

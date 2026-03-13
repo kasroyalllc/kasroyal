@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
+import { logRoomAction } from "@/lib/log"
 import {
   applyConnect4Move,
   applyTttMove,
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (error) throw error
+        logRoomAction("move_win", roomId, { game: "Connect 4", reason: "win" })
         return NextResponse.json(
           { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
           { headers: { "Cache-Control": "no-store" } }
@@ -165,6 +167,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (error) throw error
+        logRoomAction("move_draw", roomId, { game: "Connect 4", reason: "draw" })
         return NextResponse.json(
           { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
           { headers: { "Cache-Control": "no-store" } }
@@ -250,6 +253,7 @@ export async function POST(request: NextRequest) {
         .select("*")
         .maybeSingle()
       if (error) throw error
+      logRoomAction("move_win", roomId, { game: "Tic Tac Toe", reason: "win" })
       return NextResponse.json(
         { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
         { headers: { "Cache-Control": "no-store" } }
@@ -277,6 +281,7 @@ export async function POST(request: NextRequest) {
         .select("*")
         .maybeSingle()
       if (error) throw error
+      logRoomAction("move_draw", roomId, { game: "Tic Tac Toe", reason: "draw" })
       return NextResponse.json(
         { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
         { headers: { "Cache-Control": "no-store" } }

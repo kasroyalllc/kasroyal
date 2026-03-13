@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById, forfeitRoom } from "@/lib/rooms/rooms-service"
+import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
 
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
       forfeiterIdentityId,
       winnerIdentityId
     )
+    logRoomAction("forfeit", roomId, { winner: isHost ? "challenger" : "host" })
 
     return NextResponse.json(
       { ok: true, room: updated },

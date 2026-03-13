@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
+import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
 
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
       .eq("host_wallet", hostIdentityId)
 
     if (error) throw error
+    logRoomAction("cancel", roomId)
 
     return NextResponse.json(
       { ok: true },

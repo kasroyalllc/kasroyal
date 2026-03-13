@@ -378,25 +378,34 @@ export default function SpectatePage() {
   const sendChatMessage = useCallback(async () => {
     const trimmed = chatInput.trim()
     if (!trimmed || !activeLiveMatchId) return
+    setChatInput("")
+    const payload = {
+      match_id: activeLiveMatchId,
+      sender_identity_id: getCurrentIdentity().id,
+      sender_display_name: getCurrentUser().name,
+      message: trimmed,
+    }
     try {
       const res = await fetch("/api/spectate/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          match_id: activeLiveMatchId,
-          sender_identity_id: getCurrentIdentity().id,
-          sender_display_name: getCurrentUser().name,
-          message: trimmed,
-        }),
+        body: JSON.stringify(payload),
       })
-      const data = res.ok ? await res.json().catch(() => ({})) : null
+      const data = await res.json().catch(() => ({}))
       if (res.ok && data?.ok) {
-        setChatInput("")
         await refreshCrowdChat()
-      } else {
-        setMessage(data?.error ?? "Failed to send message")
+        return
       }
+    } catch {
+      // fall through to client insert
+    }
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from("spectate_messages").insert(payload).select("id").limit(1)
+      if (error) throw error
+      await refreshCrowdChat()
     } catch (e) {
+      setChatInput(trimmed)
       setMessage(e instanceof Error ? e.message : "Failed to send message")
     }
   }, [chatInput, activeLiveMatchId, refreshCrowdChat])
