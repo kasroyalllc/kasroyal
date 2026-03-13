@@ -657,8 +657,13 @@ export default function ArenaMatchPage() {
   const [chatInput, setChatInput] = useState("")
   const [showCancelRoomConfirm, setShowCancelRoomConfirm] = useState(false)
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (!matchId) return
@@ -840,6 +845,39 @@ export default function ArenaMatchPage() {
             <div className="mt-5 text-4xl font-black">Room not loaded yet</div>
             <p className="mt-4 max-w-2xl text-white/65">
               This room has not synced into the local engine yet, or the match no longer exists.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/arena"
+                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white"
+              >
+                Arena Lobby
+              </Link>
+              <Link
+                href="/spectate"
+                className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-3 text-sm font-bold text-emerald-200"
+              >
+                Spectate
+              </Link>
+            </div>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen bg-[#050807] text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.06),transparent_24%)]" />
+        <div className="relative z-10 mx-auto max-w-5xl px-6 py-16">
+          <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-8 shadow-[0_0_50px_rgba(0,255,200,0.05)]">
+            <div className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
+              KasRoyal Match Room
+            </div>
+            <div className="mt-5 text-4xl font-black">Loading room…</div>
+            <p className="mt-4 max-w-2xl text-white/65">
+              Preparing match room. This avoids server/client mismatch.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link

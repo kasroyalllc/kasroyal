@@ -561,7 +561,7 @@ function isActiveMatchStatus(status: ArenaStatus) {
 }
 
 /** Only treat as active if state is consistent: Waiting => no challenger; Ready/Live => has challenger. */
-function isValidActiveMatch(match: ArenaMatch): boolean {
+export function isValidActiveMatch(match: ArenaMatch): boolean {
   if (!match.id || typeof match.id !== "string") return false
   if (match.status === "Waiting for Opponent") {
     return !match.challenger
@@ -1685,6 +1685,29 @@ if (isBrowser()) {
 
   startArenaLifecycleTicker()
   void hydrateMatchesFromSupabase()
+}
+
+/** Deduplicate matches by id; keep last occurrence so newest state wins. */
+function dedupeMatchesById(matches: ArenaMatch[]): ArenaMatch[] {
+  const byId = new Map<string, ArenaMatch>()
+  for (const m of matches) {
+    if (m?.id) byId.set(m.id, m)
+  }
+  return [...byId.values()]
+}
+
+/** Arena = active only. No Finished/Forfeited/Canceled. One logical match per id. */
+export function readActiveArenaMatches(): ArenaMatch[] {
+  const all = readArenaMatches()
+  const active = all.filter((m) => isActiveMatchStatus(m.status) && isValidActiveMatch(m))
+  return dedupeMatchesById(active)
+}
+
+/** Match History = finished only. For history view / View Result. Deduplicated by id. */
+export function readMatchHistory(): ArenaMatch[] {
+  const all = readArenaMatches()
+  const finished = all.filter((m) => m.status === "Finished")
+  return dedupeMatchesById(finished).sort((a, b) => (b.finishedAt ?? b.createdAt ?? 0) - (a.finishedAt ?? a.createdAt ?? 0))
 }
 
 export function readArenaMatches() {

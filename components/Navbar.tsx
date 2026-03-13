@@ -513,7 +513,7 @@ export default function Navbar() {
                 className="hidden items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.18)] transition hover:bg-white/[0.08] lg:flex"
               >
                 <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-emerald-300/20 bg-black/40">
-                  {profile.avatarUrl ? (
+                  {mounted && profile.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={profile.avatarUrl}
@@ -522,7 +522,7 @@ export default function Navbar() {
                     />
                   ) : (
                     <span className="text-sm font-black text-white/85">
-                      {profile.displayName.slice(0, 1).toUpperCase()}
+                      {mounted ? profile.displayName.slice(0, 1).toUpperCase() : "…"}
                     </span>
                   )}
                 </div>
@@ -530,7 +530,7 @@ export default function Navbar() {
                 <div className="text-left">
                   <div className="text-[11px] text-white/50">Profile</div>
                   <div className="max-w-[140px] truncate text-sm font-bold text-white">
-                    {profile.displayName}
+                    {mounted ? profile.displayName : "…"}
                   </div>
                 </div>
               </Link>

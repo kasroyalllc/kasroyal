@@ -15,6 +15,7 @@ import {
   getRankColors,
   getWalletActiveMatch,
   hasWalletActiveMatch,
+  isValidActiveMatch,
   joinArenaMatch,
   readArenaMatches,
   subscribeArenaMatches,
@@ -459,8 +460,17 @@ function MatchCard({
   )
 }
 
+function dedupeMatchesById(matches: ArenaMatch[]): ArenaMatch[] {
+  const byId = new Map<string, ArenaMatch>()
+  for (const m of matches) {
+    if (m?.id) byId.set(m.id, m)
+  }
+  return [...byId.values()]
+}
+
 export default function ArenaPage() {
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [matches, setMatches] = useState<ArenaMatch[]>([])
   const [selectedGame, setSelectedGame] = useState<GameType>("Connect 4")
   const [wagerInput, setWagerInput] = useState("5")
@@ -474,6 +484,10 @@ export default function ArenaPage() {
   const [customMode, setCustomMode] = useState(false)
   const [arenaMode, setArenaMode] = useState<"quick" | "ranked">("quick")
   const [, setTick] = useState(0)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     setMatches(readArenaMatches())
@@ -493,10 +507,32 @@ export default function ArenaPage() {
   }, [])
 
   const wager = clampWager(Number(wagerInput))
+
+  /** Arena = active only. No Finished/duplicates in main lists. */
+  const activeMatches = useMemo(() => {
+    const list = matches.filter(
+      (m) =>
+        (m.status === "Waiting for Opponent" ||
+          m.status === "Ready to Start" ||
+          m.status === "Live") &&
+        isValidActiveMatch(m)
+    )
+    return dedupeMatchesById(list)
+  }, [matches])
+
+  /** Match History = finished only, deduplicated. */
+  const historyMatches = useMemo(() => {
+    const list = matches.filter((m) => m.status === "Finished")
+    return dedupeMatchesById(list).sort(
+      (a, b) => (b.finishedAt ?? b.createdAt ?? 0) - (a.finishedAt ?? a.createdAt ?? 0)
+    )
+  }, [matches])
+
   const activeWalletMatch = useMemo(() => getWalletActiveMatch(), [matches])
   const walletLocked = useMemo(() => hasWalletActiveMatch(), [matches])
 
   const filteredMatches = useMemo(() => {
+    if (!mounted) return []
     const q = search.trim().toLowerCase()
     const id = getCurrentIdentity().id.toLowerCase()
     const name = getCurrentUser().name
@@ -511,7 +547,7 @@ export default function ArenaPage() {
       (m.challengerIdentityId && m.challengerIdentityId.toLowerCase() === id) ||
       (!!m.challenger && m.challenger.name === name)
 
-    return matches
+    return activeMatches
       .filter((match) => (gameFilter === "All" ? true : match.game === gameFilter))
       .filter((match) => {
         if (ownershipFilter === "All") return true
@@ -529,7 +565,7 @@ export default function ArenaPage() {
           (match.challenger?.name.toLowerCase().includes(q) ?? false)
         )
       })
-  }, [matches, gameFilter, ownershipFilter, search])
+  }, [activeMatches, gameFilter, ownershipFilter, search, mounted])
 
   const myReadyMatches = useMemo(() => {
     const id = getCurrentIdentity().id.toLowerCase()
@@ -843,20 +879,26 @@ export default function ArenaPage() {
               <div className="space-y-4">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">Player</div>
-                  <div className="mt-2 text-xl font-black">{getCurrentUser().name}</div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <RankBadge rank={getCurrentUser().rank} />
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/75">
-                      {getCurrentUser().rating} MMR
-                    </span>
-                  </div>
-                  {arenaMode === "ranked" && (
-                    <div className="mt-3 text-sm text-white/55">
-                      Wallet:{" "}
-                      <span className="font-bold text-emerald-300">
-                        {getCurrentUser().walletBalance.toFixed(2)} KAS
-                      </span>
-                    </div>
+                  {mounted ? (
+                    <>
+                      <div className="mt-2 text-xl font-black">{getCurrentUser().name}</div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <RankBadge rank={getCurrentUser().rank} />
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/75">
+                          {getCurrentUser().rating} MMR
+                        </span>
+                      </div>
+                      {arenaMode === "ranked" && (
+                        <div className="mt-3 text-sm text-white/55">
+                          Wallet:{" "}
+                          <span className="font-bold text-emerald-300">
+                            {getCurrentUser().walletBalance.toFixed(2)} KAS
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mt-2 h-8 w-32 animate-pulse rounded-lg bg-white/10" />
                   )}
                 </div>
 
@@ -1160,6 +1202,60 @@ export default function ArenaPage() {
                   <EmptyState
                     title="No personal matches yet"
                     text="Once you create or join a room, it will appear here."
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
+              <div className="mb-5">
+                <p className="text-sm uppercase tracking-[0.2em] text-white/50">Match History</p>
+                <h2 className="mt-2 text-2xl font-black">Finished Matches</h2>
+                <p className="mt-1 text-sm text-white/55">
+                  Completed games appear here. Arena above shows only active rooms.
+                </p>
+              </div>
+
+              <div className="grid gap-4">
+                {historyMatches.length ? (
+                  historyMatches.map((match) => (
+                    <div
+                      key={match.id}
+                      className="rounded-[24px] border border-sky-300/20 bg-sky-300/[0.04] p-5"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-300">
+                          {match.game}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
+                          BO{match.bestOf}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
+                          {mounted ? formatAge(match.finishedAt ?? match.createdAt) : "—"}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-baseline justify-between gap-4">
+                        <div>
+                          <div className="text-2xl font-black">
+                            {match.host.name} vs {match.challenger?.name ?? "—"}
+                          </div>
+                          <div className="mt-1 text-sm text-white/65">
+                            {getMatchResultLabel(match)}
+                          </div>
+                        </div>
+                        <Link
+                          href={`/arena/match/${match.id}`}
+                          className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white transition hover:bg-white/10"
+                        >
+                          View Result
+                        </Link>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState
+                    title="No finished matches yet"
+                    text="Completed games will appear here. Only active rooms show in Arena above."
                   />
                 )}
               </div>
