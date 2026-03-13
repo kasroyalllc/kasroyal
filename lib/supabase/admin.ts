@@ -7,7 +7,9 @@ import { createClient } from "@supabase/supabase-js"
  */
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_KEY
 
   if (!url) {
     throw new Error(
@@ -17,7 +19,9 @@ export function createAdminClient() {
   if (!serviceRoleKey) {
     throw new Error(
       "SUPABASE_SERVICE_ROLE_KEY is required for server-side room actions. " +
-        "Add it to .env.local (do not use NEXT_PUBLIC_)."
+        "Add it to .env.local with the service_role key from Supabase Dashboard → Settings → API. " +
+        "Use the exact name SUPABASE_SERVICE_ROLE_KEY (no NEXT_PUBLIC_). Restart the dev server after adding it. " +
+        "On Vercel/hosted deploy, add the variable in the project environment settings."
     )
   }
 
