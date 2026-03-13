@@ -16,6 +16,7 @@ import {
   getSideShare,
   isArenaBettable,
   isArenaSpectatable,
+  isRealSpectatableMatch,
   placeArenaSpectatorBet,
   readArenaMatches,
   subscribeArenaMatches,
@@ -230,18 +231,14 @@ export default function SpectatePage() {
   }, [])
 
   const filteredMatches = useMemo(() => {
-    const spectatable = allMatches.filter((match) => isArenaSpectatable(match))
+    const spectatable = allMatches.filter((match) => isRealSpectatableMatch(match))
     if (selectedFilter === "All") return spectatable
     return spectatable.filter((match) => match.game === selectedFilter)
   }, [allMatches, selectedFilter])
 
   const liveMatches = useMemo(() => {
     return filteredMatches
-      .filter(
-        (match) =>
-          isArenaSpectatable(match) &&
-          (match.status === "Ready to Start" || match.status === "Live")
-      )
+      .filter((match) => isRealSpectatableMatch(match))
       .sort((a, b) => {
         const aPriority = a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
         const bPriority = b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0

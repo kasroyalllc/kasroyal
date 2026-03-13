@@ -560,6 +560,18 @@ function isActiveMatchStatus(status: ArenaStatus) {
   )
 }
 
+/** Only treat as active if state is consistent: Waiting => no challenger; Ready/Live => has challenger. */
+function isValidActiveMatch(match: ArenaMatch): boolean {
+  if (!match.id || typeof match.id !== "string") return false
+  if (match.status === "Waiting for Opponent") {
+    return !match.challenger
+  }
+  if (match.status === "Ready to Start" || match.status === "Live") {
+    return !!match.challenger
+  }
+  return false
+}
+
 /** Match participant check: use hostIdentityId/challengerIdentityId when set, else fall back to name. */
 function matchHasIdentity(match: ArenaMatch, identityId: string) {
   const normalized = identityId.trim().toLowerCase()
@@ -583,6 +595,7 @@ function getActiveMatchForIdentity(identity?: string, excludeMatchId?: string) {
     readArenaMatches().find((match) => {
       if (excludeMatchId && match.id === excludeMatchId) return false
       if (!isActiveMatchStatus(match.status)) return false
+      if (!isValidActiveMatch(match)) return false
       return matchHasIdentity(match, normalized)
     }) ?? null
   )
@@ -1275,21 +1288,33 @@ function createDefaultStore(): ArenaStore {
   }
 }
 
+/** Drop orphan/ghost matches: Ready or Live with no challenger should not appear or be persisted. */
+function dropOrphanMatches(matches: ArenaMatch[]): ArenaMatch[] {
+  return matches.filter((m) => {
+    if (m.status === "Ready to Start" || m.status === "Live") {
+      return !!m.challenger
+    }
+    return true
+  })
+}
+
 function persistStore(nextStore: ArenaStore) {
+  const afterLifecycle = applyArenaLifecycle(
+    normalizeArenaMatches(
+      nextStore.matches.map((match) => ({
+        ...match,
+        pauseState: normalizePauseState(match.pauseState),
+      })),
+      Date.now()
+    ),
+    Date.now()
+  )
+  const cleanedMatches = dropOrphanMatches(afterLifecycle)
   const resolved: ArenaStore = {
     revision: nextStore.revision,
     updatedAt: nextStore.updatedAt,
     matches: applyBetsToMatches(
-      applyArenaLifecycle(
-        normalizeArenaMatches(
-          nextStore.matches.map((match) => ({
-            ...match,
-            pauseState: normalizePauseState(match.pauseState),
-          })),
-          Date.now()
-        ),
-        Date.now()
-      ),
+      cleanedMatches,
       [...nextStore.tickets].sort((a, b) => a.createdAt - b.createdAt)
     ),
     tickets: [...nextStore.tickets].sort((a, b) => a.createdAt - b.createdAt),
@@ -1515,6 +1540,12 @@ export function isArenaSpectatable(match: ArenaMatch) {
   )
 }
 
+/** Only real spectatable matches: Ready to Start or Live with both players (no ghost/stale). */
+export function isRealSpectatableMatch(match: ArenaMatch): boolean {
+  if (!match.id || !match.challenger) return false
+  return match.status === "Ready to Start" || match.status === "Live"
+}
+
 /** Ranked matches only; Quick Match has no betting. */
 export function isArenaBettable(match: ArenaMatch) {
   if (match.matchMode === "quick") return false
@@ -1659,9 +1690,10 @@ if (isBrowser()) {
 export function readArenaMatches() {
   startArenaLifecycleTicker()
   const raw = readMatchesFromStore()
+  const cleaned = dropOrphanMatches(raw)
   const now = Date.now()
   const withLifecycle = applyArenaLifecycle(
-    raw.map((match) => ({
+    cleaned.map((match) => ({
       ...match,
       pauseState: normalizePauseState(match.pauseState),
     })),
@@ -2155,7 +2187,8 @@ export function launchArenaMatch(matchId: string): ArenaMatch | null {
 
 /**
  * Cancel (quit) an open room. Host only, and only if no challenger has joined.
- * Removes the match from the store so the wallet is released from active-match lock.
+ * Removes this match AND any other open (no challenger) rooms for this host so
+ * no ghost rooms remain and active-match lock is released. Persists and broadcasts.
  */
 export function cancelOpenRoom(matchId: string, hostIdentity?: string): boolean {
   const identityId = (hostIdentity ?? getCurrentIdentity().id).trim().toLowerCase()
@@ -2176,16 +2209,23 @@ export function cancelOpenRoom(matchId: string, hostIdentity?: string): boolean 
     return false
   }
 
-  mutateArenaStore((store) => ({
-    ...store,
-    matches: store.matches.filter((m) => m.id !== matchId),
-  }))
+  mutateArenaStore((store) => {
+    const nextMatches = store.matches.filter((m) => {
+      if (m.id === matchId) return false
+      if (m.challenger) return true
+      const hostId = (m.hostIdentityId ?? normalizePlayerIdentity(m.host.name)).toLowerCase()
+      if (hostId === identityId) return false
+      return true
+    })
+    return { ...store, matches: nextMatches }
+  })
   return true
 }
 
 /**
  * Forfeit the match. Only seated players; allowed in Ready to Start or Live.
- * Opponent wins; match becomes Finished; betting locks; wallet released.
+ * Opponent wins; match becomes Finished; betting locks; both identities released.
+ * Removes any duplicate/orphan matches with same host+challenger so no ghost rooms remain.
  */
 export function forfeitArenaMatch(matchId: string, forfeitingSide: ArenaSide): ArenaMatch | null {
   const match = getArenaById(matchId)
@@ -2203,15 +2243,45 @@ export function forfeitArenaMatch(matchId: string, forfeitingSide: ArenaSide): A
   }
 
   const winner: ArenaSide = forfeitingSide === "host" ? "challenger" : "host"
+  const hostId = (match.hostIdentityId ?? "").toLowerCase()
+  const challengerId = (match.challengerIdentityId ?? "").toLowerCase()
 
-  return updateArenaMatch(matchId, () => ({
-    status: "Finished",
-    bettingStatus: "locked",
-    result: winner,
-    finishedAt: Date.now(),
-    statusText: winner === "host" ? `${match.host.name} wins by forfeit` : `${match.challenger?.name ?? "Challenger"} wins by forfeit`,
-    moveText: "Forfeit",
-  }))
+  let updated: ArenaMatch | null = null
+
+  mutateArenaStore((store) => {
+    const nowTs = Date.now()
+    const finishedMatch: ArenaMatch = {
+      ...match,
+      status: "Finished",
+      bettingStatus: "locked",
+      result: winner,
+      finishedAt: nowTs,
+      statusText: winner === "host" ? `${match.host.name} wins by forfeit` : `${match.challenger?.name ?? "Challenger"} wins by forfeit`,
+      moveText: "Forfeit",
+    }
+
+    const nextMatches = store.matches.map((m) => {
+      if (m.id === matchId) {
+        updated = { ...finishedMatch, pauseState: normalizePauseState(match.pauseState) }
+        return updated
+      }
+      if (m.status !== "Ready to Start" && m.status !== "Live") return m
+      if (!m.challenger) return m
+      const mHost = (m.hostIdentityId ?? "").toLowerCase()
+      const mChall = (m.challengerIdentityId ?? "").toLowerCase()
+      if (mHost === hostId && mChall === challengerId) {
+        return { ...m, status: "Finished" as ArenaStatus, bettingStatus: "locked" as const, result: winner, finishedAt: nowTs }
+      }
+      return m
+    })
+
+    return { ...store, matches: nextMatches }
+  })
+
+  if (updated) {
+    void syncMatchToSupabase(updated)
+  }
+  return updated
 }
 
 export function pauseArenaMatch(matchId: string, side: ArenaSide): ArenaMatch | null {
