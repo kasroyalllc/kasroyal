@@ -251,10 +251,10 @@ export default function WalletPage() {
             <StatusPill ok={rpcHealthy} label={rpcHealthy ? "RPC Online" : "RPC Offline"} />
             <StatusPill ok={chainHealthy} label={chainHealthy ? network : "Chain Unknown"} />
             <Link
-              href="/tx"
+              href="/activity"
               className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-300 transition hover:bg-amber-300/15"
             >
-              Tx Console
+              Wallet Activity
             </Link>
           </div>
         </div>

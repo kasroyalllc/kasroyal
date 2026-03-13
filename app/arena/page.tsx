@@ -832,51 +832,19 @@ export default function ArenaPage() {
 
       <div className="relative z-10 mx-auto max-w-[1280px] px-4 py-6 md:px-6 md:py-8">
         <div className="mb-6 rounded-2xl border border-white/10 bg-[var(--surface-card)] p-5 shadow-[0_0_30px_rgba(0,0,0,0.2)] md:mb-8 md:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-3 inline-flex rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">
-                Arena Lobby
-              </div>
-              <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl">
-                Quick Match · Ranked Match
-              </h1>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
-                <span className="text-emerald-300/90">Quick</span> — free, no wallet.{" "}
-                <span className="text-amber-300/90">Ranked</span> — wager and climb.
-              </p>
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">
+              Arena
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-              <MetricCard
-                label="Ready to Enter"
-                value={`${myReadyMatches.length}`}
-                accent="text-fuchsia-300"
-              />
-              <MetricCard
-                label="Joinable"
-                value={`${joinableMatches.length}`}
-                accent="text-amber-300"
-              />
-              <MetricCard label="My Matches" value={`${myMatches.length}`} accent="text-sky-300" />
-              <MetricCard
-                label="Live Arenas"
-                value={`${liveMatches.length}`}
-                accent="text-emerald-300"
-              />
-            </div>
+            <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl">
+              Active play · Create or join
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
+              <span className="text-emerald-300/90">Quick</span> — free play.{" "}
+              <span className="text-amber-300/90">Ranked</span> — wager and climb. Finished games are in History.
+            </p>
           </div>
         </div>
-
-        {activeWalletMatch ? (
-          <div className="mb-4">
-            <Link
-              href={`/arena/match/${activeWalletMatch.id}`}
-              className="flex items-center justify-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-5 py-3.5 text-base font-bold text-emerald-100 shadow-[0_0_24px_rgba(16,185,129,0.12)] transition hover:border-emerald-400/40 hover:bg-emerald-500/20"
-            >
-              <span className="text-xl">🎮</span>
-              Return to game — {activeWalletMatch.game} · {activeWalletMatch.status}
-            </Link>
-          </div>
-        ) : null}
 
         {DEV_RESET_ENABLED ? (
           <div className="mb-6">
@@ -901,8 +869,39 @@ export default function ArenaPage() {
         {activeWalletMatch ? <ActiveWalletLockBanner match={activeWalletMatch} /> : null}
 
         <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+          {/* Sticky left action rail: Return to game, Create Match, compact live stats */}
           <aside id="arena-create" className="xl:sticky xl:top-6 xl:self-start space-y-5">
-            {/* Mode switcher: Quick (default) vs Ranked */}
+            {activeWalletMatch ? (
+              <Link
+                href={`/arena/match/${activeWalletMatch.id}`}
+                className="flex items-center justify-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-5 py-3.5 text-sm font-bold text-emerald-100 shadow-[0_0_24px_rgba(16,185,129,0.12)] transition hover:border-emerald-400/40 hover:bg-emerald-500/20"
+              >
+                <span className="text-lg">🎮</span>
+                Return to game — {activeWalletMatch.game}
+              </Link>
+            ) : null}
+
+            {/* Compact live stats */}
+            <div className="grid grid-cols-2 gap-2">
+              <MetricCard
+                label="Ready to Enter"
+                value={`${myReadyMatches.length}`}
+                accent="text-fuchsia-300"
+              />
+              <MetricCard
+                label="Joinable"
+                value={`${joinableMatches.length}`}
+                accent="text-amber-300"
+              />
+              <MetricCard label="My Matches" value={`${myMatches.length}`} accent="text-sky-300" />
+              <MetricCard
+                label="Live"
+                value={`${liveMatches.length}`}
+                accent="text-emerald-300"
+              />
+            </div>
+
+            {/* Create Match panel */}
             <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.2)] md:p-5">
               <div className="mb-4">
                 <p className="text-sm uppercase tracking-[0.2em] text-white/50">
@@ -1087,6 +1086,13 @@ export default function ArenaPage() {
                 </div>
               </div>
             </div>
+
+            <Link
+              href="/history"
+              className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center text-sm font-bold text-white/80 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              Match History →
+            </Link>
           </aside>
 
           {/* Floating Create Match on smaller screens for quick access */}
@@ -1287,20 +1293,6 @@ export default function ArenaPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-emerald-400/5 p-4 md:p-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/80">
-                Completed games
-              </p>
-              <p className="mt-1 text-sm text-white/60">
-                View match history and results on the dedicated History page.
-              </p>
-              <Link
-                href="/history"
-                className="mt-4 inline-flex rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-5 py-3 text-sm font-bold text-emerald-200 transition hover:bg-emerald-500/20"
-              >
-                Open Match History →
-              </Link>
-            </div>
           </section>
         </div>
       </div>

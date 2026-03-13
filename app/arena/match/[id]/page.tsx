@@ -654,6 +654,7 @@ export default function ArenaMatchPage() {
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
+  const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -819,6 +820,10 @@ export default function ArenaMatchPage() {
     const poll = window.setInterval(() => { void refreshChat() }, 1500)
     return () => window.clearInterval(poll)
   }, [matchId, refreshChat])
+
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }, [chatMessages])
 
   useEffect(() => {
     if (!matchId || !match || match.status !== "Ready to Start" || !match.challenger) return
@@ -2140,42 +2145,46 @@ export default function ArenaMatchPage() {
                 </GameBoardShell>
               )}
 
-              {/* Room Chat — under board, center column, premium size */}
+              {/* Room Chat — under board, center column; mobile-friendly composer + scroll */}
               <div className="mt-5 w-full">
-                <div className="rounded-2xl border border-emerald-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_28px_rgba(16,185,129,0.08)] ring-1 ring-emerald-400/10">
-                  <div className="mb-3 flex items-center justify-between">
+                <div className="flex max-h-[75vh] flex-col rounded-2xl border border-emerald-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_28px_rgba(16,185,129,0.08)] ring-1 ring-emerald-400/10 md:max-h-none">
+                  <div className="mb-3 flex shrink-0 items-center justify-between">
                     <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
                     <span className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-200">
                       Live
                     </span>
                   </div>
-                  <div className="min-h-[240px] max-h-[380px] space-y-2.5 overflow-y-auto rounded-xl border border-white/8 bg-black/25 p-3.5">
+                  <div className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none">
                     {chatMessages.length === 0 ? (
-                      <div className="flex min-h-[220px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45">
+                      <div className="flex min-h-[120px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45 md:min-h-[220px]">
                         No messages yet. Say something!
                       </div>
                     ) : (
-                      chatMessages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className="rounded-xl border border-white/5 bg-white/[0.04] px-4 py-3 transition hover:bg-white/[0.06]"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-emerald-300">{msg.user}</span>
-                            <span className="text-xs uppercase tracking-wider text-white/40">
-                              {new Date(msg.ts).toLocaleTimeString(undefined, {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
+                      <>
+                        {chatMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className="rounded-xl border border-white/5 bg-white/[0.04] px-4 py-3 transition hover:bg-white/[0.06]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-emerald-300">{msg.user}</span>
+                              <span className="text-xs uppercase tracking-wider text-white/40">
+                                {new Date(msg.ts).toLocaleTimeString(undefined, {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                            <div className="mt-2 break-words text-base leading-snug text-white/90">{msg.text}</div>
                           </div>
-                          <div className="mt-2 break-words text-base leading-snug text-white/90">{msg.text}</div>
-                        </div>
-                      ))
+                        ))}
+                        <div ref={chatMessagesEndRef} className="h-0 shrink-0" aria-hidden />
+                      </>
                     )}
                   </div>
                   <form
-                    className="mt-4 flex gap-3"
+                    className="mt-4 flex shrink-0 gap-2 pb-[env(safe-area-inset-bottom)] md:gap-3 md:pb-0"
+                    style={{ scrollMarginBottom: 24 }}
                     onSubmit={async (e) => {
                       e.preventDefault()
                       const text = chatInput.trim()
@@ -2206,12 +2215,14 @@ export default function ArenaMatchPage() {
                       onChange={(e) => setChatInput(e.target.value)}
                       placeholder="Type a message…"
                       maxLength={500}
-                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-4 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20"
+                      autoComplete="off"
+                      className="min-h-[48px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:py-4"
+                      style={{ fontSize: "16px" }}
                     />
                     <button
                       type="submit"
                       disabled={!chatInput.trim()}
-                      className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-6 py-4 text-base font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="touch-manipulation min-h-[48px] min-w-[52px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:px-6 md:py-4"
                     >
                       Send
                     </button>

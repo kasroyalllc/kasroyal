@@ -512,11 +512,11 @@ export default function HomePage() {
             Spectate
           </Link>
           <Link
-            href="/tx"
+            href="/activity"
             onClick={playClick}
             className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/50 hover:bg-white/10"
           >
-            Tx console
+            Wallet Activity
           </Link>
         </section>
       </div>

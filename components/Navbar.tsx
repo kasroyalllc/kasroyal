@@ -43,11 +43,10 @@ const DISCONNECT_STORAGE_KEY = "kasroyal_wallet_disconnected"
 const navItems = [
   { href: "/arena", label: "Arena" },
   { href: "/spectate", label: "Spectate" },
-  { href: "/bets", label: "Bets" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/history", label: "History" },
   { href: "/profile", label: "Profile" },
-  { href: "/tx", label: "Tx Console" },
+  { href: "/activity", label: "Wallet Activity" },
 ]
 
 function getDisconnectFlag() {

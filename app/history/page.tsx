@@ -10,11 +10,19 @@ import type { Room } from "@/lib/engine/match/types"
 
 function HistoryCard({
   match,
+  mounted,
 }: {
   match: ReturnType<typeof roomToArenaMatch>
+  mounted: boolean
 }) {
   const resultLabel = getMatchResultLabel(match)
-  const age = formatAge(match.finishedAt ?? match.createdAt)
+  const endedTime = formatAge(match.finishedAt ?? match.createdAt)
+  const hasWager = match.matchMode === "ranked" && (match.wager ?? 0) > 0
+  const poolLabel = hasWager
+    ? match.playerPot > 0
+      ? `Pool ${match.playerPot} KAS`
+      : `Wager ${match.wager} KAS`
+    : null
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.1)] transition hover:border-sky-400/20 hover:bg-white/[0.03] md:p-5">
@@ -27,9 +35,14 @@ function HistoryCard({
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
               BO{match.bestOf}
             </span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
-              {age}
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70" title="Ended">
+              {mounted ? endedTime : "—"}
             </span>
+            {poolLabel ? (
+              <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
+                {poolLabel}
+              </span>
+            ) : null}
             {match.winReason ? (
               <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
                 {match.winReason === "timeout"
@@ -114,7 +127,7 @@ export default function HistoryPage() {
             Completed Games
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
-            Finished matches and results. Active rooms and creation are on the Arena page.
+            Completed match archive. Results, ended time, and wager info. Active play is on the Arena.
           </p>
         </div>
 
@@ -128,9 +141,9 @@ export default function HistoryPage() {
         </div>
 
         <section className="space-y-4">
-          {historyMatches.length > 0 ? (
+          {          historyMatches.length > 0 ? (
             historyMatches.map((match) => (
-              <HistoryCard key={match.id} match={match} />
+              <HistoryCard key={match.id} match={match} mounted={mounted} />
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
