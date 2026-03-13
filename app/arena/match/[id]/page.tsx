@@ -257,40 +257,42 @@ function CountdownOverlay({
         : "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
 
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[26px] border border-white/10 bg-[rgba(3,8,7,0.84)] backdrop-blur-md">
+    <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[26px] border border-white/10 bg-[rgba(3,8,7,0.88)] backdrop-blur-md">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.18),transparent_36%),radial-gradient(circle_at_bottom,rgba(251,191,36,0.10),transparent_30%)]" />
         <div className="absolute inset-0 animate-pulse bg-[linear-gradient(115deg,transparent,rgba(255,255,255,0.04),transparent)]" />
       </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center px-6 text-center">
-        <div className="mb-4 inline-flex animate-pulse rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
+      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
+        <div className="mb-3 inline-flex animate-pulse rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
           Match Starting Soon
         </div>
 
-        <div className="text-4xl font-black tracking-wide text-white sm:text-5xl">
+        <div className="text-3xl font-black tracking-wide text-white sm:text-4xl">
           {hostName} vs {challengerName}
         </div>
 
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-white/75 sm:text-base">
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70 sm:text-base">
           {isQuickMatch
             ? "Match starts when the timer hits zero. No betting in Quick Play."
             : "Betting is open right now. Lock your side before the market closes and the match goes live."}
         </p>
 
-        <div className="mt-8 flex items-center justify-center gap-4">
+        <div className="mt-6 flex items-center justify-center gap-4">
           <div
-            className={`flex h-28 w-28 items-center justify-center rounded-full border text-5xl font-black shadow-[0_0_45px_rgba(255,215,0,0.18)] ${tone}`}
+            className={`flex h-24 w-24 shrink-0 items-center justify-center rounded-full border text-4xl font-black shadow-[0_0_45px_rgba(255,215,0,0.18)] sm:h-28 sm:w-28 sm:text-5xl ${tone}`}
           >
             {seconds}
           </div>
         </div>
 
         <div
-          className="mt-6 min-h-[3.5rem] animate-pulse rounded-2xl border border-amber-300/25 bg-amber-300/10 px-6 py-4 text-center text-base font-bold leading-snug text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.15)] sm:text-lg"
+          className="mt-6 flex min-h-[120px] w-full max-w-3xl items-center justify-center rounded-2xl border-2 border-amber-300/30 bg-amber-300/10 px-6 py-8 text-center shadow-[0_0_32px_rgba(251,191,36,0.2)]"
           key={hypeLine}
         >
-          {hypeLine}
+          <p className="animate-pulse text-xl font-black leading-snug text-amber-100 drop-shadow-md sm:text-2xl md:text-3xl">
+            {hypeLine}
+          </p>
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -677,9 +679,11 @@ export default function ArenaMatchPage() {
     const unsubscribeMatches = subscribeArenaMatches(syncRoom)
     const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
 
+    const pollInterval = window.setInterval(syncRoom, 1500)
     return () => {
       unsubscribeMatches()
       unsubscribeTickets()
+      window.clearInterval(pollInterval)
     }
   }, [matchId])
 
@@ -726,7 +730,7 @@ export default function ArenaMatchPage() {
 
     const interval = window.setInterval(() => {
       setCountdownLineIndex((value) => value + 1)
-    }, 2200)
+    }, 2000)
 
     return () => window.clearInterval(interval)
   }, [match])
@@ -754,9 +758,14 @@ export default function ArenaMatchPage() {
 
   useEffect(() => {
     if (!matchId) return
-    setChatMessages(getRoomChat(matchId))
-    const unsub = subscribeRoomChat(matchId, () => setChatMessages(getRoomChat(matchId)))
-    return unsub
+    const syncChat = () => setChatMessages(getRoomChat(matchId))
+    syncChat()
+    const unsub = subscribeRoomChat(matchId, syncChat)
+    const poll = window.setInterval(syncChat, 2000)
+    return () => {
+      unsub()
+      window.clearInterval(poll)
+    }
   }, [matchId])
 
   useEffect(() => {
@@ -2180,6 +2189,7 @@ export default function ArenaMatchPage() {
                       const text = chatInput.trim()
                       if (!text) return
                       appendRoomChat(matchId, { user: currentUserProfile.name, text })
+                      setChatMessages(getRoomChat(matchId))
                       setChatInput("")
                     }}
                   >

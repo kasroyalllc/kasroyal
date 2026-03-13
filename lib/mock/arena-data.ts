@@ -855,8 +855,18 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
           }
 
           if (bettingClosesAt <= nowTs) {
-            const startedAt = match.startedAt ?? bettingClosesAt
             const quickLive = match.matchMode === "quick"
+            const startedAt = match.startedAt ?? nowTs
+            const existingLiveBoard =
+              match.status === "Live" &&
+              match.boardState &&
+              typeof match.boardState === "object" &&
+              "turnDeadlineTs" in match.boardState &&
+              typeof (match.boardState as { turnDeadlineTs: number }).turnDeadlineTs === "number" &&
+              (match.boardState as { turnDeadlineTs: number }).turnDeadlineTs > nowTs
+            const boardState = existingLiveBoard
+              ? match.boardState
+              : createLiveBoardState(match.game, nowTs)
 
             match = {
               ...match,
@@ -875,7 +885,7 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
                 match.host.name
               ),
               moveText: getLiveMoveText(match.game),
-              boardState: createLiveBoardState(match.game, startedAt),
+              boardState,
               pauseState: normalizePauseState(match.pauseState),
             }
           }
@@ -883,6 +893,12 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
 
         if (match.status === "Live") {
           const quickLive = match.matchMode === "quick"
+          const hasValidBoard =
+            match.boardState &&
+            typeof match.boardState === "object" &&
+            "turnDeadlineTs" in match.boardState &&
+            typeof (match.boardState as { turnDeadlineTs: number | null }).turnDeadlineTs === "number"
+          const fallbackStarted = match.startedAt ?? nowTs
           match = {
             ...match,
             bettingStatus: "locked",
@@ -890,7 +906,10 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
             isFeaturedMarket: !quickLive,
             timeoutStrikesHost: match.timeoutStrikesHost ?? 0,
             timeoutStrikesChallenger: match.timeoutStrikesChallenger ?? 0,
-            boardState: match.boardState ?? createLiveBoardState(match.game, match.startedAt ?? nowTs),
+            boardState:
+              hasValidBoard
+                ? match.boardState
+                : createLiveBoardState(match.game, fallbackStarted),
           }
 
           match = resolvePausedMatch(match, nowTs)
@@ -1839,15 +1858,13 @@ function readRoomChatStore(): Record<string, RoomChatMessage[]> {
 function writeRoomChatStore(store: Record<string, RoomChatMessage[]>, updatedMatchId?: string) {
   if (!isBrowser()) return
   try {
-    window.localStorage.setItem(ROOM_CHAT_STORAGE_KEY, JSON.stringify(store))
+    const serialized = JSON.stringify(store)
+    window.localStorage.setItem(ROOM_CHAT_STORAGE_KEY, serialized)
+    const channel = getBroadcastChannel()
+    channel?.postMessage({ type: "room-chat-updated", matchId: updatedMatchId })
     window.dispatchEvent(
       new CustomEvent(ROOM_CHAT_EVENT, { detail: updatedMatchId != null ? { matchId: updatedMatchId } : {} })
     )
-    window.dispatchEvent(
-      new StorageEvent("storage", { key: ROOM_CHAT_STORAGE_KEY, newValue: JSON.stringify(store) })
-    )
-    const channel = getBroadcastChannel()
-    channel?.postMessage({ type: "room-chat-updated", matchId: updatedMatchId })
   } catch {
     // ignore
   }
@@ -1870,6 +1887,14 @@ export function appendRoomChat(
   store[matchId] = [...list, msg]
   writeRoomChatStore(store, matchId)
   return msg
+}
+
+/** Send a room chat message (same as appendRoomChat). Use with subscribeRoomChat for shared live chat. */
+export function sendRoomChatMessage(
+  matchId: string,
+  message: { user: string; text: string }
+): RoomChatMessage {
+  return appendRoomChat(matchId, message)
 }
 
 export function subscribeRoomChat(matchId: string, callback: () => void): () => void {
