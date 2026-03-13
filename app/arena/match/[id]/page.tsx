@@ -2274,12 +2274,17 @@ export default function ArenaMatchPage() {
                       </>
                     )}
                   </div>
-                  {/* Desktop: form inline. Mobile: form in portal at body so no overflow/z-index blocks focus or send. */}
+                  {/* Desktop: form inline. Mobile: form in portal at body — high z-index and isolation so it stays usable during live gameplay (no overlay/stacking blocking input or send). */}
                   {isMobileView && mounted && typeof document !== "undefined"
                     ? createPortal(
                         <div
-                          className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-white/10 bg-[var(--surface-card)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
-                          style={{ pointerEvents: "auto" }}
+                          className="fixed bottom-0 left-0 right-0 z-[2147483646] isolate border-t border-white/10 bg-[var(--surface-card)] p-3 shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
+                          style={{
+                            pointerEvents: "auto",
+                            touchAction: "manipulation",
+                            paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+                          }}
+                          data-mobile-chat-composer
                         >
                           <form
                             ref={chatFormRef}

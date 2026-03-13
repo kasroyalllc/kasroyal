@@ -11,14 +11,14 @@ import type { Room } from "@/lib/engine/match/types"
 
 const CLEARED_HISTORY_KEY = "kasroyal_cleared_history"
 
-function getClearedHistoryStorageKey(identityId: string): string {
-  return `${CLEARED_HISTORY_KEY}_${identityId}`
+function getClearedHistoryStorageKey(identityId: string, mode: HistoryTab): string {
+  return `${CLEARED_HISTORY_KEY}_${identityId}_${mode}`
 }
 
-function loadClearedMatchIds(identityId: string): Set<string> {
+function loadClearedMatchIds(identityId: string, mode: HistoryTab): Set<string> {
   if (typeof window === "undefined") return new Set()
   try {
-    const raw = window.localStorage.getItem(getClearedHistoryStorageKey(identityId))
+    const raw = window.localStorage.getItem(getClearedHistoryStorageKey(identityId, mode))
     if (!raw) return new Set()
     const arr = JSON.parse(raw) as unknown
     return new Set(Array.isArray(arr) ? arr.filter((id): id is string => typeof id === "string") : [])
@@ -27,10 +27,10 @@ function loadClearedMatchIds(identityId: string): Set<string> {
   }
 }
 
-function saveClearedMatchIds(identityId: string, ids: Set<string>): void {
+function saveClearedMatchIds(identityId: string, mode: HistoryTab, ids: Set<string>): void {
   if (typeof window === "undefined") return
   try {
-    window.localStorage.setItem(getClearedHistoryStorageKey(identityId), JSON.stringify([...ids]))
+    window.localStorage.setItem(getClearedHistoryStorageKey(identityId, mode), JSON.stringify([...ids]))
   } catch {
     // ignore
   }
@@ -111,7 +111,8 @@ export default function HistoryPage() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState<HistoryTab>("ranked")
-  const [clearedIds, setClearedIds] = useState<Set<string>>(new Set())
+  const [clearedIdsRanked, setClearedIdsRanked] = useState<Set<string>>(new Set())
+  const [clearedIdsQuick, setClearedIdsQuick] = useState<Set<string>>(new Set())
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const identityId = getCurrentIdentity().id
@@ -128,7 +129,10 @@ export default function HistoryPage() {
   }, [])
 
   useEffect(() => {
-    if (mounted) setClearedIds(loadClearedMatchIds(identityId))
+    if (mounted) {
+      setClearedIdsRanked(loadClearedMatchIds(identityId, "ranked"))
+      setClearedIdsQuick(loadClearedMatchIds(identityId, "quick"))
+    }
   }, [mounted, identityId])
 
   useEffect(() => {
@@ -155,26 +159,34 @@ export default function HistoryPage() {
 
   const historyMatches = useMemo(() => rooms.map(roomToArenaMatch), [rooms])
   const rankedMatches = useMemo(
-    () => historyMatches.filter((m) => m.matchMode === "ranked" && !clearedIds.has(m.id)),
-    [historyMatches, clearedIds]
+    () => historyMatches.filter((m) => m.matchMode === "ranked" && !clearedIdsRanked.has(m.id)),
+    [historyMatches, clearedIdsRanked]
   )
   const quickMatches = useMemo(
-    () => historyMatches.filter((m) => (m.matchMode === "quick" || m.matchMode === undefined) && !clearedIds.has(m.id)),
-    [historyMatches, clearedIds]
+    () => historyMatches.filter((m) => (m.matchMode === "quick" || m.matchMode === undefined) && !clearedIdsQuick.has(m.id)),
+    [historyMatches, clearedIdsQuick]
   )
   const displayedMatches = activeTab === "ranked" ? rankedMatches : quickMatches
-  const allVisibleMatchIds = useMemo(
-    () => [...rankedMatches, ...quickMatches].map((m) => m.id),
-    [rankedMatches, quickMatches]
+  const currentTabMatchIds = useMemo(
+    () => (activeTab === "ranked" ? rankedMatches : quickMatches).map((m) => m.id),
+    [activeTab, rankedMatches, quickMatches]
   )
+  const hasCurrentTabHistory = activeTab === "ranked" ? rankedMatches.length > 0 : quickMatches.length > 0
 
   const handleClearHistory = useCallback(() => {
-    const next = new Set(clearedIds)
-    allVisibleMatchIds.forEach((id) => next.add(id))
-    setClearedIds(next)
-    saveClearedMatchIds(identityId, next)
+    if (activeTab === "ranked") {
+      const next = new Set(clearedIdsRanked)
+      currentTabMatchIds.forEach((id) => next.add(id))
+      setClearedIdsRanked(next)
+      saveClearedMatchIds(identityId, "ranked", next)
+    } else {
+      const next = new Set(clearedIdsQuick)
+      currentTabMatchIds.forEach((id) => next.add(id))
+      setClearedIdsQuick(next)
+      saveClearedMatchIds(identityId, "quick", next)
+    }
     setShowClearConfirm(false)
-  }, [clearedIds, allVisibleMatchIds, identityId])
+  }, [activeTab, clearedIdsRanked, clearedIdsQuick, currentTabMatchIds, identityId])
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
@@ -231,7 +243,7 @@ export default function HistoryPage() {
               Quick Match
             </button>
           </div>
-          {(rankedMatches.length > 0 || quickMatches.length > 0) ? (
+          {hasCurrentTabHistory ? (
             <button
               type="button"
               onClick={() => setShowClearConfirm(true)}
@@ -246,9 +258,13 @@ export default function HistoryPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowClearConfirm(false)} />
             <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[var(--surface-card)] p-6 shadow-2xl">
-              <p className="text-lg font-bold text-white">Are you sure you want to clear your match history?</p>
+              <p className="text-lg font-bold text-white">
+                {activeTab === "ranked"
+                  ? "Are you sure you want to clear your Ranked history?"
+                  : "Are you sure you want to clear your Quick Match history?"}
+              </p>
               <p className="mt-2 text-sm text-white/65">
-                This will hide all visible history for this account. Match data is not deleted and is still used elsewhere.
+                This will hide {activeTab === "ranked" ? "Ranked" : "Quick Match"} history for this account. The other tab is not affected. Match data is not deleted.
               </p>
               <div className="mt-6 flex gap-3">
                 <button
@@ -263,7 +279,7 @@ export default function HistoryPage() {
                   onClick={handleClearHistory}
                   className="flex-1 rounded-2xl border border-red-400/30 bg-red-500/20 px-4 py-3 text-sm font-bold text-red-200 transition hover:bg-red-500/30"
                 >
-                  Clear History
+                  Clear {activeTab === "ranked" ? "Ranked" : "Quick Match"} History
                 </button>
               </div>
             </div>
