@@ -67,6 +67,12 @@ Blockchain:
 
 ---
 
+## Roadmap
+
+Planned production features (e.g. transactional email receipts) are documented in [ROADMAP.md](./ROADMAP.md). Implement only after core gameplay and wallet flows are stable.
+
+---
+
 ## Development
 
 Install dependencies:
