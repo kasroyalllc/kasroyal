@@ -8,9 +8,8 @@ import { mapDbRowToRoom, type GameType } from "@/lib/engine/match/types"
 export const dynamic = "force-dynamic"
 
 /**
- * Transition room from Ready to Start -> Live exactly once.
- * Initialize board_state, assign first turn, start move timer, lock betting.
- * Idempotent: rejects or no-ops if already Live.
+ * Transition room from Ready to Start -> Live only after pre-game countdown expires.
+ * Uses countdown_started_at + countdown_seconds as source of truth. Sets turn_expires_at for DB-authoritative timer.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -48,6 +47,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const now = new Date()
+    const nowMs = now.getTime()
+    const countdownEndMs =
+      (room.countdownStartedAt ?? 0) + room.countdownSeconds * 1000
+    if (nowMs < countdownEndMs) {
+      return NextResponse.json(
+        { ok: true, room, countdownNotExpired: true },
+        { headers: { "Cache-Control": "no-store" } }
+      )
+    }
+
     const gameType = room.game as GameType
     if (gameType !== "Connect 4" && gameType !== "Tic-Tac-Toe") {
       return NextResponse.json(
@@ -56,22 +66,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const now = new Date().toISOString()
+    const nowIso = now.toISOString()
     const moveSeconds = getMoveSecondsForGame(gameType)
     const boardState = createInitialBoardState(gameType)
+    const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
 
     const { data, error } = await supabase
       .from("matches")
       .update({
         status: "Live",
-        live_started_at: now,
-        started_at: now,
+        live_started_at: nowIso,
+        started_at: nowIso,
         betting_open: false,
         board_state: boardState,
         move_turn_identity_id: room.hostIdentityId,
-        move_turn_started_at: now,
+        move_turn_started_at: nowIso,
         move_turn_seconds: moveSeconds,
-        updated_at: now,
+        turn_expires_at: turnExpiresAt,
+        updated_at: nowIso,
       })
       .eq("id", roomId)
       .eq("status", "Ready to Start")

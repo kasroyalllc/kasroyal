@@ -17,16 +17,11 @@ function defaultPlayer(name: string): PlayerProfile {
   }
 }
 
-/** Enrich board_state with backend move timer (turnDeadlineTs) when missing. */
+/** Enrich board_state with DB-authoritative turn deadline (turnExpiresAt). */
 function enrichBoardStateWithMoveTimer(room: Room): unknown {
   const raw = room.boardState
   if (room.status !== "Live" || !raw || typeof raw !== "object") return raw
-  const moveStart = room.moveTurnStartedAt
-  const moveSeconds = room.moveTurnSeconds
-  const deadlineMs =
-    moveStart != null && moveSeconds != null
-      ? moveStart + moveSeconds * 1000
-      : null
+  const deadlineMs = room.turnExpiresAt ?? null
   const withDeadline = { ...(raw as Record<string, unknown>), turnDeadlineTs: deadlineMs }
   return withDeadline
 }
@@ -98,6 +93,8 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
           ? ("challenger" as const)
           : null
       : null,
+    winReason: room.winReason ?? undefined,
+    turnExpiresAt: room.turnExpiresAt ?? undefined,
     moveHistory: [],
     boardState: boardState ?? room.boardState,
     timeoutStrikesHost: room.hostTimeoutStrikes,

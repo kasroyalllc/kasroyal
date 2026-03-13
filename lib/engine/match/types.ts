@@ -160,6 +160,8 @@ export type Room = {
   moveTurnIdentityId: string | null
   moveTurnStartedAt: number | null
   moveTurnSeconds: number | null
+  /** DB-authoritative turn deadline (ms). UI uses this for "time left" only. */
+  turnExpiresAt: number | null
   hostTimeoutStrikes: number
   challengerTimeoutStrikes: number
   winnerIdentityId: string | null
@@ -234,6 +236,12 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
     : row.last_move_at
       ? new Date(String(row.last_move_at)).getTime()
       : null
+  const moveTurnSeconds = row.move_turn_seconds != null ? Number(row.move_turn_seconds) : null
+  const turnExpiresAt = row.turn_expires_at != null
+    ? new Date(String(row.turn_expires_at)).getTime()
+    : moveTurnStartedAt != null && moveTurnSeconds != null
+      ? moveTurnStartedAt + moveTurnSeconds * 1000
+      : null
   const createdAt = row.created_at ? new Date(String(row.created_at)).getTime() : 0
   const updatedAt = row.updated_at
     ? new Date(String(row.updated_at)).getTime()
@@ -269,8 +277,8 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
         ? String(row.move_turn_identity_id)
         : null,
     moveTurnStartedAt,
-    moveTurnSeconds:
-      row.move_turn_seconds != null ? Number(row.move_turn_seconds) : null,
+    moveTurnSeconds: moveTurnSeconds,
+    turnExpiresAt,
     hostTimeoutStrikes: Number(row.host_timeout_strikes ?? 0),
     challengerTimeoutStrikes: Number(row.challenger_timeout_strikes ?? 0),
     winnerIdentityId:

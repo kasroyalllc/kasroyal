@@ -4,7 +4,6 @@ import { getRoomById } from "@/lib/rooms/rooms-service"
 import { createInitialBoardState } from "@/lib/rooms/game-board"
 import {
   getMoveSecondsForGame,
-  PRE_MATCH_COUNTDOWN_SECONDS,
   TIMEOUT_STRIKES_TO_LOSE,
 } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
@@ -13,11 +12,10 @@ import type { GameType } from "@/lib/engine/match/types"
 export const dynamic = "force-dynamic"
 
 /**
- * Resolve time-based transitions on the backend (idempotent):
- * - Ready -> Live when countdown expires
- * - Timeout strike when move timer expires (Connect 4 / Tic-Tac-Toe)
- * - Finish match when strikes reach 3
- * Can be called by clients periodically until a job/scheduler exists.
+ * Resolve time-based transitions (idempotent). DB-authoritative:
+ * - Ready -> Live only when countdown_started_at + countdown_seconds <= now
+ * - Timeout strike only when now >= turn_expires_at
+ * - Sets turn_expires_at on transition and on each strike.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -46,44 +44,53 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString()
 
     if (room.status === "Ready to Start") {
-      const countdownStart = room.countdownStartedAt
-        ? new Date(room.countdownStartedAt).getTime()
-        : 0
-      const countdownEnd = countdownStart + room.countdownSeconds * 1000
-      if (countdownEnd <= nowMs && room.challengerIdentityId) {
-        const gameType = room.game as GameType
-        if (gameType === "Connect 4" || gameType === "Tic-Tac-Toe") {
-          const moveSeconds = getMoveSecondsForGame(gameType)
-          const boardState = createInitialBoardState(gameType)
-          const { data, error } = await supabase
-            .from("matches")
-            .update({
-              status: "Live",
-              live_started_at: nowIso,
-              started_at: nowIso,
-              betting_open: false,
-              board_state: boardState,
-              move_turn_identity_id: room.hostIdentityId,
-              move_turn_started_at: nowIso,
-              move_turn_seconds: moveSeconds,
-              updated_at: nowIso,
-            })
-            .eq("id", roomId)
-            .eq("status", "Ready to Start")
-            .select("*")
-            .maybeSingle()
-          if (error) throw error
-          if (data) {
-            return NextResponse.json(
-              {
-                ok: true,
-                room: mapDbRowToRoom((data as Record<string, unknown>)),
-                transition: "ready_to_live",
-              },
-              { headers: { "Cache-Control": "no-store" } }
-            )
-          }
-        }
+      const countdownEndMs =
+        (room.countdownStartedAt ?? 0) + room.countdownSeconds * 1000
+      if (countdownEndMs > nowMs || !room.challengerIdentityId) {
+        return NextResponse.json(
+          { ok: true, room, transition: null },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      const gameType = room.game as GameType
+      if (gameType !== "Connect 4" && gameType !== "Tic-Tac-Toe") {
+        return NextResponse.json(
+          { ok: true, room, transition: null },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      const moveSeconds = getMoveSecondsForGame(gameType)
+      const boardState = createInitialBoardState(gameType)
+      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+
+      const { data, error } = await supabase
+        .from("matches")
+        .update({
+          status: "Live",
+          live_started_at: nowIso,
+          started_at: nowIso,
+          betting_open: false,
+          board_state: boardState,
+          move_turn_identity_id: room.hostIdentityId,
+          move_turn_started_at: nowIso,
+          move_turn_seconds: moveSeconds,
+          turn_expires_at: turnExpiresAt,
+          updated_at: nowIso,
+        })
+        .eq("id", roomId)
+        .eq("status", "Ready to Start")
+        .select("*")
+        .maybeSingle()
+      if (error) throw error
+      if (data) {
+        return NextResponse.json(
+          {
+            ok: true,
+            room: mapDbRowToRoom((data as Record<string, unknown>)),
+            transition: "ready_to_live",
+          },
+          { headers: { "Cache-Control": "no-store" } }
+        )
       }
       return NextResponse.json(
         { ok: true, room, transition: null },
@@ -92,20 +99,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (room.status === "Live") {
-      const moveStartRaw = room.moveTurnStartedAt
+      const turnExpiresAtMs = room.turnExpiresAt ?? null
       const moveSeconds = room.moveTurnSeconds ?? 0
-      if (!moveStartRaw || !moveSeconds) {
-        return NextResponse.json(
-          { ok: true, room, transition: null },
-          { headers: { "Cache-Control": "no-store" } }
-        )
-      }
+      const moveStartMs = room.moveTurnStartedAt
+        ? typeof room.moveTurnStartedAt === "number"
+          ? room.moveTurnStartedAt
+          : new Date(room.moveTurnStartedAt).getTime()
+        : null
+      const computedExpiresMs =
+        moveStartMs != null && moveSeconds > 0
+          ? moveStartMs + moveSeconds * 1000
+          : null
+      const expiresMs = turnExpiresAtMs ?? computedExpiresMs
 
-      const moveStartMs =
-        typeof moveStartRaw === "number" ? moveStartRaw : new Date(moveStartRaw).getTime()
-      const moveEndMs = moveStartMs + moveSeconds * 1000
-
-      if (moveEndMs > nowMs) {
+      if (expiresMs == null || nowMs < expiresMs) {
         return NextResponse.json(
           { ok: true, room, transition: null },
           { headers: { "Cache-Control": "no-store" } }
@@ -183,6 +190,9 @@ export async function POST(request: NextRequest) {
       const nextTurnId = isHost ? room.challengerIdentityId : room.hostIdentityId
       const gameType = room.game as GameType
       const nextMoveSeconds = getMoveSecondsForGame(gameType)
+      const nextTurnExpiresAt = new Date(
+        nowMs + nextMoveSeconds * 1000
+      ).toISOString()
 
       const { data, error } = await supabase
         .from("matches")
@@ -192,6 +202,7 @@ export async function POST(request: NextRequest) {
           move_turn_identity_id: nextTurnId,
           move_turn_started_at: nowIso,
           move_turn_seconds: nextMoveSeconds,
+          turn_expires_at: nextTurnExpiresAt,
           updated_at: nowIso,
         })
         .eq("id", roomId)

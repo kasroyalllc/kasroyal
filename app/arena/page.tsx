@@ -21,7 +21,7 @@ import {
 import { getCurrentIdentity } from "@/lib/identity"
 import { createClient } from "@/lib/supabase/client"
 import type { Room } from "@/lib/engine/match/types"
-import { listActiveRooms, listHistoryRooms } from "@/lib/rooms/rooms-service"
+import { listActiveRooms } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 type GameFilter = "All" | GameType
@@ -488,11 +488,8 @@ export default function ArenaPage() {
   const refreshRooms = useCallback(async () => {
     if (typeof window === "undefined") return
     const supabase = createClient()
-    const [active, history] = await Promise.all([
-      listActiveRooms(supabase),
-      listHistoryRooms(supabase),
-    ])
-    setRooms([...active, ...history])
+    const active = await listActiveRooms(supabase)
+    setRooms(active)
   }, [])
 
   useEffect(() => {
@@ -538,15 +535,6 @@ export default function ArenaPage() {
     )
     const list = activeRooms.map(roomToArenaMatch).filter(isValidActiveMatch)
     return dedupeMatchesById(list)
-  }, [rooms])
-
-  /** Match History = finished only, deduplicated. */
-  const historyMatches = useMemo(() => {
-    const finishedRooms = rooms.filter((r) => r.status === "Finished")
-    const list = finishedRooms.map(roomToArenaMatch)
-    return dedupeMatchesById(list).sort(
-      (a, b) => (b.finishedAt ?? b.createdAt ?? 0) - (a.finishedAt ?? a.createdAt ?? 0)
-    )
   }, [rooms])
 
   const identityId = getCurrentIdentity().id.toLowerCase()
@@ -913,7 +901,7 @@ export default function ArenaPage() {
         {activeWalletMatch ? <ActiveWalletLockBanner match={activeWalletMatch} /> : null}
 
         <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-          <aside className="xl:sticky xl:top-6 xl:self-start space-y-5">
+          <aside id="arena-create" className="xl:sticky xl:top-6 xl:self-start space-y-5">
             {/* Mode switcher: Quick (default) vs Ranked */}
             <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.2)] md:p-5">
               <div className="mb-4">
@@ -1100,6 +1088,17 @@ export default function ArenaPage() {
               </div>
             </div>
           </aside>
+
+          {/* Floating Create Match on smaller screens for quick access */}
+          <div className="fixed bottom-6 right-6 z-30 xl:hidden">
+            <button
+              type="button"
+              onClick={() => document.getElementById("arena-create")?.scrollIntoView({ behavior: "smooth" })}
+              className="rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-600 px-5 py-4 text-sm font-black text-white shadow-[0_0_24px_rgba(16,185,129,0.3)] transition hover:from-emerald-300 hover:to-emerald-500 hover:shadow-[0_0_32px_rgba(16,185,129,0.4)]"
+            >
+              Create Match
+            </button>
+          </div>
 
           <section className="space-y-6">
             <div className="rounded-2xl border border-amber-400/15 bg-amber-400/[0.04] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
@@ -1288,58 +1287,19 @@ export default function ArenaPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
-              <div className="mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">History</p>
-                <h2 className="mt-1 text-xl font-black">Finished matches</h2>
-                <p className="mt-1 text-sm text-white/55">
-                  Completed games. Arena above = active only.
-                </p>
-              </div>
-
-              <div className="grid gap-4">
-                {historyMatches.length ? (
-                  historyMatches.map((match) => (
-                    <div
-                      key={match.id}
-                      className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.04] p-4 shadow-[0_0_16px_rgba(0,0,0,0.08)]"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-300">
-                          {match.game}
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
-                          BO{match.bestOf}
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
-                          {mounted ? formatAge(match.finishedAt ?? match.createdAt) : "—"}
-                        </span>
-                      </div>
-                      <div className="mt-4 flex items-baseline justify-between gap-4">
-                        <div>
-                          <div className="text-2xl font-black">
-                            {match.host.name} vs {match.challenger?.name ?? "—"}
-                          </div>
-                          <div className="mt-1 text-sm text-white/65">
-                            {getMatchResultLabel(match)}
-                          </div>
-                        </div>
-                        <Link
-                          href={`/arena/match/${match.id}`}
-                          className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white transition hover:bg-white/10"
-                        >
-                          View Result
-                        </Link>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState
-                    title="No finished matches yet"
-                    text="Completed games will appear here. Only active rooms show in Arena above."
-                  />
-                )}
-              </div>
+            <div className="rounded-2xl border border-white/10 bg-emerald-400/5 p-4 md:p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/80">
+                Completed games
+              </p>
+              <p className="mt-1 text-sm text-white/60">
+                View match history and results on the dedicated History page.
+              </p>
+              <Link
+                href="/history"
+                className="mt-4 inline-flex rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-5 py-3 text-sm font-bold text-emerald-200 transition hover:bg-emerald-500/20"
+              >
+                Open Match History →
+              </Link>
             </div>
           </section>
         </div>

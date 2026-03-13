@@ -107,6 +107,10 @@ export type ArenaMatch = {
   bettingWindowSeconds: number
 
   result: MatchResult
+  /** Win reason from backend: win, draw, timeout, forfeit. */
+  winReason?: string | null
+  /** DB-authoritative turn deadline (ms). Used for "time left" display only. */
+  turnExpiresAt?: number | null
 
   moveHistory: string[]
 

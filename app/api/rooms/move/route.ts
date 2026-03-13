@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
       }
 
       const nextTurnId = nextTurn === "host" ? room.hostIdentityId : room.challengerIdentityId!
+      const turnExpiresAt = new Date(Date.now() + moveSeconds * 1000).toISOString()
       const { data, error } = await supabase
         .from("matches")
         .update({
@@ -184,6 +185,7 @@ export async function POST(request: NextRequest) {
           move_turn_identity_id: nextTurnId,
           move_turn_started_at: now,
           move_turn_seconds: moveSeconds,
+          turn_expires_at: turnExpiresAt,
           updated_at: now,
         })
         .eq("id", roomId)
@@ -282,6 +284,7 @@ export async function POST(request: NextRequest) {
     }
 
     const nextTurnId = nextTurn === "X" ? room.hostIdentityId : room.challengerIdentityId!
+    const turnExpiresAt = new Date(Date.now() + moveSeconds * 1000).toISOString()
     const { data, error } = await supabase
       .from("matches")
       .update({
@@ -294,6 +297,7 @@ export async function POST(request: NextRequest) {
         move_turn_identity_id: nextTurnId,
         move_turn_started_at: now,
         move_turn_seconds: moveSeconds,
+        turn_expires_at: turnExpiresAt,
         updated_at: now,
       })
       .eq("id", roomId)

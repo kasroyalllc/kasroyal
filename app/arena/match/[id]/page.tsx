@@ -1005,10 +1005,10 @@ export default function ArenaMatchPage() {
         : match.game === "Tic-Tac-Toe"
           ? tttTurnDeadlineTs
           : 0
-
+  const dbTurnExpiresAt = match.turnExpiresAt ?? (activeTurnDeadlineTs > 0 ? activeTurnDeadlineTs : null)
   const moveSecondsLeft =
-    match.status === "Live" && !isPaused && activeTurnDeadlineTs > 0
-      ? Math.max(0, Math.ceil((activeTurnDeadlineTs - Date.now()) / 1000))
+    match.status === "Live" && !isPaused && dbTurnExpiresAt != null
+      ? Math.max(0, Math.ceil((dbTurnExpiresAt - Date.now()) / 1000))
       : 0
 
   const canHostMove =
@@ -1510,11 +1510,11 @@ export default function ArenaMatchPage() {
   const boardClockLabel = isFinished
     ? "—"
     : isCountdown
-      ? `${bettingSecondsLeft}s`
+      ? `Match starts in ${bettingSecondsLeft}s`
       : isPaused
         ? `${pauseSecondsLeft}s`
         : match.status === "Live"
-          ? `${moveSecondsLeft}s`
+          ? (currentTurnSide === currentUserSide ? `Your turn: ${moveSecondsLeft}s` : `Opponent turn: ${moveSecondsLeft}s`)
           : "—"
 
   const boardStateLabel =
@@ -1608,8 +1608,28 @@ export default function ArenaMatchPage() {
         {match.status === "Finished" ? (
           <div className="mb-6 rounded-[28px] border-2 border-amber-300/30 bg-amber-300/10 p-6 text-center">
             <h2 className="text-2xl font-black text-amber-200">Match Over</h2>
-            <p className="mt-2 text-sm text-white/80">{match.statusText}</p>
-            <p className="mt-1 text-xs text-white/60">You are no longer in an active match. You can join or create a new one.</p>
+            {match.result === "draw" ? (
+              <p className="mt-2 text-lg font-bold text-white/90">Draw</p>
+            ) : match.result != null ? (
+              <>
+                <p className="mt-2 text-lg font-bold text-white/90">
+                  Winner: {match.result === "host" ? match.host.name : challenger?.name ?? "Challenger"}
+                </p>
+                <p className="mt-1 text-sm text-white/70">
+                  {match.winReason === "timeout" ? "Win by timeout" : match.winReason === "forfeit" ? "Win by forfeit" : match.winReason === "win" ? "Win by game" : match.winReason ?? "Finished"}
+                </p>
+                <p className="mt-2 text-sm font-semibold">
+                  {match.result === currentUserSide ? (
+                    <span className="text-emerald-300">You won</span>
+                  ) : (
+                    <span className="text-red-300/90">You lost</span>
+                  )}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-white/80">{match.statusText}</p>
+            )}
+            <p className="mt-2 text-xs text-white/60">You can join or create a new match.</p>
             <Link
               href="/arena"
               className="mt-4 inline-flex rounded-2xl bg-amber-300/20 px-6 py-3 text-sm font-bold text-amber-200 transition hover:bg-amber-300/30"
@@ -1892,7 +1912,7 @@ export default function ArenaMatchPage() {
                     {isPaused
                       ? `Pause • ${pauseSecondsLeft}s`
                       : isCountdown
-                        ? `Starts in ${bettingSecondsLeft}s`
+                        ? `Match starts in ${bettingSecondsLeft}s`
                         : match.status === "Live"
                           ? `Move timer • ${moveSecondsLeft}s`
                           : "Move timer idle"}
