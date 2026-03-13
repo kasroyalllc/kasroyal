@@ -2489,6 +2489,56 @@ export function getWinnerDisplayLine(match: ArenaMatch | null): string {
   return `Winner${reason}: ${winnerName}`
 }
 
+/** Format win reason for banner: "timeout", "forfeit", or "" for game win. */
+function formatWinReasonForBanner(winReason: string | null | undefined): string {
+  if (winReason === "timeout") return " by timeout"
+  if (winReason === "forfeit") return " by forfeit"
+  return ""
+}
+
+/**
+ * Result copy for finished match banner. Uses status, winner_identity_id, win_reason, and current user.
+ * Returns: "You won by timeout", "You lost", "Guest123 won by forfeit", or "Draw".
+ */
+export function getMatchResultCopy(
+  match: ArenaMatch | null,
+  currentUserIdentityId: string
+): string {
+  if (!match || match.status !== "Finished") return "Match finished"
+  if (match.result === "draw") return "Draw"
+  const isHost = match.hostIdentityId === currentUserIdentityId
+  const isChallenger = match.challengerIdentityId === currentUserIdentityId
+  const currentUserSide = isHost ? "host" : isChallenger ? "challenger" : null
+  const winnerName =
+    match.result === "host"
+      ? match.host.name
+      : match.result === "challenger"
+        ? (match.challenger?.name ?? "Challenger")
+        : null
+  const reasonSuffix = formatWinReasonForBanner(match.winReason ?? undefined)
+  if (currentUserSide && match.result === currentUserSide) return `You won${reasonSuffix}`
+  if (currentUserSide) return "You lost"
+  if (winnerName) return `${winnerName} won${reasonSuffix}`
+  return "Match finished"
+}
+
+/** Winner display name for finished match (for banner detail). */
+export function getWinnerDisplayName(match: ArenaMatch | null): string | null {
+  if (!match || match.status !== "Finished" || match.result === "draw") return null
+  if (match.result === "host") return match.host.name
+  if (match.result === "challenger") return match.challenger?.name ?? "Challenger"
+  return null
+}
+
+/** Human-readable win reason for banner (timeout, forfeit, game win). */
+export function getWinReasonLabel(winReason: string | null | undefined): string | null {
+  if (!winReason) return null
+  if (winReason === "timeout") return "Timeout"
+  if (winReason === "forfeit") return "Forfeit"
+  if (winReason === "win") return "Game win"
+  return winReason
+}
+
 export function getBackedPlayerName(
   ticket: Pick<PersistedBetTicket, "side">,
   match: ArenaMatch | null

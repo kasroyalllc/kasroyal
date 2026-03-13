@@ -272,3 +272,46 @@ export async function sendRoomMessage(
   if (!data) throw new Error("Insert succeeded but no message row returned")
   return mapMessageRowToRoomMessage(data as Record<string, unknown>)
 }
+
+/** Spectate crowd talk: list messages for a match (shared for all spectators). */
+export async function listSpectateMessages(
+  supabase: SupabaseClient,
+  matchId: string
+): Promise<RoomMessage[]> {
+  const { data, error } = await supabase
+    .from("spectate_messages")
+    .select("*")
+    .eq("match_id", matchId)
+    .order("created_at", { ascending: true })
+
+  if (error) throw error
+  return ((data ?? []) as Record<string, unknown>[]).map(
+    mapMessageRowToRoomMessage
+  )
+}
+
+/** Spectate crowd talk: insert message (any viewer can send). */
+export async function sendSpectateMessage(
+  supabase: SupabaseClient,
+  params: {
+    match_id: string
+    sender_identity_id: string
+    sender_display_name: string
+    message: string
+  }
+): Promise<RoomMessage> {
+  const { data, error } = await supabase
+    .from("spectate_messages")
+    .insert({
+      match_id: params.match_id,
+      sender_identity_id: params.sender_identity_id,
+      sender_display_name: params.sender_display_name,
+      message: params.message,
+    })
+    .select("*")
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error("Insert succeeded but no message row returned")
+  return mapMessageRowToRoomMessage(data as Record<string, unknown>)
+}

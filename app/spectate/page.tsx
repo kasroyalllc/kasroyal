@@ -22,10 +22,11 @@ import {
   type ArenaSide,
   type GameType,
   type RankTier,
+  type RoomChatMessage,
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
 import { createClient } from "@/lib/supabase/client"
-import { listSpectateRooms } from "@/lib/rooms/rooms-service"
+import { listSpectateMessages, listSpectateRooms } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 
 type SpectateFilter = "All" | GameType
@@ -198,11 +199,7 @@ export default function SpectatePage() {
   const [activeLiveMatchId, setActiveLiveMatchId] = useState("")
   const [feed] = useState<string[]>(arenaFeedSeed)
   const [chatInput, setChatInput] = useState("")
-  const [chatMessages, setChatMessages] = useState<string[]>([
-    "StakeLord: This one is heating up fast.",
-    "FlashMove: Center control looks huge here.",
-    "KasWatcher: Crowd is leaning toward the favorite.",
-  ])
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
   const [betAmountInput, setBetAmountInput] = useState(String(DEFAULT_BET))
   const [selectedSide, setSelectedSide] = useState<ArenaSide | null>(null)
   const [message, setMessage] = useState(
@@ -291,6 +288,39 @@ export default function SpectatePage() {
     setBetAmountInput(String(DEFAULT_BET))
   }, [activeLiveMatchId])
 
+  const refreshCrowdChat = useCallback(async () => {
+    if (!activeLiveMatchId || typeof window === "undefined") return
+    const supabase = createClient()
+    const messages = await listSpectateMessages(supabase, activeLiveMatchId)
+    const ui: RoomChatMessage[] = messages.map((m) => ({
+      id: m.id,
+      user: m.senderDisplayName,
+      text: m.message,
+      ts: m.createdAt,
+    }))
+    setChatMessages(ui)
+  }, [activeLiveMatchId])
+
+  useEffect(() => {
+    if (!activeLiveMatchId) {
+      setChatMessages([])
+      return
+    }
+    refreshCrowdChat()
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`spectate-crowd-${activeLiveMatchId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "spectate_messages", filter: `match_id=eq.${activeLiveMatchId}` },
+        () => { void refreshCrowdChat() }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeLiveMatchId, refreshCrowdChat])
+
   const activeLiveMatch = useMemo(() => {
     return liveMatches.find((match) => match.id === activeLiveMatchId) ?? liveMatches[0] ?? null
   }, [liveMatches, activeLiveMatchId])
@@ -345,12 +375,27 @@ export default function SpectatePage() {
       getCurrentUser().name === activeLiveMatch.challenger?.name
     : false
 
-  function sendChatMessage() {
+  async function sendChatMessage() {
     const trimmed = chatInput.trim()
-    if (!trimmed) return
-
-    setChatMessages((prev) => [`${getCurrentUser().name}: ${trimmed}`, ...prev].slice(0, 24))
-    setChatInput("")
+    if (!trimmed || !activeLiveMatchId) return
+    try {
+      const res = await fetch("/api/spectate/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          match_id: activeLiveMatchId,
+          sender_identity_id: getCurrentIdentity().id,
+          sender_display_name: getCurrentUser().name,
+          message: trimmed,
+        }),
+      })
+      if (res.ok) {
+        setChatInput("")
+        await refreshCrowdChat()
+      }
+    } catch {
+      // keep input on error
+    }
   }
 
   async function handlePlaceBet() {
@@ -848,28 +893,40 @@ export default function SpectatePage() {
                   Connected as <span className="font-semibold text-white">{getCurrentUser().name}</span>
                 </div>
 
-                <div className="max-h-[320px] space-y-3 overflow-y-auto">
-                  {chatMessages.map((message, index) => (
-                    <div
-                      key={`${message}-${index}`}
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/85"
-                    >
-                      {message}
-                    </div>
-                  ))}
+                <div className="max-h-[320px] space-y-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+                  {chatMessages.length === 0 ? (
+                    <div className="py-4 text-center text-sm text-white/45">No crowd messages yet. Say something!</div>
+                  ) : (
+                    chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/85"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-emerald-300">{msg.user}</span>
+                          <span className="text-xs text-white/40">
+                            {new Date(msg.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+                        <div className="mt-1 break-words">{msg.text}</div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
                   <input
                     value={chatInput}
                     onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChatMessage())}
                     placeholder="Say something about the match..."
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-300/30"
+                    aria-label="Crowd talk message"
                   />
                   <button
                     type="button"
                     onClick={sendChatMessage}
-                    className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-3 text-sm font-black text-black transition hover:scale-[1.01]"
+                    className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-5 py-3 text-sm font-black text-black transition hover:scale-[1.01] touch-manipulation"
                   >
                     Send
                   </button>

@@ -16,8 +16,11 @@ import {
   getRankColors,
   getSideShare,
   getTicketsForMatch,
+  getMatchResultCopy,
   getWinnerDisplayLine,
   getWinProbability,
+  getWinnerDisplayName,
+  getWinReasonLabel,
   HOUSE_RAKE,
   isArenaBettable,
   MAX_BET,
@@ -660,7 +663,10 @@ export default function ArenaMatchPage() {
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
+  /** Stick to bottom only when user is already near bottom; avoid forcing scroll when user scrolled up or match is over. */
+  const isChatNearBottomRef = useRef(true)
 
   useEffect(() => {
     setMounted(true)
@@ -852,8 +858,18 @@ export default function ArenaMatchPage() {
   }, [matchId, refreshChat])
 
   useEffect(() => {
+    if (match?.status === "Finished") return
+    if (!isChatNearBottomRef.current) return
     chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-  }, [chatMessages])
+  }, [chatMessages, match?.status])
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatScrollContainerRef.current
+    if (!el) return
+    const { scrollTop, clientHeight, scrollHeight } = el
+    const threshold = 100
+    isChatNearBottomRef.current = scrollTop + clientHeight >= scrollHeight - threshold
+  }, [])
 
   // Ready -> Live transition is handled by the DB-authoritative /api/rooms/tick endpoint.
 
@@ -1595,27 +1611,22 @@ export default function ArenaMatchPage() {
           <div className="mb-6 rounded-[28px] border-2 border-amber-300/30 bg-amber-300/10 p-6 text-center">
             <h2 className="text-2xl font-black text-amber-200">Match Over</h2>
             {(() => {
-              const winnerLine = getWinnerDisplayLine(match)
-              if (winnerLine) {
-                return (
-                  <>
-                    <p className="mt-2 text-lg font-bold text-white/90">{winnerLine}</p>
-                    {match.result !== "draw" && match.result != null && (
-                      <p className="mt-2 text-sm font-semibold">
-                        {match.result === currentUserSide ? (
-                          <span className="text-emerald-300">You won</span>
-                        ) : (
-                          <span className="text-red-300/90">You lost</span>
-                        )}
-                      </p>
-                    )}
-                  </>
-                )
-              }
+              const resultCopy = getMatchResultCopy(match, getCurrentIdentity().id)
+              const winnerName = getWinnerDisplayName(match)
+              const winReasonLabel = getWinReasonLabel(match.winReason)
               return (
-                <p className="mt-2 text-sm text-white/80">
-                  {match.result === "draw" ? "Draw" : match.statusText || "Match finished"}
-                </p>
+                <>
+                  <p className="mt-2 text-lg font-bold text-white/90">{resultCopy}</p>
+                  {winnerName && match.result !== "draw" && (
+                    <p className="mt-1 text-sm text-white/75">
+                      Winner: {winnerName}
+                      {match.result === "host" && match.hostIdentityId ? ` (${match.hostIdentityId})` : match.result === "challenger" && match.challengerIdentityId ? ` (${match.challengerIdentityId})` : ""}
+                    </p>
+                  )}
+                  {winReasonLabel && match.result !== "draw" && (
+                    <p className="mt-0.5 text-xs text-white/60">Win reason: {winReasonLabel}</p>
+                  )}
+                </>
               )
             })()}
             <p className="mt-2 text-xs text-white/60">You can join or create a new match.</p>
@@ -1639,8 +1650,13 @@ export default function ArenaMatchPage() {
         <div className="mb-6 rounded-[28px] border border-white/8 bg-white/[0.03] p-4 shadow-[0_0_50px_rgba(0,255,200,0.05)] sm:mb-8 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
             <div className="max-w-3xl">
-              <div className="mb-2 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300 sm:mb-4 sm:px-4 sm:py-2 sm:text-xs">
-                KasRoyal Live Match Room
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300 sm:px-4 sm:py-2 sm:text-xs">
+                  KasRoyal Live Match Room
+                </span>
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90">
+                  You: {currentUserProfile.name}
+                </span>
               </div>
 
               <h1 className="text-3xl font-black leading-none sm:text-5xl xl:text-6xl">
@@ -1717,9 +1733,14 @@ export default function ArenaMatchPage() {
 
         <div className={`grid grid-cols-1 gap-6 xl:grid-rows-[auto_auto_auto] ${isQuickMatch ? "xl:grid-cols-[300px_minmax(0,1fr)]" : "xl:grid-cols-[300px_minmax(0,1fr)_minmax(420px,480px)]"}`}>
           <aside className="order-2 space-y-6 xl:order-1 xl:sticky xl:top-6 xl:row-span-1 xl:self-start">
-            <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
-              <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player One</p>
-              <div className="mt-4 text-3xl font-black">{match.host.name}</div>
+            <div className={`rounded-[28px] border p-5 shadow-2xl ${isHostUser ? "border-emerald-400/25 bg-emerald-400/5" : "border-white/8 bg-white/[0.04]"}`}>
+              <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player One (Host)</p>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-3xl font-black">{match.host.name}</span>
+                {isHostUser && (
+                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/20 px-2.5 py-0.5 text-xs font-bold text-emerald-200">You</span>
+                )}
+              </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <RankBadge rank={match.host.rank} />
@@ -1738,9 +1759,14 @@ export default function ArenaMatchPage() {
             </div>
 
             {challenger ? (
-              <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
-                <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player Two</p>
-                <div className="mt-4 text-3xl font-black">{challenger.name}</div>
+              <div className={`rounded-[28px] border p-5 shadow-2xl ${isChallengerUser ? "border-emerald-400/25 bg-emerald-400/5" : "border-white/8 bg-white/[0.04]"}`}>
+                <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player Two (Challenger)</p>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-3xl font-black">{challenger.name}</span>
+                  {isChallengerUser && (
+                    <span className="rounded-full border border-emerald-400/30 bg-emerald-400/20 px-2.5 py-0.5 text-xs font-bold text-emerald-200">You</span>
+                  )}
+                </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <RankBadge rank={challenger.rank} />
@@ -2145,8 +2171,13 @@ export default function ArenaMatchPage() {
                       Live
                     </span>
                   </div>
-                  {/* Mobile: extra padding-bottom so last message isn't hidden behind fixed form */}
-                  <div className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none pb-[env(safe-area-inset-bottom)] md:pb-0 max-md:pb-[88px]">
+                  {/* Mobile: scrollable list with touch scroll; extra padding so last message isn't hidden behind fixed form. onScroll: only auto-scroll when user is near bottom. */}
+                  <div
+                    ref={chatScrollContainerRef}
+                    onScroll={handleChatScroll}
+                    className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none pb-[env(safe-area-inset-bottom)] md:pb-0 max-md:pb-[88px] max-md:min-h-[120px] max-md:max-h-[50vh]"
+                    style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+                  >
                     {chatMessages.length === 0 ? (
                       <div className="flex min-h-[120px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45 md:min-h-[220px]">
                         No messages yet. Say something!
@@ -2174,7 +2205,7 @@ export default function ArenaMatchPage() {
                       </>
                     )}
                   </div>
-                  {/* Desktop: form inline. Mobile: fixed to viewport bottom so input stays above keyboard */}
+                  {/* Desktop: form inline. Mobile: fixed to viewport bottom so input stays above keyboard; 16px font avoids iOS zoom. */}
                   <form
                     ref={chatFormRef}
                     className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-30 max-md:mt-0 max-md:rounded-none max-md:border-0 max-md:border-t max-md:border-white/10 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
@@ -2191,11 +2222,13 @@ export default function ArenaMatchPage() {
                       autoComplete="off"
                       className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4"
                       style={{ fontSize: "16px" }}
+                      aria-label="Chat message"
                     />
                     <button
                       type="submit"
                       disabled={!chatInput.trim()}
                       className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition active:scale-[0.98] hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
+                      aria-label="Send message"
                     >
                       Send
                     </button>
