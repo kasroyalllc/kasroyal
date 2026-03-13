@@ -10,6 +10,7 @@ import {
   clampBetAmount,
   DEFAULT_BET,
   forfeitArenaMatch,
+  forceEmitArenaStoreUpdate,
   forceHydrateArenaFromRemote,
   formatArenaPhase,
   getArenaBettingSecondsLeft,
@@ -686,13 +687,13 @@ export default function ArenaMatchPage() {
     const unsubscribeMatches = subscribeArenaMatches(syncRoomFromStore)
     const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
 
-    const storePollInterval = window.setInterval(syncRoomFromStore, 800)
+    const storePollInterval = window.setInterval(syncRoomFromStore, 300)
 
     const remotePollInterval = window.setInterval(() => {
       getArenaByIdAsync(matchId).then((latest) => {
         if (latest) setMatch(latest)
       })
-    }, 2000)
+    }, 1500)
 
     return () => {
       unsubscribeMatches()
@@ -718,6 +719,14 @@ export default function ArenaMatchPage() {
     }, 2000)
     return () => window.clearInterval(interval)
   }, [matchId, match?.status])
+
+  useEffect(() => {
+    if (!match || (match.status !== "Ready to Start" && match.status !== "Live")) return
+    const interval = window.setInterval(() => {
+      forceEmitArenaStoreUpdate()
+    }, 400)
+    return () => window.clearInterval(interval)
+  }, [match?.id, match?.status])
 
   useEffect(() => {
     if (!match) return
@@ -776,7 +785,7 @@ export default function ArenaMatchPage() {
     const syncChat = () => setChatMessages(getRoomChat(matchId))
     syncChat()
     const unsub = subscribeRoomChat(matchId, syncChat)
-    const poll = window.setInterval(syncChat, 2000)
+    const poll = window.setInterval(syncChat, 400)
     return () => {
       unsub()
       window.clearInterval(poll)

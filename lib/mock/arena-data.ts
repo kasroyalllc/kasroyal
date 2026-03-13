@@ -1651,6 +1651,8 @@ async function hydrateTicketsForMatchFromSupabase(matchId: string) {
   }
 }
 
+const LIFECYCLE_TICKER_MS = 500
+
 function startArenaLifecycleTicker() {
   if (!isBrowser() || arenaLifecycleIntervalStarted) return
   arenaLifecycleIntervalStarted = true
@@ -1677,7 +1679,14 @@ function startArenaLifecycleTicker() {
       lastRemoteHydrateAt = nowTs
       void hydrateMatchesFromSupabase()
     }
-  }, 1000)
+  }, LIFECYCLE_TICKER_MS)
+}
+
+/** Force an immediate persist + broadcast of current store (with lifecycle applied). Use after create/join so other tabs see the new match quickly. */
+export function forceEmitArenaStoreUpdate(): void {
+  if (!isBrowser()) return
+  const current = readArenaStore()
+  persistStore({ ...current, updatedAt: Date.now() })
 }
 
 if (isBrowser()) {
@@ -2037,6 +2046,7 @@ export function createArenaMatch(input: {
   )[0]
 
   upsertMatchLocally(localMatch)
+  forceEmitArenaStoreUpdate()
 
   void (async () => {
     try {

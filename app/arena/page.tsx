@@ -504,7 +504,7 @@ export default function ArenaPage() {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
       setMatches(readArenaMatches())
-    }, 1000)
+    }, 500)
 
     return () => clearInterval(timer)
   }, [])
