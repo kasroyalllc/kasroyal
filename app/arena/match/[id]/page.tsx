@@ -855,23 +855,7 @@ export default function ArenaMatchPage() {
     chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
   }, [chatMessages])
 
-  useEffect(() => {
-    if (!matchId || !match || match.status !== "Ready to Start" || !match.challenger) return
-    const secondsLeft = getArenaBettingSecondsLeft(match)
-    if (secondsLeft > 0) return
-    fetch("/api/rooms/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room_id: matchId }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok && data.room) {
-          setMatch(roomToArenaMatch(data.room))
-        }
-      })
-      .catch(() => {})
-  }, [matchId, match?.id, match?.status, match?.challenger, tick])
+  // Ready -> Live transition is handled by the DB-authoritative /api/rooms/tick endpoint.
 
   if (!matchId) {
     return (
@@ -1010,7 +994,7 @@ export default function ArenaMatchPage() {
         : match.game === "Tic-Tac-Toe"
           ? tttTurnDeadlineTs
           : 0
-  const dbTurnExpiresAt = match.turnExpiresAt ?? (activeTurnDeadlineTs > 0 ? activeTurnDeadlineTs : null)
+  const dbTurnExpiresAt = match.turnExpiresAt ?? null
   const moveSecondsLeft =
     match.status === "Live" && !isPaused && dbTurnExpiresAt != null
       ? Math.max(0, Math.ceil((dbTurnExpiresAt - Date.now()) / 1000))
@@ -1679,28 +1663,33 @@ export default function ArenaMatchPage() {
                 accent={isSpectatorOnly ? "text-white" : "text-emerald-300"}
               />
               <StatCard
-                label="Timer"
+                label="Match start"
                 value={
                   isCountdown
                     ? bettingSecondsLeft > 0
-                      ? `${bettingSecondsLeft}s`
+                      ? `Starts in ${bettingSecondsLeft}s`
                       : "Starting…"
+                    : "—"
+                }
+                accent={isCountdown ? "text-emerald-300" : "text-white/70"}
+              />
+              <StatCard
+                label="Turn timer"
+                value={
+                  match.status === "Live" && moveSecondsLeft > 0
+                    ? currentTurnSide === currentUserSide
+                      ? `Your turn: ${moveSecondsLeft}s`
+                      : `Opponent: ${moveSecondsLeft}s`
                     : isPaused
-                      ? `${pauseSecondsLeft}s`
-                      : match.status === "Live"
-                        ? activeTurnDeadlineTs > 0
-                          ? `${moveSecondsLeft}s`
-                          : "—"
-                        : "—"
+                      ? "Paused"
+                      : "—"
                 }
                 accent={
                   isPaused
                     ? "text-sky-300"
-                    : isCountdown
-                      ? "text-emerald-300"
-                      : moveSecondsLeft <= 5 && match.status === "Live"
-                        ? "text-red-300"
-                        : "text-amber-300"
+                    : match.status === "Live" && moveSecondsLeft <= 5
+                      ? "text-red-300"
+                      : "text-amber-300"
                 }
               />
               <Link

@@ -52,7 +52,13 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString()
     const { error } = await supabase
       .from("matches")
-      .update({ status: "Finished", ended_at: now })
+      .update({
+        status: "Finished",
+        winner_identity_id: null,
+        win_reason: "canceled",
+        ended_at: now,
+        finished_at: now,
+      })
       .eq("id", roomId)
       .eq("host_wallet", hostIdentityId)
 
