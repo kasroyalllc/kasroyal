@@ -71,9 +71,13 @@ export async function POST(request: NextRequest) {
     )
   } catch (e) {
     const message = getErrorMessage(e)
-    const supabaseError = e && typeof e === "object" && "code" in e
-      ? { code: (e as { code: string }).code, details: (e as { details: unknown }).details }
-      : null
+    const supabaseError =
+      e && typeof e === "object" && "code" in e
+        ? {
+            code: (e as { code?: string }).code,
+            details: (e as { details?: unknown }).details,
+          }
+        : null
 
     console.error("[api/rooms/create] Room creation failed:", {
       message,
