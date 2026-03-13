@@ -653,6 +653,7 @@ export default function ArenaMatchPage() {
   const [mounted, setMounted] = useState(false)
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
+  const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -694,7 +695,7 @@ export default function ArenaMatchPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "match_messages", filter: `match_id=eq.${matchId}` },
-        () => { void refreshChat() }
+        () => { void refreshChatRef.current?.() }
       )
       .on(
         "postgres_changes",
@@ -806,6 +807,11 @@ export default function ArenaMatchPage() {
     }))
     setChatMessages(uiMessages)
   }, [matchId])
+
+  useEffect(() => {
+    refreshChatRef.current = refreshChat
+    return () => { refreshChatRef.current = null }
+  }, [refreshChat])
 
   useEffect(() => {
     if (!matchId) return
