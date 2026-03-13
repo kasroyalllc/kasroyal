@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import {
   buildLeaderboardFromArena,
-  currentUser,
+  getCurrentUser,
   getRankColors,
   readArenaMatches,
   subscribeArenaMatches,
@@ -184,7 +184,7 @@ export default function LeaderboardPage() {
       : 0
 
   const totalEarnings = rankedRows.reduce((sum, player) => sum + player.earnings, 0)
-  const currentUserEntry = rankedRows.find((player) => player.name === currentUser.name)
+  const currentUserEntry = rankedRows.find((player) => player.name === getCurrentUser().name)
   const currentUserRank = currentUserEntry?.position ?? null
 
   return (
@@ -250,7 +250,7 @@ export default function LeaderboardPage() {
             label="Current User Rank"
             value={currentUserRank ? `#${currentUserRank}` : "Unranked"}
             accent="text-emerald-300"
-            helper={currentUser.name}
+            helper={getCurrentUser().name}
           />
           <StatCard
             label="Highest Rating"
@@ -355,7 +355,7 @@ export default function LeaderboardPage() {
 
               <tbody>
                 {tableRows.map((player) => {
-                  const isCurrentUser = player.name === currentUser.name
+                  const isCurrentUser = player.name === getCurrentUser().name
 
                   return (
                     <tr

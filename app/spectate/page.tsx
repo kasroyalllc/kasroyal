@@ -5,11 +5,11 @@ import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   arenaFeedSeed,
   clampBetAmount,
-  currentUser,
   DEFAULT_BET,
   gameDisplayOrder,
   gameMeta,
   getArenaBettingSecondsLeft,
+  getCurrentUser,
   getMatchResultLabel,
   getMultiplier,
   getRankColors,
@@ -24,6 +24,7 @@ import {
   type GameType,
   type RankTier,
 } from "@/lib/mock/arena-data"
+import { getCurrentIdentity } from "@/lib/identity"
 
 type SpectateFilter = "All" | GameType
 
@@ -318,15 +319,15 @@ export default function SpectatePage() {
 
   const isSelectedMatchBettable = activeLiveMatch ? isArenaBettable(activeLiveMatch) : false
   const isCurrentUserPlayerInSelectedMatch = activeLiveMatch
-    ? currentUser.name === activeLiveMatch.host.name ||
-      currentUser.name === activeLiveMatch.challenger?.name
+    ? getCurrentUser().name === activeLiveMatch.host.name ||
+      getCurrentUser().name === activeLiveMatch.challenger?.name
     : false
 
   function sendChatMessage() {
     const trimmed = chatInput.trim()
     if (!trimmed) return
 
-    setChatMessages((prev) => [`${currentUser.name}: ${trimmed}`, ...prev].slice(0, 24))
+    setChatMessages((prev) => [`${getCurrentUser().name}: ${trimmed}`, ...prev].slice(0, 24))
     setChatInput("")
   }
 
@@ -351,7 +352,7 @@ export default function SpectatePage() {
       return
     }
 
-    if (betAmount > currentUser.walletBalance) {
+    if (betAmount > getCurrentUser().walletBalance) {
       setMessage("Insufficient KAS balance for that spectator bet.")
       return
     }
@@ -361,8 +362,8 @@ export default function SpectatePage() {
         matchId: activeLiveMatch.id,
         side: selectedSide,
         amount: betAmount,
-        user: currentUser.name,
-        walletAddress: currentUser.name,
+        user: getCurrentIdentity().id,
+        walletAddress: getCurrentIdentity().id,
       })
 
       setAllMatches(readArenaMatches())
@@ -800,7 +801,7 @@ export default function SpectatePage() {
 
               <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
                 <div className="mb-4 text-sm text-white/50">
-                  Connected as <span className="font-semibold text-white">{currentUser.name}</span>
+                  Connected as <span className="font-semibold text-white">{getCurrentUser().name}</span>
                 </div>
 
                 <div className="max-h-[320px] space-y-3 overflow-y-auto">

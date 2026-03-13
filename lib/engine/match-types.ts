@@ -108,6 +108,10 @@ export type ArenaMatch = {
   boardState?: unknown
 
   pauseState?: PauseState
+
+  /** Timeout strikes (move timer expired). After 3, that side loses. Connect 4 / Tic-Tac-Toe only. */
+  timeoutStrikesHost?: number
+  timeoutStrikesChallenger?: number
 }
 
 export type SpectatorTicket = {

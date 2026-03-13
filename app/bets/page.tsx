@@ -3,9 +3,9 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
-  currentUser,
   getArenaBettingSecondsLeft,
   getBetSettlement,
+  getCurrentUser,
   getMultiplier,
   getRankColors,
   getUserSettledPayouts,
@@ -21,6 +21,7 @@ import {
   type PersistedBetTicket,
   type RankTier,
 } from "@/lib/mock/arena-data"
+import { getCurrentIdentity } from "@/lib/identity"
 
 function RankBadge({ rank }: { rank: RankTier }) {
   const colors = getRankColors(rank)
@@ -149,7 +150,10 @@ function OpenMarketCard({
   const hostMultiplier = getMultiplier(hostPool, challengerPool, "host")
   const challengerMultiplier = getMultiplier(hostPool, challengerPool, "challenger")
   const isOwnGame =
-    match.host.name === currentUser.name || match.challenger?.name === currentUser.name
+    (match.hostIdentityId && match.hostIdentityId === getCurrentIdentity().id.toLowerCase()) ||
+      (match.challengerIdentityId && match.challengerIdentityId === getCurrentIdentity().id.toLowerCase()) ||
+      match.host.name === getCurrentUser().name ||
+      match.challenger?.name === getCurrentUser().name
 
   async function submitBet() {
     if (!marketOpen) {
@@ -172,7 +176,7 @@ function OpenMarketCard({
       return
     }
 
-    if (betAmount > currentUser.walletBalance) {
+    if (betAmount > getCurrentUser().walletBalance) {
       setMessage("Insufficient KAS balance.")
       return
     }
@@ -183,8 +187,8 @@ function OpenMarketCard({
         matchId: match.id,
         side: selectedSide,
         amount: betAmount,
-        user: currentUser.name,
-        walletAddress: currentUser.name,
+        user: getCurrentIdentity().id,
+        walletAddress: getCurrentIdentity().id,
       })
 
       const backed =
@@ -480,7 +484,7 @@ export default function BetsPage() {
   useEffect(() => {
     const sync = () => {
       setMatches(readArenaMatches())
-      setBets(readCurrentUserTickets(currentUser.name))
+      setBets(readCurrentUserTickets(getCurrentIdentity().id))
     }
 
     sync()
@@ -498,7 +502,7 @@ export default function BetsPage() {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
       setMatches(readArenaMatches())
-      setBets(readCurrentUserTickets(currentUser.name))
+      setBets(readCurrentUserTickets(getCurrentIdentity().id))
     }, 1000)
 
     return () => clearInterval(timer)
@@ -509,7 +513,14 @@ export default function BetsPage() {
       .filter((match) => isArenaBettable(match))
       .filter(
         (match) =>
-          match.host.name !== currentUser.name && match.challenger?.name !== currentUser.name
+          !(
+            (match.hostIdentityId &&
+              match.hostIdentityId.toLowerCase() === getCurrentIdentity().id.toLowerCase()) ||
+            (match.challengerIdentityId &&
+              match.challengerIdentityId.toLowerCase() === getCurrentIdentity().id.toLowerCase()) ||
+            match.host.name === getCurrentUser().name ||
+            match.challenger?.name === getCurrentUser().name
+          )
       )
       .sort((a, b) => {
         const aSeconds = getArenaBettingSecondsLeft(a)
@@ -546,7 +557,7 @@ export default function BetsPage() {
     return sum + item.ticket.amount * item.multiplier
   }, 0)
 
-  const settledSummary = useMemo(() => getUserSettledPayouts(currentUser.name), [bets, matches])
+  const settledSummary = useMemo(() => getUserSettledPayouts(getCurrentIdentity().id), [bets, matches])
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
@@ -636,7 +647,7 @@ export default function BetsPage() {
                     match={match}
                     onBetPlaced={() => {
                       setMatches(readArenaMatches())
-                      setBets(readCurrentUserTickets(currentUser.name))
+                      setBets(readCurrentUserTickets(getCurrentIdentity().id))
                     }}
                   />
                 ))

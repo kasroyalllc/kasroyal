@@ -652,6 +652,8 @@ function resolvePausedMatch(match: ArenaMatch, nowTs: number): ArenaMatch {
   return resumePausedMatchInternal(normalized, nowTs, "expired")
 }
 
+export const TIMEOUT_STRIKES_TO_LOSE = 3
+
 function resolveTimedOutLiveMatch(match: ArenaMatch, nowTs: number): ArenaMatch {
   if (match.status !== "Live" || !match.challenger) {
     return withNormalizedPauseState(match)
@@ -669,25 +671,59 @@ function resolveTimedOutLiveMatch(match: ArenaMatch, nowTs: number): ArenaMatch 
       return normalized
     }
 
-    const loser = normalized.boardState.turn
-    const winner: ArenaSide = loser === "host" ? "challenger" : "host"
-    const winnerName =
-      winner === "host"
-        ? normalized.host.name
-        : normalized.challenger?.name ?? "Challenger"
-    const loserName =
-      loser === "host"
-        ? normalized.host.name
-        : normalized.challenger?.name ?? "Challenger"
+    const timedOutSide = normalized.boardState.turn
+    const strikesHost = (normalized.timeoutStrikesHost ?? 0) + (timedOutSide === "host" ? 1 : 0)
+    const strikesChallenger =
+      (normalized.timeoutStrikesChallenger ?? 0) + (timedOutSide === "challenger" ? 1 : 0)
 
+    if (strikesHost >= TIMEOUT_STRIKES_TO_LOSE || strikesChallenger >= TIMEOUT_STRIKES_TO_LOSE) {
+      const loser = strikesHost >= TIMEOUT_STRIKES_TO_LOSE ? "host" : "challenger"
+      const winner: ArenaSide = loser === "host" ? "challenger" : "host"
+      const winnerName =
+        winner === "host"
+          ? normalized.host.name
+          : normalized.challenger?.name ?? "Challenger"
+      const loserName =
+        loser === "host"
+          ? normalized.host.name
+          : normalized.challenger?.name ?? "Challenger"
+      return {
+        ...normalized,
+        status: "Finished",
+        bettingStatus: "locked",
+        finishedAt: nowTs,
+        result: winner,
+        timeoutStrikesHost: strikesHost,
+        timeoutStrikesChallenger: strikesChallenger,
+        statusText: `${loserName} timed out 3 times`,
+        moveText: `${winnerName} wins by repeated timeout`,
+        pauseState: {
+          ...pauseState,
+          isPaused: false,
+          pausedBy: null,
+          pauseExpiresAt: null,
+        },
+      }
+    }
+
+    const nextTurn: ArenaSide = timedOutSide === "host" ? "challenger" : "host"
+    const nextDeadline = nowTs + CONNECT4_MOVE_SECONDS * 1000
+    const strikeCount = timedOutSide === "host" ? strikesHost : strikesChallenger
+    const loserName =
+      timedOutSide === "host"
+        ? normalized.host.name
+        : normalized.challenger?.name ?? "Challenger"
     return {
       ...normalized,
-      status: "Finished",
-      bettingStatus: "locked",
-      finishedAt: nowTs,
-      result: winner,
-      statusText: `${loserName} timed out`,
-      moveText: `${winnerName} wins by timeout`,
+      timeoutStrikesHost: strikesHost,
+      timeoutStrikesChallenger: strikesChallenger,
+      boardState: {
+        ...normalized.boardState,
+        turn: nextTurn,
+        turnDeadlineTs: nextDeadline,
+      },
+      statusText: `Warning: ${strikeCount}/${TIMEOUT_STRIKES_TO_LOSE} timeouts`,
+      moveText: `${loserName} timed out — ${strikeCount}/${TIMEOUT_STRIKES_TO_LOSE}. ${nextTurn === "host" ? normalized.host.name : normalized.challenger?.name ?? "Challenger"} to move`,
       pauseState: {
         ...pauseState,
         isPaused: false,
@@ -702,25 +738,59 @@ function resolveTimedOutLiveMatch(match: ArenaMatch, nowTs: number): ArenaMatch 
       return normalized
     }
 
-    const loser = normalized.boardState.turn === "X" ? "host" : "challenger"
-    const winner: ArenaSide = loser === "host" ? "challenger" : "host"
-    const winnerName =
-      winner === "host"
-        ? normalized.host.name
-        : normalized.challenger?.name ?? "Challenger"
-    const loserName =
-      loser === "host"
-        ? normalized.host.name
-        : normalized.challenger?.name ?? "Challenger"
+    const timedOutSide = normalized.boardState.turn === "X" ? "host" : "challenger"
+    const strikesHost = (normalized.timeoutStrikesHost ?? 0) + (timedOutSide === "host" ? 1 : 0)
+    const strikesChallenger =
+      (normalized.timeoutStrikesChallenger ?? 0) + (timedOutSide === "challenger" ? 1 : 0)
 
+    if (strikesHost >= TIMEOUT_STRIKES_TO_LOSE || strikesChallenger >= TIMEOUT_STRIKES_TO_LOSE) {
+      const loser = strikesHost >= TIMEOUT_STRIKES_TO_LOSE ? "host" : "challenger"
+      const winner: ArenaSide = loser === "host" ? "challenger" : "host"
+      const winnerName =
+        winner === "host"
+          ? normalized.host.name
+          : normalized.challenger?.name ?? "Challenger"
+      const loserName =
+        loser === "host"
+          ? normalized.host.name
+          : normalized.challenger?.name ?? "Challenger"
+      return {
+        ...normalized,
+        status: "Finished",
+        bettingStatus: "locked",
+        finishedAt: nowTs,
+        result: winner,
+        timeoutStrikesHost: strikesHost,
+        timeoutStrikesChallenger: strikesChallenger,
+        statusText: `${loserName} timed out 3 times`,
+        moveText: `${winnerName} wins by repeated timeout`,
+        pauseState: {
+          ...pauseState,
+          isPaused: false,
+          pausedBy: null,
+          pauseExpiresAt: null,
+        },
+      }
+    }
+
+    const nextTurn: "X" | "O" = normalized.boardState.turn === "X" ? "O" : "X"
+    const nextDeadline = nowTs + TTT_MOVE_SECONDS * 1000
+    const strikeCount = timedOutSide === "host" ? strikesHost : strikesChallenger
+    const loserName =
+      timedOutSide === "host"
+        ? normalized.host.name
+        : normalized.challenger?.name ?? "Challenger"
     return {
       ...normalized,
-      status: "Finished",
-      bettingStatus: "locked",
-      finishedAt: nowTs,
-      result: winner,
-      statusText: `${loserName} timed out`,
-      moveText: `${winnerName} wins by timeout`,
+      timeoutStrikesHost: strikesHost,
+      timeoutStrikesChallenger: strikesChallenger,
+      boardState: {
+        ...normalized.boardState,
+        turn: nextTurn,
+        turnDeadlineTs: nextDeadline,
+      },
+      statusText: `Warning: ${strikeCount}/${TIMEOUT_STRIKES_TO_LOSE} timeouts`,
+      moveText: `${loserName} timed out — ${strikeCount}/${TIMEOUT_STRIKES_TO_LOSE}. ${nextTurn === "X" ? normalized.host.name : normalized.challenger?.name ?? "Challenger"} to move`,
       pauseState: {
         ...pauseState,
         isPaused: false,
@@ -792,6 +862,8 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
               isFeaturedMarket: true,
               startedAt,
               finishedAt: undefined,
+              timeoutStrikesHost: match.timeoutStrikesHost ?? 0,
+              timeoutStrikesChallenger: match.timeoutStrikesChallenger ?? 0,
               statusText: getLiveStatusText(
                 match.game,
                 match.host.name,
@@ -811,6 +883,8 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
             bettingStatus: "locked",
             marketVisibility: "featured",
             isFeaturedMarket: true,
+            timeoutStrikesHost: match.timeoutStrikesHost ?? 0,
+            timeoutStrikesChallenger: match.timeoutStrikesChallenger ?? 0,
             boardState: match.boardState ?? createLiveBoardState(match.game, match.startedAt ?? nowTs),
           }
 
@@ -1331,9 +1405,17 @@ function mapDbMatchToArenaMatch(dbMatch: {
     ? countdownStartedAt + bettingWindowSeconds * 1000
     : undefined
 
-  const host = buildProfileFromWallet(dbMatch.host_wallet, "Host")
+  const hostShort =
+    dbMatch.host_wallet.length > 10
+      ? `${dbMatch.host_wallet.slice(0, 6)}...${dbMatch.host_wallet.slice(-4)}`
+      : dbMatch.host_wallet
+  const challengerShort =
+    dbMatch.challenger_wallet && dbMatch.challenger_wallet.length > 10
+      ? `${dbMatch.challenger_wallet.slice(0, 6)}...${dbMatch.challenger_wallet.slice(-4)}`
+      : dbMatch.challenger_wallet ?? ""
+  const host = buildProfileFromWallet(dbMatch.host_wallet, hostShort)
   const challenger = dbMatch.challenger_wallet
-    ? buildProfileFromWallet(dbMatch.challenger_wallet, "Challenger")
+    ? buildProfileFromWallet(dbMatch.challenger_wallet, challengerShort)
     : null
 
   const status = dbStatusToArenaStatus(dbMatch.status)
@@ -1343,6 +1425,8 @@ function mapDbMatchToArenaMatch(dbMatch: {
     id: dbMatch.id,
     game,
     status,
+    hostIdentityId: dbMatch.host_wallet.toLowerCase(),
+    challengerIdentityId: dbMatch.challenger_wallet?.toLowerCase(),
     bettingStatus:
       challenger && status === "Ready to Start"
         ? "open"
@@ -1410,6 +1494,11 @@ export function isArenaBettable(match: ArenaMatch) {
   )
 }
 
+/** Call from match page when Waiting for Opponent so host sees challenger join quickly (cross-device sync). */
+export function forceHydrateArenaFromRemote() {
+  void hydrateMatchesFromSupabase()
+}
+
 async function hydrateMatchesFromSupabase() {
   try {
     const dbMatches = await getDbMatches()
@@ -1420,12 +1509,39 @@ async function hydrateMatchesFromSupabase() {
     }
 
     mutateArenaStore((store) => {
-      const localOnlyTempMatches = store.matches.filter((localMatch) =>
-        localMatch.id.startsWith("arena-") &&
-        !mapped.some((remoteMatch) => remoteMatch.id === localMatch.id)
-      )
+      const consumedDbIds = new Set<string>()
 
-      const merged = [...mapped, ...localOnlyTempMatches]
+      const updatedLocal = store.matches.map((local) => {
+        if (!local.id.startsWith("arena-") || local.challenger) return local
+        const hostKey = (local.hostIdentityId ?? local.host.name ?? "").toLowerCase()
+        const db = mapped.find(
+          (d) =>
+            !consumedDbIds.has(d.id) &&
+            ((d.hostIdentityId && d.hostIdentityId.toLowerCase() === hostKey) ||
+              (d.host.name && d.host.name.toLowerCase() === hostKey)) &&
+            d.game === local.game
+        )
+        if (!db) return local
+        consumedDbIds.add(db.id)
+        return {
+          ...local,
+          challenger: db.challenger,
+          challengerIdentityId: db.challengerIdentityId,
+          status: db.status,
+          bettingStatus: db.challenger && db.status === "Ready to Start" ? "open" : local.bettingStatus,
+          seatedAt: local.seatedAt ?? db.seatedAt,
+          countdownStartedAt: db.countdownStartedAt ?? local.countdownStartedAt,
+          bettingClosesAt: db.bettingClosesAt ?? local.bettingClosesAt,
+          statusText: db.challenger && db.status === "Ready to Start" ? "Countdown active" : local.statusText,
+          moveText:
+            db.challenger && db.status === "Ready to Start"
+              ? `Starts in ${formatTime(getGameBettingWindowSeconds(local.game))}`
+              : local.moveText,
+        }
+      })
+
+      const dbOnly = mapped.filter((d) => !consumedDbIds.has(d.id))
+      const merged = [...updatedLocal, ...dbOnly]
       return {
         ...store,
         matches: merged,
@@ -2388,7 +2504,7 @@ export function getMatchSettlement(matchId: string) {
   }
 }
 
-export function getUserSettledPayouts(user = currentUser.name): UserSettledPayoutSummary {
+export function getUserSettledPayouts(user = getCurrentIdentity().id): UserSettledPayoutSummary {
   const tickets = readCurrentUserTickets(user)
   const settlements = tickets
     .map((ticket) => getBetSettlement(ticket))

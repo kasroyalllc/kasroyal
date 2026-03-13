@@ -49,7 +49,7 @@ const arenaGames = [
 const liveMatches = [
   {
     game: "Connect 4",
-    left: "KasKing01",
+    left: "Player",
     right: "TurboBetGuy",
     pot: "20 KAS",
     href: "/connect4",

@@ -10,6 +10,7 @@ import {
   clampBetAmount,
   DEFAULT_BET,
   forfeitArenaMatch,
+  forceHydrateArenaFromRemote,
   formatArenaPhase,
   getArenaBettingSecondsLeft,
   getArenaById,
@@ -28,6 +29,7 @@ import {
   MAX_PAUSES_PER_SIDE,
   MIN_BET,
   PAUSE_DURATION_SECONDS,
+  TIMEOUT_STRIKES_TO_LOSE,
   pauseArenaMatch,
   placeArenaSpectatorBet,
   readArenaMatches,
@@ -276,7 +278,10 @@ function CountdownOverlay({
           </div>
         </div>
 
-        <div className="mt-6 rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/85">
+        <div
+          className="mt-6 min-h-[3.5rem] animate-pulse rounded-2xl border border-amber-300/25 bg-amber-300/10 px-6 py-4 text-center text-base font-bold leading-snug text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.15)] sm:text-lg"
+          key={hypeLine}
+        >
           {hypeLine}
         </div>
 
@@ -675,6 +680,15 @@ export default function ArenaMatchPage() {
 
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (!matchId || !match) return
+    if (match.status !== "Waiting for Opponent") return
+    const interval = window.setInterval(() => {
+      forceHydrateArenaFromRemote()
+    }, 2000)
+    return () => window.clearInterval(interval)
+  }, [matchId, match?.status])
 
   useEffect(() => {
     if (!match) return
@@ -1766,6 +1780,27 @@ export default function ArenaMatchPage() {
                 >
                   Forfeit Match
                 </button>
+              </div>
+            ) : null}
+
+            {match.status === "Live" && (match.game === "Connect 4" || match.game === "Tic-Tac-Toe") ? (
+              <div className="rounded-[28px] border border-amber-300/10 bg-amber-300/5 p-5 shadow-2xl">
+                <p className="text-sm uppercase tracking-[0.2em] text-amber-300/80">Timeout Strikes</p>
+                <p className="mt-1 text-xs text-white/60">
+                  Move timer expired = 1 strike. {TIMEOUT_STRIKES_TO_LOSE} strikes = loss.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <StatCard
+                    label={`${match.host.name}`}
+                    value={`${match.timeoutStrikesHost ?? 0}/${TIMEOUT_STRIKES_TO_LOSE}`}
+                    accent={(match.timeoutStrikesHost ?? 0) >= 2 ? "text-red-300" : "text-amber-300"}
+                  />
+                  <StatCard
+                    label={challenger?.name ?? "Challenger"}
+                    value={`${match.timeoutStrikesChallenger ?? 0}/${TIMEOUT_STRIKES_TO_LOSE}`}
+                    accent={(match.timeoutStrikesChallenger ?? 0) >= 2 ? "text-red-300" : "text-amber-300"}
+                  />
+                </div>
               </div>
             ) : null}
 
