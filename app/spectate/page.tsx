@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   arenaFeedSeed,
   clampBetAmount,
@@ -301,25 +301,66 @@ export default function SpectatePage() {
     setChatMessages(ui)
   }, [activeLiveMatchId])
 
+  const crowdChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null)
+
   useEffect(() => {
     if (!activeLiveMatchId) {
       setChatMessages([])
       return
     }
-    refreshCrowdChat()
+    const matchId = activeLiveMatchId
     const supabase = createClient()
+
+    let cancelled = false
+    void (async () => {
+      await listSpectateMessages(supabase, matchId).then((messages) => {
+        if (cancelled) return
+        setChatMessages(
+          messages.map((m) => ({
+            id: m.id,
+            user: m.senderDisplayName,
+            text: m.message,
+            ts: m.createdAt,
+          }))
+        )
+      })
+    })()
+
     const channel = supabase
-      .channel(`spectate-crowd-${activeLiveMatchId}`)
+      .channel(`spectate-crowd-${matchId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "spectate_messages", filter: `match_id=eq.${activeLiveMatchId}` },
-        () => { void refreshCrowdChat() }
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "spectate_messages",
+          filter: `match_id=eq.${matchId}`,
+        },
+        () => {
+          void listSpectateMessages(supabase, matchId).then((messages) => {
+            setChatMessages(
+              messages.map((m) => ({
+                id: m.id,
+                user: m.senderDisplayName,
+                text: m.message,
+                ts: m.createdAt,
+              }))
+            )
+          })
+        }
       )
       .subscribe()
+
+    crowdChannelRef.current = channel
+
     return () => {
-      supabase.removeChannel(channel)
+      cancelled = true
+      if (crowdChannelRef.current) {
+        supabase.removeChannel(crowdChannelRef.current)
+        crowdChannelRef.current = null
+      }
     }
-  }, [activeLiveMatchId, refreshCrowdChat])
+  }, [activeLiveMatchId])
 
   const activeLiveMatch = useMemo(() => {
     return liveMatches.find((match) => match.id === activeLiveMatchId) ?? liveMatches[0] ?? null
