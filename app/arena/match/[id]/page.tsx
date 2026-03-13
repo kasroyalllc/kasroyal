@@ -664,6 +664,11 @@ export default function ArenaMatchPage() {
   const [mounted, setMounted] = useState(false)
   const [roomLoadAttempted, setRoomLoadAttempted] = useState(false)
   const [isMobileView, setIsMobileView] = useState(false)
+  /** Server-time sync so displayed timer matches server timeout (no clock-skew early end). */
+  const [serverTimeSync, setServerTimeSync] = useState<{ serverMs: number; receivedAtMs: number }>({
+    serverMs: 0,
+    receivedAtMs: 0,
+  })
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
@@ -760,6 +765,9 @@ export default function ArenaMatchPage() {
         .then((data) => {
           if (data.ok && data.room) {
             setMatch(roomToArenaMatch(data.room))
+            if (typeof data.server_time_ms === "number") {
+              setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+            }
           }
         })
         .catch(() => {})
@@ -1028,16 +1036,20 @@ export default function ArenaMatchPage() {
         : match.game === "Tic-Tac-Toe"
           ? tttTurnDeadlineTs
           : 0
-  // Authoritative timer: only turn_expires_at. Display with ceil so timer shows 0 only when deadline has passed.
+  // Authoritative timer: only turn_expires_at. Use server-time sync so display matches server timeout (no early end from clock skew).
   const turnExpiresAtMs =
     match.status === "Live" && match.turnExpiresAt != null
       ? (typeof match.turnExpiresAt === "number"
           ? match.turnExpiresAt
           : new Date(String(match.turnExpiresAt)).getTime())
       : null
+  const syncedNowMs =
+    serverTimeSync.receivedAtMs > 0
+      ? serverTimeSync.serverMs + (Date.now() - serverTimeSync.receivedAtMs)
+      : Date.now()
   const moveSecondsLeft =
     match.status === "Live" && !isPaused && turnExpiresAtMs != null
-      ? Math.max(0, Math.ceil((turnExpiresAtMs - Date.now()) / 1000))
+      ? Math.max(0, Math.ceil((turnExpiresAtMs - syncedNowMs) / 1000))
       : 0
 
   const canHostMove =
@@ -1432,6 +1444,9 @@ export default function ArenaMatchPage() {
       if (data.ok && data.room) {
         const updated = roomToArenaMatch(data.room)
         setMatch(updated)
+        if (typeof data.server_time_ms === "number") {
+          setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+        }
         const playerLabel = connect4Turn === "host" ? match.host.name : challenger?.name ?? "Challenger"
         setFeed((prev) => [`🎮 ${playerLabel} dropped in column ${col + 1}`, ...prev].slice(0, 12))
       } else {
@@ -1479,6 +1494,9 @@ export default function ArenaMatchPage() {
       if (data.ok && data.room) {
         const updated = roomToArenaMatch(data.room)
         setMatch(updated)
+        if (typeof data.server_time_ms === "number") {
+          setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+        }
         const playerLabel = tttTurn === "X" ? match.host.name : challenger?.name ?? "Challenger"
         setFeed((prev) => [`🎮 ${playerLabel} marked ${index + 1}`, ...prev].slice(0, 12))
       } else {
@@ -2028,47 +2046,48 @@ export default function ArenaMatchPage() {
                     />
                   ) : null}
 
-                  <div className="mb-5 grid w-full max-w-4xl grid-cols-7 gap-2">
-                    {Array.from({ length: 7 }).map((_, col) => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => dropConnect4(col)}
-                        disabled={
-                          isCountdown ||
-                          isPaused ||
-                          match.status !== "Live" ||
-                          connect4Winner !== null ||
-                          !canCurrentUserMove
-                        }
-                        className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/[0.08] disabled:opacity-40"
-                      >
-                        Drop
-                      </button>
-                    ))}
+                  {/* Connect 4: only column headers are clickable for drops — avoids wrong-column from cell taps/overlays. */}
+                  <div className="mb-5 grid w-full max-w-4xl grid-cols-7 gap-2" role="group" aria-label="Connect 4 column drop targets">
+                    {Array.from({ length: 7 }).map((_, col) => {
+                      const disabled =
+                        isCountdown ||
+                        isPaused ||
+                        match.status !== "Live" ||
+                        connect4Winner !== null ||
+                        !canCurrentUserMove
+                      return (
+                        <button
+                          key={col}
+                          type="button"
+                          data-column={col}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            dropConnect4(col)
+                          }}
+                          disabled={disabled}
+                          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/[0.08] focus:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-emerald-400/50 disabled:opacity-40 disabled:pointer-events-none touch-manipulation"
+                          aria-label={`Drop in column ${col + 1}`}
+                        >
+                          Drop
+                        </button>
+                      )
+                    })}
                   </div>
 
-                  <div className="grid w-full max-w-4xl grid-cols-7 gap-2 rounded-[24px] border border-emerald-300/14 bg-[#07100e] p-4 shadow-[inset_0_0_24px_rgba(0,255,200,0.08)]">
+                  <div className="grid w-full max-w-4xl grid-cols-7 gap-2 rounded-[24px] border border-emerald-300/14 bg-[#07100e] p-4 shadow-[inset_0_0_24px_rgba(0,255,200,0.08)]" role="grid" aria-label="Connect 4 board">
                     {connect4Board.map((row, r) =>
                       row.map((cell, c) => (
-                        <button
+                        <div
                           key={`${r}-${c}`}
-                          type="button"
-                          onClick={() => dropConnect4(c)}
-                          disabled={
-                            isCountdown ||
-                            isPaused ||
-                            match.status !== "Live" ||
-                            connect4Winner !== null ||
-                            !canCurrentUserMove
-                          }
+                          role="presentation"
                           className={`aspect-square rounded-full border ${
                             cell === "host"
                               ? "border-amber-200/70 bg-amber-300 shadow-[0_0_14px_rgba(255,215,0,0.18)]"
                               : cell === "challenger"
                                 ? "border-emerald-300/70 bg-emerald-400 shadow-[0_0_14px_rgba(0,255,200,0.18)]"
                                 : "border-white/5 bg-black/45"
-                          } disabled:opacity-90`}
+                          }`}
                         />
                       ))
                     )}

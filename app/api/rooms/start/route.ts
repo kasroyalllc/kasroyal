@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const updatedRoom = mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
 
     return NextResponse.json(
-      { ok: true, room: updatedRoom },
+      { ok: true, room: updatedRoom, server_time_ms: nowMs },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

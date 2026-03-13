@@ -90,12 +90,13 @@ export async function POST(request: NextRequest) {
             ok: true,
             room: mapDbRowToRoom((data as Record<string, unknown>)),
             transition: "ready_to_live",
+            server_time_ms: Date.now(),
           },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
       return NextResponse.json(
-        { ok: true, room, transition: null },
+        { ok: true, room, transition: null, server_time_ms: Date.now() },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
       const turnExpiresAtMs = room.turnExpiresAt ?? null
       if (turnExpiresAtMs == null || nowMs < turnExpiresAtMs) {
         return NextResponse.json(
-          { ok: true, room, transition: null },
+          { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
@@ -148,6 +149,7 @@ export async function POST(request: NextRequest) {
             ok: true,
             room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
             transition: "timeout_finish",
+            server_time_ms: nowMs,
           },
           { headers: { "Cache-Control": "no-store" } }
         )
@@ -175,6 +177,7 @@ export async function POST(request: NextRequest) {
             ok: true,
             room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
             transition: "timeout_finish",
+            server_time_ms: nowMs,
           },
           { headers: { "Cache-Control": "no-store" } }
         )
@@ -208,13 +211,14 @@ export async function POST(request: NextRequest) {
           ok: true,
           room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
           transition: "timeout_strike",
+          server_time_ms: nowMs,
         },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
     return NextResponse.json(
-      { ok: true, room, transition: null },
+      { ok: true, room, transition: null, server_time_ms: nowMs },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

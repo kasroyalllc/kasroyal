@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
 
     const rawBoard = room.boardState
     const now = new Date().toISOString()
+    const nowMs = Date.now()
     const moveSeconds = getMoveSecondsForGame(gameType)
 
     if (gameType === "Connect 4") {
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
         if (error) throw error
         logRoomAction("move_win", roomId, { game: "Connect 4", reason: "win" })
         return NextResponse.json(
-          { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
+          { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
@@ -169,13 +170,13 @@ export async function POST(request: NextRequest) {
         if (error) throw error
         logRoomAction("move_draw", roomId, { game: "Connect 4", reason: "draw" })
         return NextResponse.json(
-          { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
+          { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
 
       const nextTurnId = nextTurn === "host" ? room.hostIdentityId : room.challengerIdentityId!
-      const turnExpiresAt = new Date(Date.now() + moveSeconds * 1000).toISOString()
+      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
       const { data, error } = await supabase
         .from("matches")
         .update({
@@ -183,7 +184,7 @@ export async function POST(request: NextRequest) {
             mode: "connect4-live",
             board: result.board,
             turn: nextTurn,
-            turnDeadlineTs: Date.now() + moveSeconds * 1000,
+            turnDeadlineTs: nowMs + moveSeconds * 1000,
           },
           move_turn_identity_id: nextTurnId,
           move_turn_started_at: now,
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       if (error) throw error
       return NextResponse.json(
-        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
+        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
@@ -255,7 +256,7 @@ export async function POST(request: NextRequest) {
       if (error) throw error
       logRoomAction("move_win", roomId, { game: "Tic Tac Toe", reason: "win" })
       return NextResponse.json(
-        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
+        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
@@ -283,13 +284,13 @@ export async function POST(request: NextRequest) {
       if (error) throw error
       logRoomAction("move_draw", roomId, { game: "Tic Tac Toe", reason: "draw" })
       return NextResponse.json(
-        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
+        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
     const nextTurnId = nextTurn === "X" ? room.hostIdentityId : room.challengerIdentityId!
-    const turnExpiresAt = new Date(Date.now() + moveSeconds * 1000).toISOString()
+    const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
     const { data, error } = await supabase
       .from("matches")
       .update({
@@ -297,7 +298,7 @@ export async function POST(request: NextRequest) {
           mode: "ttt-live",
           board: nextBoard,
           turn: nextTurn,
-          turnDeadlineTs: Date.now() + moveSeconds * 1000,
+          turnDeadlineTs: nowMs + moveSeconds * 1000,
         },
         move_turn_identity_id: nextTurnId,
         move_turn_started_at: now,
@@ -310,7 +311,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
     if (error) throw error
     return NextResponse.json(
-      { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
+      { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {
