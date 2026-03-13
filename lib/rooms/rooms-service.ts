@@ -52,12 +52,9 @@ export async function getRoomById(
     .from("matches")
     .select("*")
     .eq("id", roomId)
-    .single()
+    .maybeSingle()
 
-  if (error) {
-    if (error.code === "PGRST116") return null
-    throw error
-  }
+  if (error) throw error
   if (!data) return null
   return mapDbRowToRoom(data as Record<string, unknown>)
 }
@@ -123,10 +120,11 @@ export async function joinRoom(
     .update(updates)
     .eq("id", roomId)
     .select("*")
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
+  if (!data) throw new Error("Room not found or already joined")
+  return mapDbRowToRoom(data as Record<string, unknown>)
 }
 
 /**
@@ -173,10 +171,11 @@ export async function forfeitRoom(
     })
     .eq("id", roomId)
     .select("*")
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
+  if (!data) throw new Error("Room not found")
+  return mapDbRowToRoom(data as Record<string, unknown>)
 }
 
 export async function listRoomMessages(

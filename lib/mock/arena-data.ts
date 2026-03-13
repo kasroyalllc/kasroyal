@@ -1670,15 +1670,6 @@ function startArenaLifecycleTicker() {
       updatedAt: nowTs,
     })
 
-    const nextMatches = readArenaStore().matches
-    for (const updatedMatch of nextMatches) {
-      const previous = current.matches.find((item) => item.id === updatedMatch.id)
-      if (!previous) continue
-      if (previous.status !== updatedMatch.status) {
-        void syncMatchToSupabase(updatedMatch)
-      }
-    }
-
     if (nowTs - lastRemoteHydrateAt >= REMOTE_HYDRATE_INTERVAL_MS) {
       lastRemoteHydrateAt = nowTs
       void hydrateMatchesFromSupabase()
@@ -1769,20 +1760,6 @@ export function updateArenaMatch(
     | ((current: ArenaMatch) => ArenaMatch | Partial<ArenaMatch>)
 ): ArenaMatch | null {
   return null
-}
-
-async function syncMatchToSupabase(match: ArenaMatch) {
-  try {
-    if (
-      match.status === "Ready to Start" ||
-      match.status === "Live" ||
-      match.status === "Finished"
-    ) {
-      await updateDbMatchStatus(match.id, match.status)
-    }
-  } catch (error) {
-    console.error("KasRoyal syncMatchToSupabase failed", error)
-  }
 }
 
 /**
@@ -2060,6 +2037,7 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
   void (async () => {
     try {
       const dbMatch = await joinDbMatch(matchId, walletAddress)
+      if (!dbMatch) return
       const mapped = mapDbMatchToArenaMatch(dbMatch)
 
       upsertMatchLocally({
@@ -2250,9 +2228,6 @@ export function forfeitArenaMatch(matchId: string, forfeitingSide: ArenaSide): A
     return { ...store, matches: nextMatches }
   })
 
-  if (updated) {
-    void syncMatchToSupabase(updated)
-  }
   return updated
 }
 

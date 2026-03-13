@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       .eq("id", roomId)
       .eq("status", "Ready to Start")
       .select("*")
-      .single()
+      .maybeSingle()
 
     if (error) throw error
 

@@ -136,10 +136,10 @@ export async function POST(request: NextRequest) {
           })
           .eq("id", roomId)
           .select("*")
-          .single()
+          .maybeSingle()
         if (error) throw error
         return NextResponse.json(
-          { ok: true, room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>) },
+          { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
@@ -163,10 +163,10 @@ export async function POST(request: NextRequest) {
           })
           .eq("id", roomId)
           .select("*")
-          .single()
+          .maybeSingle()
         if (error) throw error
         return NextResponse.json(
-          { ok: true, room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>) },
+          { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
@@ -188,10 +188,10 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", roomId)
         .select("*")
-        .single()
+        .maybeSingle()
       if (error) throw error
       return NextResponse.json(
-        { ok: true, room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>) },
+        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
@@ -246,10 +246,10 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", roomId)
         .select("*")
-        .single()
+        .maybeSingle()
       if (error) throw error
       return NextResponse.json(
-        { ok: true, room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>) },
+        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
@@ -273,10 +273,10 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", roomId)
         .select("*")
-        .single()
+        .maybeSingle()
       if (error) throw error
       return NextResponse.json(
-        { ok: true, room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>) },
+        { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
@@ -298,10 +298,10 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", roomId)
       .select("*")
-      .single()
+      .maybeSingle()
     if (error) throw error
     return NextResponse.json(
-      { ok: true, room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>) },
+      { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

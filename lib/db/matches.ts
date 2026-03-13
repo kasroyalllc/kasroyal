@@ -31,18 +31,18 @@ export async function getMatches() {
   return (data ?? []) as DbMatchRow[]
 }
 
-export async function getMatchById(matchId: string) {
+export async function getMatchById(matchId: string): Promise<DbMatchRow | null> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
     .eq("id", matchId)
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return data as DbMatchRow
+  return data as DbMatchRow | null
 }
 
-export async function joinMatch(matchId: string, wallet: string) {
+export async function joinMatch(matchId: string, wallet: string): Promise<DbMatchRow | null> {
   const { data, error } = await supabase
     .from("matches")
     .update({
@@ -51,16 +51,16 @@ export async function joinMatch(matchId: string, wallet: string) {
     })
     .eq("id", matchId)
     .select("*")
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return data as DbMatchRow
+  return data as DbMatchRow | null
 }
 
 export async function updateMatchStatus(
   matchId: string,
   status: DbMatchRow["status"]
-) {
+): Promise<DbMatchRow | null> {
   const updates: Partial<DbMatchRow> & {
     status: DbMatchRow["status"]
   } = { status }
@@ -78,8 +78,8 @@ export async function updateMatchStatus(
     .update(updates)
     .eq("id", matchId)
     .select("*")
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return data as DbMatchRow
+  return data as DbMatchRow | null
 }

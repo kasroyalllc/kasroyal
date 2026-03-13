@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
             .eq("id", roomId)
             .eq("status", "Ready to Start")
             .select("*")
-            .single()
+            .maybeSingle()
           if (error) throw error
           if (data) {
             return NextResponse.json(
@@ -142,12 +142,12 @@ export async function POST(request: NextRequest) {
           })
           .eq("id", roomId)
           .select("*")
-          .single()
+          .maybeSingle()
         if (error) throw error
         return NextResponse.json(
           {
             ok: true,
-            room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>),
+            room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
             transition: "timeout_finish",
           },
           { headers: { "Cache-Control": "no-store" } }
@@ -168,12 +168,12 @@ export async function POST(request: NextRequest) {
           })
           .eq("id", roomId)
           .select("*")
-          .single()
+          .maybeSingle()
         if (error) throw error
         return NextResponse.json(
           {
             ok: true,
-            room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>),
+            room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
             transition: "timeout_finish",
           },
           { headers: { "Cache-Control": "no-store" } }
@@ -196,12 +196,12 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", roomId)
         .select("*")
-        .single()
+        .maybeSingle()
       if (error) throw error
       return NextResponse.json(
         {
           ok: true,
-          room: mapDbRowToRoom((data ?? {}) as Record<string, unknown>),
+          room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
           transition: "timeout_strike",
         },
         { headers: { "Cache-Control": "no-store" } }
