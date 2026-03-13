@@ -270,6 +270,15 @@ export default function SpectatePage() {
       })
   }, [filteredMatches])
 
+  const liveMatchesRanked = useMemo(
+    () => liveMatches.filter((m) => m.matchMode !== "quick"),
+    [liveMatches]
+  )
+  const liveMatchesQuick = useMemo(
+    () => liveMatches.filter((m) => m.matchMode === "quick"),
+    [liveMatches]
+  )
+
   useEffect(() => {
     setActiveLiveMatchId((current) => {
       if (current && liveMatches.some((match) => match.id === current)) return current
@@ -469,7 +478,7 @@ export default function SpectatePage() {
                   </div>
                   <h2 className="mt-1.5 text-xl font-black">Live & countdown</h2>
                   <p className="mt-1 text-sm text-white/55">
-                    Real rooms from the arena. Live first, then starting soon.
+                    Ranked first (competitive), then Quick. Live first, then starting soon.
                   </p>
                 </div>
                 {activeLiveMatch ? (
@@ -482,15 +491,41 @@ export default function SpectatePage() {
                 ) : null}
               </div>
               {liveMatches.length ? (
-                <div className="mt-4 grid gap-3">
-                  {liveMatches.map((match) => (
-                    <LiveMatchCard
-                      key={match.id}
-                      match={match}
-                      active={match.id === activeLiveMatch?.id}
-                      onSelect={() => setActiveLiveMatchId(match.id)}
-                    />
-                  ))}
+                <div className="mt-4 space-y-4">
+                  {liveMatchesRanked.length > 0 ? (
+                    <div>
+                      <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-amber-300/90">
+                        Ranked matches
+                      </h3>
+                      <div className="grid gap-3">
+                        {liveMatchesRanked.map((match) => (
+                          <LiveMatchCard
+                            key={match.id}
+                            match={match}
+                            active={match.id === activeLiveMatch?.id}
+                            onSelect={() => setActiveLiveMatchId(match.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {liveMatchesQuick.length > 0 ? (
+                    <div>
+                      <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-emerald-300/90">
+                        Quick matches
+                      </h3>
+                      <div className="grid gap-3">
+                        {liveMatchesQuick.map((match) => (
+                          <LiveMatchCard
+                            key={match.id}
+                            match={match}
+                            active={match.id === activeLiveMatch?.id}
+                            onSelect={() => setActiveLiveMatchId(match.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="mt-4">

@@ -105,6 +105,25 @@ export function getGuestId(): string {
 }
 
 /**
+ * Update stored guest display name. Use after user customizes name on profile page.
+ * Guest id is unchanged; only displayName is updated.
+ */
+export function setStoredGuestDisplayName(displayName: string): void {
+  if (!isBrowser()) return
+  const guest = getStableGuestIdentity()
+  const trimmed = String(displayName).trim()
+  if (!trimmed) return
+  try {
+    window.localStorage.setItem(
+      GUEST_IDENTITY_STORAGE_KEY,
+      JSON.stringify({ id: guest.id, displayName: trimmed })
+    )
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Clear stored guest identity (e.g. after hard reset). Next getCurrentIdentity() will create a new guest.
  * Only call from resetAllArenaState or similar; normally guest identity is persistent.
  */

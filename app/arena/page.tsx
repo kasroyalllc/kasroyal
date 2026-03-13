@@ -611,6 +611,15 @@ export default function ArenaPage() {
       .sort((a, b) => b.createdAt - a.createdAt)
   }, [filteredMatches])
 
+  const myReadyMatchesQuick = useMemo(
+    () => myReadyMatches.filter((m) => m.matchMode === "quick"),
+    [myReadyMatches]
+  )
+  const myReadyMatchesRanked = useMemo(
+    () => myReadyMatches.filter((m) => m.matchMode !== "quick"),
+    [myReadyMatches]
+  )
+
   const myLiveMatches = useMemo(() => {
     const id = getCurrentIdentity().id.toLowerCase()
     const name = getCurrentUser().name
@@ -655,6 +664,15 @@ export default function ArenaPage() {
       m.challenger?.name === name
     return filteredMatches.filter(isMine).sort((a, b) => b.createdAt - a.createdAt)
   }, [filteredMatches])
+
+  const myMatchesQuick = useMemo(
+    () => myMatches.filter((m) => m.matchMode === "quick"),
+    [myMatches]
+  )
+  const myMatchesRanked = useMemo(
+    () => myMatches.filter((m) => m.matchMode !== "quick"),
+    [myMatches]
+  )
 
   const liveMatches = useMemo(
     () =>
@@ -1126,49 +1144,14 @@ export default function ArenaPage() {
             </button>
           </div>
 
-          <section className="space-y-6">
-            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/[0.04] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
-              <div className="mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/80">
-                  Ready to enter
-                </p>
-                <h2 className="mt-1.5 text-xl font-black">Countdown rooms</h2>
-                <p className="mt-1.5 text-sm text-white/60">
-                  Your room is ready — enter before the match starts.
-                </p>
-              </div>
-
-              <div className="grid gap-4">
-                {myReadyMatches.length ? (
-                  myReadyMatches.map((match) => (
-                    <MatchCard
-                      key={match.id}
-                      match={match}
-                      onJoin={handleJoinMatch}
-                      onFill={handleFillOpponent}
-                      walletLocked={walletLocked}
-                      activeMatchId={activeWalletMatch?.id ?? null}
-                      isGuest={isGuest}
-                    />
-                  ))
-                ) : (
-                  <EmptyState
-                    title="No ready rooms"
-                    text="When a second player joins one of your matches, it will show here."
-                  />
-                )}
-              </div>
-            </div>
-
+          <section className="space-y-8">
+            {/* Shared filters */}
             <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">
-                    Filters
-                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">Filters</p>
                   <h2 className="mt-1 text-xl font-black">Lobby</h2>
                 </div>
-
                 <input
                   type="text"
                   value={search}
@@ -1177,29 +1160,23 @@ export default function ArenaPage() {
                   className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none"
                 />
               </div>
-
               <div className="mt-5 flex flex-wrap gap-2">
-                {(["All", "Chess Duel", "Connect 4", "Tic-Tac-Toe"] as GameFilter[]).map(
-                  (filterValue) => {
-                    const active = gameFilter === filterValue
-                    return (
-                      <button
-                        key={filterValue}
-                        type="button"
-                        onClick={() => setGameFilter(filterValue)}
-                        className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
-                          active
-                            ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
-                            : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
-                        }`}
-                      >
-                        {filterValue}
-                      </button>
-                    )
-                  }
-                )}
+                {(["All", "Chess Duel", "Connect 4", "Tic-Tac-Toe"] as GameFilter[]).map((filterValue) => {
+                  const active = gameFilter === filterValue
+                  return (
+                    <button
+                      key={filterValue}
+                      type="button"
+                      onClick={() => setGameFilter(filterValue)}
+                      className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                        active ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                      }`}
+                    >
+                      {filterValue}
+                    </button>
+                  )
+                })}
               </div>
-
               <div className="mt-3 flex flex-wrap gap-2">
                 {(["All", "Mine", "Hosted", "Joined"] as OwnershipFilter[]).map((filterValue) => {
                   const active = ownershipFilter === filterValue
@@ -1209,9 +1186,7 @@ export default function ArenaPage() {
                       type="button"
                       onClick={() => setOwnershipFilter(filterValue)}
                       className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
-                        active
-                          ? "border-amber-300/25 bg-amber-300/10 text-amber-300"
-                          : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                        active ? "border-amber-300/25 bg-amber-300/10 text-amber-300" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
                       }`}
                     >
                       {filterValue}
@@ -1221,102 +1196,95 @@ export default function ArenaPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/80">
-                    Joinable
-                  </p>
-                  <h2 className="mt-1 text-xl font-black">Open seats</h2>
-                  <p className="mt-1 text-sm text-white/55">
-                    Quick = free. Ranked = connect wallet.
-                  </p>
+            {/* ——— Quick Match Arena ——— */}
+            <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <h2 className="mb-4 text-xl font-black text-emerald-200">Quick Match Arena</h2>
+              <p className="mb-5 text-sm text-white/60">Free play. No wallet required. Guests welcome.</p>
+
+              <div className="mb-6">
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-300/90">Countdown rooms (Quick)</h3>
+                <div className="grid gap-4">
+                  {myReadyMatchesQuick.length ? (
+                    myReadyMatchesQuick.map((match) => (
+                      <MatchCard key={match.id} match={match} onJoin={handleJoinMatch} onFill={handleFillOpponent} walletLocked={walletLocked} activeMatchId={activeWalletMatch?.id ?? null} isGuest={isGuest} />
+                    ))
+                  ) : (
+                    <EmptyState title="No quick countdown rooms" text="When someone joins your Quick match, it will show here." />
+                  )}
                 </div>
-                <MetricCard
-                  label="Open Hosted by You"
-                  value={`${openHostedMatches.length}`}
-                  accent="text-amber-300"
-                />
               </div>
 
-              {joinableQuickMatches.length > 0 ? (
-                <div className="mb-6">
-                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-300/90">
-                    Quick Match (Free)
-                  </h3>
-                  <div className="grid gap-4">
-                    {joinableQuickMatches.map((match) => (
-                      <MatchCard
-                        key={match.id}
-                        match={match}
-                        onJoin={handleJoinMatch}
-                        onFill={handleFillOpponent}
-                        walletLocked={walletLocked}
-                        activeMatchId={activeWalletMatch?.id ?? null}
-                        isGuest={isGuest}
-                      />
-                    ))}
-                  </div>
+              <div className="mb-6">
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-300/90">Open seats (Quick)</h3>
+                <div className="grid gap-4">
+                  {joinableQuickMatches.length ? (
+                    joinableQuickMatches.map((match) => (
+                      <MatchCard key={match.id} match={match} onJoin={handleJoinMatch} onFill={handleFillOpponent} walletLocked={walletLocked} activeMatchId={activeWalletMatch?.id ?? null} isGuest={isGuest} />
+                    ))
+                  ) : (
+                    <EmptyState title="No open Quick seats" text="Create a Quick match above or wait for new open seats." />
+                  )}
                 </div>
-              ) : null}
-
-              {joinableRankedMatches.length > 0 ? (
-                <div>
-                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-300/90">
-                    Ranked Match (Wallet)
-                  </h3>
-                  <div className="grid gap-4">
-                    {joinableRankedMatches.map((match) => (
-                      <MatchCard
-                        key={match.id}
-                        match={match}
-                        onJoin={handleJoinMatch}
-                        onFill={handleFillOpponent}
-                        walletLocked={walletLocked}
-                        activeMatchId={activeWalletMatch?.id ?? null}
-                        isGuest={isGuest}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {joinableMatches.length === 0 ? (
-                <EmptyState
-                  title="No joinable matches"
-                  text="Create a Quick or Ranked match above, or wait for new open seats."
-                />
-              ) : null}
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
-              <div className="mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300/80">My matches</p>
-                <h2 className="mt-1 text-xl font-black">Your rooms</h2>
               </div>
 
-              <div className="grid gap-4">
-                {myMatches.length ? (
-                  myMatches.map((match) => (
-                    <MatchCard
-                      key={match.id}
-                      match={match}
-                      onJoin={handleJoinMatch}
-                      onFill={handleFillOpponent}
-                      walletLocked={walletLocked}
-                      activeMatchId={activeWalletMatch?.id ?? null}
-                      isGuest={isGuest}
-                    />
-                  ))
-                ) : (
-                  <EmptyState
-                    title="No personal matches yet"
-                    text="Once you create or join a room, it will appear here."
-                  />
-                )}
+              <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-300/90">Your rooms (Quick)</h3>
+                <div className="grid gap-4">
+                  {myMatchesQuick.length ? (
+                    myMatchesQuick.map((match) => (
+                      <MatchCard key={match.id} match={match} onJoin={handleJoinMatch} onFill={handleFillOpponent} walletLocked={walletLocked} activeMatchId={activeWalletMatch?.id ?? null} isGuest={isGuest} />
+                    ))
+                  ) : (
+                    <EmptyState title="No Quick matches yet" text="Create or join a Quick match to see it here." />
+                  )}
+                </div>
               </div>
             </div>
 
+            {/* ——— Ranked Arena ——— */}
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.04] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <h2 className="mb-4 text-xl font-black text-amber-200">Ranked Arena</h2>
+              <p className="mb-5 text-sm text-white/60">Wallet required. Spectator betting. Rank and climb.</p>
+
+              <div className="mb-6">
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-300/90">Countdown rooms (Ranked)</h3>
+                <div className="grid gap-4">
+                  {myReadyMatchesRanked.length ? (
+                    myReadyMatchesRanked.map((match) => (
+                      <MatchCard key={match.id} match={match} onJoin={handleJoinMatch} onFill={handleFillOpponent} walletLocked={walletLocked} activeMatchId={activeWalletMatch?.id ?? null} isGuest={isGuest} />
+                    ))
+                  ) : (
+                    <EmptyState title="No ranked countdown rooms" text="When someone joins your Ranked match, it will show here." />
+                  )}
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-300/90">Open seats (Ranked)</h3>
+                <div className="grid gap-4">
+                  {joinableRankedMatches.length ? (
+                    joinableRankedMatches.map((match) => (
+                      <MatchCard key={match.id} match={match} onJoin={handleJoinMatch} onFill={handleFillOpponent} walletLocked={walletLocked} activeMatchId={activeWalletMatch?.id ?? null} isGuest={isGuest} />
+                    ))
+                  ) : (
+                    <EmptyState title="No open Ranked seats" text="Connect wallet and create a Ranked match, or wait for open seats." />
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-300/90">Your rooms (Ranked)</h3>
+                <div className="grid gap-4">
+                  {myMatchesRanked.length ? (
+                    myMatchesRanked.map((match) => (
+                      <MatchCard key={match.id} match={match} onJoin={handleJoinMatch} onFill={handleFillOpponent} walletLocked={walletLocked} activeMatchId={activeWalletMatch?.id ?? null} isGuest={isGuest} />
+                    ))
+                  ) : (
+                    <EmptyState title="No Ranked matches yet" text="Create or join a Ranked match (wallet required) to see it here." />
+                  )}
+                </div>
+              </div>
+            </div>
           </section>
         </div>
       </div>

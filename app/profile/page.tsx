@@ -1,6 +1,8 @@
 "use client"
 
 import { ChangeEvent, useEffect, useState } from "react"
+import { getCurrentIdentity, getStoredProfileDisplayName, setStoredGuestDisplayName, setStoredProfileDisplayName } from "@/lib/identity"
+import { getStoredConnectedAccount, shortAddress } from "@/lib/wallet/wallet-client"
 
 type ProfileData = {
   displayName: string
@@ -15,15 +17,24 @@ const defaultProfile: ProfileData = {
 export default function ProfilePage() {
   const [displayName, setDisplayName] = useState(defaultProfile.displayName)
   const [avatarUrl, setAvatarUrl] = useState(defaultProfile.avatarUrl)
-  const [message, setMessage] = useState("Upload a profile picture and save your profile.")
+  const [message, setMessage] = useState("Set your display name and save. Wallet users: names are unique across the platform.")
 
   useEffect(() => {
+    const identity = getCurrentIdentity()
+    if (identity.isGuest) {
+      setDisplayName(identity.displayName || defaultProfile.displayName)
+    } else {
+      const account = getStoredConnectedAccount()
+      if (account) {
+        const stored = getStoredProfileDisplayName(account) ?? shortAddress(account, 6, 4)
+        setDisplayName(stored || defaultProfile.displayName)
+      }
+    }
     const stored = localStorage.getItem("kasroyal-profile")
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as ProfileData
-        setDisplayName(parsed.displayName || defaultProfile.displayName)
-        setAvatarUrl(parsed.avatarUrl || "")
+        if (parsed.avatarUrl) setAvatarUrl(parsed.avatarUrl)
       } catch {}
     }
   }, [])
@@ -53,20 +64,47 @@ export default function ProfilePage() {
     reader.readAsDataURL(file)
   }
 
-  function saveProfile() {
-    const payload: ProfileData = {
-      displayName: displayName.trim() || defaultProfile.displayName,
-      avatarUrl,
+  async function saveProfile() {
+    const name = displayName.trim() || defaultProfile.displayName
+    const identity = getCurrentIdentity()
+
+    if (identity.isGuest) {
+      setStoredGuestDisplayName(name)
+      localStorage.setItem("kasroyal-profile", JSON.stringify({ displayName: name, avatarUrl }))
+      window.dispatchEvent(new Event("kasroyal-profile-updated"))
+      setMessage("Profile saved. Connect a wallet for a unique name that appears in Ranked play.")
+      return
     }
 
-    localStorage.setItem("kasroyal-profile", JSON.stringify(payload))
-    window.dispatchEvent(new Event("kasroyal-profile-updated"))
-    setMessage("Profile saved successfully.")
+    try {
+      const res = await fetch("/api/profile/display-name", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identity_id: identity.id, display_name: name }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setMessage(data.error === "That profile name is already taken." ? data.error : data.error || "Failed to save.")
+        return
+      }
+      setStoredProfileDisplayName(identity.id, name)
+      localStorage.setItem("kasroyal-profile", JSON.stringify({ displayName: name, avatarUrl }))
+      window.dispatchEvent(new Event("kasroyal-profile-updated"))
+      setMessage("Profile saved successfully. Your name is unique across KasRoyal.")
+    } catch {
+      setMessage("Could not save. Try again.")
+    }
   }
 
   function resetProfile() {
     localStorage.removeItem("kasroyal-profile")
-    setDisplayName(defaultProfile.displayName)
+    const identity = getCurrentIdentity()
+    if (identity.isGuest) {
+      setDisplayName(identity.displayName || defaultProfile.displayName)
+    } else {
+      const account = getStoredConnectedAccount()
+      setDisplayName(account ? shortAddress(account, 6, 4) : defaultProfile.displayName)
+    }
     setAvatarUrl("")
     window.dispatchEvent(new Event("kasroyal-profile-updated"))
     setMessage("Profile reset.")

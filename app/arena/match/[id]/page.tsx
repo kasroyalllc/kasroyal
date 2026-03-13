@@ -660,6 +660,7 @@ export default function ArenaMatchPage() {
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
+  const chatFormRef = useRef<HTMLFormElement | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -810,6 +811,33 @@ export default function ArenaMatchPage() {
     }))
     setChatMessages(uiMessages)
   }, [matchId])
+
+  const handleChatSubmit = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      const text = chatInput.trim()
+      if (!text) return
+      try {
+        const res = await fetch("/api/chat/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            match_id: matchId,
+            sender_identity_id: getCurrentIdentity().id,
+            sender_display_name: getCurrentUser().name,
+            message: text,
+          }),
+        })
+        if (res.ok) {
+          setChatInput("")
+          await refreshChat()
+        }
+      } catch {
+        // keep input on error
+      }
+    },
+    [matchId, chatInput, refreshChat]
+  )
 
   useEffect(() => {
     refreshChatRef.current = refreshChat
@@ -1600,7 +1628,11 @@ export default function ArenaMatchPage() {
                   </>
                 )
               }
-              return <p className="mt-2 text-sm text-white/80">{match.statusText}</p>
+              return (
+                <p className="mt-2 text-sm text-white/80">
+                  {match.result === "draw" ? "Draw" : match.statusText || "Match finished"}
+                </p>
+              )
             })()}
             <p className="mt-2 text-xs text-white/60">You can join or create a new match.</p>
             <Link
@@ -2115,7 +2147,7 @@ export default function ArenaMatchPage() {
                 </GameBoardShell>
               )}
 
-              {/* Room Chat — under board; mobile: fixed bottom composer so keyboard doesn't hide it */}
+              {/* Room Chat — under board; mobile: fixed bottom composer so keyboard doesn't hide input */}
               <div className="mt-5 w-full">
                 <div className="flex max-h-[75vh] flex-col rounded-2xl border border-emerald-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_28px_rgba(16,185,129,0.08)] ring-1 ring-emerald-400/10 md:max-h-none">
                   <div className="mb-3 flex shrink-0 items-center justify-between">
@@ -2124,7 +2156,8 @@ export default function ArenaMatchPage() {
                       Live
                     </span>
                   </div>
-                  <div className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none pb-[env(safe-area-inset-bottom)] md:pb-0">
+                  {/* Mobile: extra padding-bottom so last message isn't hidden behind fixed form */}
+                  <div className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none pb-[env(safe-area-inset-bottom)] md:pb-0 max-md:pb-[88px]">
                     {chatMessages.length === 0 ? (
                       <div className="flex min-h-[120px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45 md:min-h-[220px]">
                         No messages yet. Say something!
@@ -2152,36 +2185,16 @@ export default function ArenaMatchPage() {
                       </>
                     )}
                   </div>
-                  {/* Desktop: form inline. Mobile: fixed bottom bar so keyboard doesn't push input off-screen */}
+                  {/* Desktop: form inline. Mobile: fixed to viewport bottom so input stays above keyboard */}
                   <form
-                    className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:sticky max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-20 max-md:mt-3 max-md:rounded-2xl max-md:border max-md:border-emerald-400/20 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.2)]"
+                    ref={chatFormRef}
+                    className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-30 max-md:mt-0 max-md:rounded-none max-md:border-0 max-md:border-t max-md:border-white/10 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
                     style={{ scrollMarginBottom: 24 }}
-                    onSubmit={async (e) => {
-                      e.preventDefault()
-                      const text = chatInput.trim()
-                      if (!text) return
-                      try {
-                        const res = await fetch("/api/chat/send", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            match_id: matchId,
-                            sender_identity_id: getCurrentIdentity().id,
-                            sender_display_name: currentUserProfile.name,
-                            message: text,
-                          }),
-                        })
-                        if (res.ok) {
-                          setChatInput("")
-                          await refreshChat()
-                        }
-                      } catch {
-                        // keep input on error
-                      }
-                    }}
+                    onSubmit={handleChatSubmit}
                   >
                     <input
                       type="text"
+                      inputMode="text"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       placeholder="Type a message…"
@@ -2193,7 +2206,7 @@ export default function ArenaMatchPage() {
                     <button
                       type="submit"
                       disabled={!chatInput.trim()}
-                      className="touch-manipulation min-h-[52px] min-w-[56px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
+                      className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition active:scale-[0.98] hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
                     >
                       Send
                     </button>
