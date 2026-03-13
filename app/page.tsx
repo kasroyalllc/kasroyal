@@ -171,19 +171,33 @@ export default function HomePage() {
           aria-label="Hero"
         >
           <div className="mx-auto max-w-4xl">
-            {/* Large KasRoyal hero artwork: dominant brand visual with glow */}
+            {/* Large KasRoyal hero artwork: premium framed arena poster, integrated into page */}
             <div className="relative mx-auto mb-8 w-full max-w-[420px] sm:max-w-[500px] md:mb-10 md:max-w-[560px] lg:max-w-[600px]">
-              <div className="absolute -inset-8 rounded-3xl bg-emerald-500/12 blur-3xl" aria-hidden />
-              <div className="absolute -inset-4 rounded-2xl bg-amber-400/08 blur-2xl" aria-hidden />
-              <div className="relative drop-shadow-[0_0_60px_rgba(16,185,129,0.15),0_0_100px_rgba(251,191,36,0.08)]">
-                <Image
-                  src="/kasroyal-hero-banner.png"
-                  alt="KasRoyal — Skill arena · Spectator betting"
-                  width={600}
-                  height={300}
-                  priority
-                  className="h-auto w-full object-contain"
-                />
+              {/* Outer halo / ambient bloom */}
+              <div className="absolute -inset-10 rounded-[28px] bg-emerald-500/10 blur-[60px]" aria-hidden />
+              <div className="absolute -inset-6 rounded-2xl bg-amber-400/06 blur-3xl" aria-hidden />
+              {/* Premium card frame: glass surface, emerald/gold border glow */}
+              <div
+                className="relative overflow-hidden rounded-2xl border-2 border-white/10 bg-gradient-to-b from-white/[0.06] to-black/40"
+                style={{
+                  boxShadow:
+                    "inset 0 1px 0 0 rgba(255,255,255,0.06), inset 0 0 40px rgba(0,0,0,0.25), 0 0 0 1px rgba(16,185,129,0.2), 0 0 24px rgba(16,185,129,0.12), 0 0 48px rgba(251,191,36,0.06)",
+                }}
+              >
+                {/* Inner glow bleed behind image */}
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-emerald-500/05 via-transparent to-amber-400/05" aria-hidden />
+                <div className="relative p-[10px] md:p-3">
+                  <div className="relative overflow-hidden rounded-xl">
+                    <Image
+                      src="/kasroyal-hero-banner.png"
+                      alt="KasRoyal — Skill arena · Spectator betting"
+                      width={600}
+                      height={300}
+                      priority
+                      className="h-auto w-full object-contain"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-300 md:mb-8">

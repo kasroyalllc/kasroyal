@@ -82,6 +82,7 @@ export async function getRoomById(
 /**
  * Create room: use API POST /api/rooms/create. This helper is for server-side only
  * when you already have a Supabase client (e.g. in API route).
+ * Inserts only columns that commonly exist; id/created_at/updated_at are typically defaulted by DB.
  */
 export async function createRoom(
   supabase: SupabaseClient,
@@ -105,10 +106,11 @@ export async function createRoom(
     .from("matches")
     .insert(insert)
     .select("*")
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
+  if (!data) throw new Error("Insert succeeded but no row returned")
+  return mapDbRowToRoom(data as Record<string, unknown>)
 }
 
 /**
