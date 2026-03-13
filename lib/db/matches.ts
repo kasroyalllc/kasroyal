@@ -15,10 +15,10 @@ export async function createMatch(match: {
       wager: match.wager,
     })
     .select("*")
-    .single<DbMatchRow>()
+    .single()
 
   if (error) throw error
-  return data
+  return data as DbMatchRow
 }
 
 export async function getMatches() {
