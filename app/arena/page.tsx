@@ -55,10 +55,10 @@ function MetricCard({
   helper?: string
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-white/45">{label}</div>
-      <div className={`mt-2 text-2xl font-black ${accent}`}>{value}</div>
-      {helper ? <div className="mt-1 text-xs text-white/45">{helper}</div> : null}
+    <div className="rounded-xl border border-white/10 bg-[var(--surface-card)] p-3.5 shadow-[0_0_20px_rgba(0,0,0,0.15)]">
+      <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/45">{label}</div>
+      <div className={`mt-1.5 text-xl font-black ${accent}`}>{value}</div>
+      {helper ? <div className="mt-1 text-[11px] text-white/45">{helper}</div> : null}
     </div>
   )
 }
@@ -90,9 +90,9 @@ function EmptyState({
   text: string
 }) {
   return (
-    <div className="rounded-[24px] border border-dashed border-white/12 bg-black/20 p-8 text-center">
-      <div className="text-xl font-black text-white">{title}</div>
-      <div className="mt-2 text-sm leading-6 text-white/55">{text}</div>
+    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+      <div className="text-lg font-bold text-white/90">{title}</div>
+      <div className="mt-1.5 text-sm leading-relaxed text-white/55">{text}</div>
     </div>
   )
 }
@@ -290,16 +290,16 @@ function MatchCard({
 
   return (
     <div
-      className={`rounded-[24px] border p-5 transition ${
+      className={`rounded-2xl border p-4 transition shadow-[0_0_20px_rgba(0,0,0,0.1)] ${
         isReady
-          ? "border-amber-300/20 bg-amber-300/[0.04]"
+          ? "border-amber-400/20 bg-amber-400/[0.05]"
           : isLive
-            ? "border-red-300/20 bg-red-500/[0.04]"
+            ? "border-red-400/20 bg-red-500/[0.05]"
             : isMine
-              ? "border-emerald-300/20 bg-emerald-400/[0.04]"
+              ? "border-emerald-400/20 bg-emerald-500/[0.05]"
               : isFinished
-                ? "border-sky-300/20 bg-sky-300/[0.04]"
-                : "border-white/10 bg-white/[0.03]"
+                ? "border-sky-400/20 bg-sky-400/[0.05]"
+                : "border-white/10 bg-[var(--surface-card)]"
       }`}
     >
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -836,29 +836,28 @@ export default function ArenaPage() {
 
   return (
     <main className="min-h-screen bg-[#050807] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.06),transparent_24%)]" />
-      <div className="absolute left-[-80px] top-20 h-[340px] w-[340px] rounded-full bg-emerald-400/10 blur-[120px]" />
-      <div className="absolute right-[-80px] top-32 h-[340px] w-[340px] rounded-full bg-amber-300/10 blur-[120px]" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-20 top-0 h-[300px] w-[300px] rounded-full bg-emerald-500/10 blur-[100px]" />
+        <div className="absolute right-0 top-20 h-[280px] w-[280px] rounded-full bg-amber-400/10 blur-[100px]" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_40%_at_50%_0%,rgba(16,185,129,0.08),transparent)]" />
 
-      <div className="relative z-10 mx-auto max-w-[1500px] px-5 py-8 md:px-8 xl:px-10">
-        <div className="mb-8 overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] p-6 shadow-[0_0_50px_rgba(0,255,200,0.05)]">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="mb-4 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
-                KasRoyal Arena Network
-              </div>
-
-              <h1 className="text-4xl font-black leading-none sm:text-5xl xl:text-6xl">
+      <div className="relative z-10 mx-auto max-w-[1280px] px-4 py-6 md:px-6 md:py-8">
+        <div className="mb-6 rounded-2xl border border-white/10 bg-[var(--surface-card)] p-5 shadow-[0_0_30px_rgba(0,0,0,0.2)] md:mb-8 md:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-3 inline-flex rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">
                 Arena Lobby
+              </div>
+              <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl">
+                Quick Match · Ranked Match
               </h1>
-
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-                <strong className="text-emerald-300/90">Quick Match</strong> — free play, no wallet.{" "}
-                <strong className="text-amber-300/90">Ranked Match</strong> — connect wallet, wager, and climb.
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
+                <span className="text-emerald-300/90">Quick</span> — free, no wallet.{" "}
+                <span className="text-amber-300/90">Ranked</span> — wager and climb.
               </p>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
               <MetricCard
                 label="Ready to Enter"
                 value={`${myReadyMatches.length}`}
@@ -880,13 +879,13 @@ export default function ArenaPage() {
         </div>
 
         {activeWalletMatch ? (
-          <div className="mb-6">
+          <div className="mb-4">
             <Link
               href={`/arena/match/${activeWalletMatch.id}`}
-              className="flex items-center justify-center gap-3 rounded-[24px] border-2 border-emerald-400/40 bg-emerald-400/20 px-6 py-4 text-lg font-black text-emerald-100 shadow-[0_0_40px_rgba(0,255,200,0.12)] transition hover:border-emerald-300/50 hover:bg-emerald-400/30 hover:text-emerald-50"
+              className="flex items-center justify-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-5 py-3.5 text-base font-bold text-emerald-100 shadow-[0_0_24px_rgba(16,185,129,0.12)] transition hover:border-emerald-400/40 hover:bg-emerald-500/20"
             >
-              <span className="text-2xl">🎮</span>
-              Return to Active Game — {activeWalletMatch.game} ({activeWalletMatch.status})
+              <span className="text-xl">🎮</span>
+              Return to game — {activeWalletMatch.game} · {activeWalletMatch.status}
             </Link>
           </div>
         ) : null}
@@ -913,10 +912,10 @@ export default function ArenaPage() {
 
         {activeWalletMatch ? <ActiveWalletLockBanner match={activeWalletMatch} /> : null}
 
-        <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
-          <aside className="xl:sticky xl:top-6 xl:self-start space-y-6">
+        <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+          <aside className="xl:sticky xl:top-6 xl:self-start space-y-5">
             {/* Mode switcher: Quick (default) vs Ranked */}
-            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl">
+            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.2)] md:p-5">
               <div className="mb-4">
                 <p className="text-sm uppercase tracking-[0.2em] text-white/50">
                   Match type
@@ -1094,23 +1093,23 @@ export default function ArenaPage() {
                       : "Create Ranked Match"}
                 </button>
 
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Status</div>
-                  <div className="mt-2 text-sm leading-6 text-white/85">{message}</div>
+                <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3.5">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">Status</div>
+                  <div className="mt-1.5 text-sm leading-relaxed text-white/90">{message}</div>
                 </div>
               </div>
             </div>
           </aside>
 
           <section className="space-y-6">
-            <div className="rounded-[28px] border border-fuchsia-300/15 bg-fuchsia-300/[0.04] p-5">
-              <div className="mb-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-fuchsia-300/80">
-                  Ready to Enter
+            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/[0.04] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <div className="mb-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/80">
+                  Ready to enter
                 </p>
-                <h2 className="mt-2 text-2xl font-black">Countdown Rooms</h2>
-                <p className="mt-2 text-sm text-white/60">
-                  If someone joined your room, it shows here immediately so you can enter fast.
+                <h2 className="mt-1.5 text-xl font-black">Countdown rooms</h2>
+                <p className="mt-1.5 text-sm text-white/60">
+                  Your room is ready — enter before the match starts.
                 </p>
               </div>
 
@@ -1135,13 +1134,13 @@ export default function ArenaPage() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">
-                    Lobby Filters
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">
+                    Filters
                   </p>
-                  <h2 className="mt-2 text-3xl font-black">Clean Arena View</h2>
+                  <h2 className="mt-1 text-xl font-black">Lobby</h2>
                 </div>
 
                 <input
@@ -1196,15 +1195,15 @@ export default function ArenaPage() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
-              <div className="mb-5 flex items-center justify-between gap-4">
+            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-amber-300/80">
-                    Joinable Matches
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/80">
+                    Joinable
                   </p>
-                  <h2 className="mt-2 text-2xl font-black">Open Seats</h2>
+                  <h2 className="mt-1 text-xl font-black">Open seats</h2>
                   <p className="mt-1 text-sm text-white/55">
-                    Quick = free, no wallet. Ranked = connect wallet to join.
+                    Quick = free. Ranked = connect wallet.
                   </p>
                 </div>
                 <MetricCard
@@ -1262,10 +1261,10 @@ export default function ArenaPage() {
               ) : null}
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
-              <div className="mb-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-sky-300/80">My Matches</p>
-                <h2 className="mt-2 text-2xl font-black">Your Rooms</h2>
+            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <div className="mb-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300/80">My matches</p>
+                <h2 className="mt-1 text-xl font-black">Your rooms</h2>
               </div>
 
               <div className="grid gap-4">
@@ -1289,12 +1288,12 @@ export default function ArenaPage() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
-              <div className="mb-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-white/50">Match History</p>
-                <h2 className="mt-2 text-2xl font-black">Finished Matches</h2>
+            <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_0_20px_rgba(0,0,0,0.15)] md:p-5">
+              <div className="mb-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/50">History</p>
+                <h2 className="mt-1 text-xl font-black">Finished matches</h2>
                 <p className="mt-1 text-sm text-white/55">
-                  Completed games appear here. Arena above shows only active rooms.
+                  Completed games. Arena above = active only.
                 </p>
               </div>
 
@@ -1303,7 +1302,7 @@ export default function ArenaPage() {
                   historyMatches.map((match) => (
                     <div
                       key={match.id}
-                      className="rounded-[24px] border border-sky-300/20 bg-sky-300/[0.04] p-5"
+                      className="rounded-2xl border border-sky-400/20 bg-sky-400/[0.04] p-4 shadow-[0_0_16px_rgba(0,0,0,0.08)]"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-300">

@@ -195,9 +195,9 @@ function StatCard({
   accent?: string
 }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
-      <div className="text-[11px] uppercase tracking-[0.16em] text-white/45">{label}</div>
-      <div className={`mt-2 text-2xl font-black ${accent}`}>{value}</div>
+    <div className="rounded-xl border border-white/10 bg-[var(--surface-card)] p-3.5 shadow-[0_0_16px_rgba(0,0,0,0.12)]">
+      <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">{label}</div>
+      <div className={`mt-1.5 text-xl font-black ${accent}`}>{value}</div>
     </div>
   )
 }
@@ -212,15 +212,14 @@ function GameBoardShell({
   children: ReactNode
 }) {
   return (
-    <div className="rounded-[28px] border border-white/8 bg-[#0d1110] p-6">
-      <div className="mx-auto mb-6 w-fit rounded-full border border-emerald-400/20 bg-emerald-400/10 px-5 py-2 text-sm font-semibold text-emerald-300">
+    <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-5 shadow-[0_0_30px_rgba(0,0,0,0.2)]">
+      <div className="mx-auto mb-5 w-fit rounded-full border border-emerald-400/25 bg-emerald-500/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-300">
         {subtitle}
       </div>
-
-      <div className="rounded-[30px] border border-amber-300/10 bg-gradient-to-br from-[#111614] to-[#0b0f0e] p-8">
-        <div className="relative flex min-h-[420px] flex-col items-center justify-center overflow-hidden rounded-[26px] border border-white/8 bg-black/20 px-6 py-10 text-center">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.05),transparent_24%)]" />
-          <div className="relative z-10 mb-6 text-sm uppercase tracking-[0.18em] text-white/45">
+      <div className="rounded-2xl border border-amber-400/10 bg-gradient-to-br from-[#0e1312] to-[#0a0e0d] p-6 shadow-[0_0_24px_rgba(251,191,36,0.06)]">
+        <div className="relative flex min-h-[400px] flex-col items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-black/20 px-5 py-8 text-center">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.06),transparent_30%),radial-gradient(circle_at_bottom,rgba(251,191,36,0.04),transparent_28%)]" />
+          <div className="relative z-10 mb-5 text-xs font-bold uppercase tracking-[0.18em] text-white/45">
             {title}
           </div>
           <div className="relative z-10 w-full">{children}</div>
@@ -2118,15 +2117,15 @@ export default function ArenaMatchPage() {
               )}
 
               {/* Room Chat — under board, center column, premium size */}
-              <div className="mt-6 w-full">
-                <div className="rounded-[28px] border border-emerald-300/15 bg-[#080c0a] p-5 shadow-[0_0_32px_rgba(0,255,200,0.06)] ring-1 ring-emerald-300/10">
+              <div className="mt-5 w-full">
+                <div className="rounded-2xl border border-emerald-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_28px_rgba(16,185,129,0.08)] ring-1 ring-emerald-400/10">
                   <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
-                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-200">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
+                    <span className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-200">
                       Live
                     </span>
                   </div>
-                  <div className="min-h-[260px] max-h-[420px] space-y-3 overflow-y-auto rounded-2xl border border-white/5 bg-black/30 p-4">
+                  <div className="min-h-[240px] max-h-[380px] space-y-2.5 overflow-y-auto rounded-xl border border-white/8 bg-black/25 p-3.5">
                     {chatMessages.length === 0 ? (
                       <div className="flex min-h-[220px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45">
                         No messages yet. Say something!
@@ -2201,12 +2200,12 @@ export default function ArenaMatchPage() {
           {/* Right column: Betting (ranked only) + Feed — hidden for Quick Match */}
           {!isQuickMatch ? (
           <>
-          <div className="order-1 space-y-6 xl:order-3 xl:col-start-3 xl:row-start-1 xl:sticky xl:top-6 xl:self-start">
-            <div className="min-w-0 rounded-[28px] border border-amber-300/20 bg-gradient-to-br from-[#0c1210] to-[#080c0a] p-5 shadow-[0_0_40px_rgba(255,200,80,0.12)] ring-1 ring-amber-300/10 sm:p-6">
-              <div className="mb-5 flex flex-col gap-3 sm:gap-4">
+          <div className="order-1 space-y-5 xl:order-3 xl:col-start-3 xl:row-start-1 xl:sticky xl:top-6 xl:self-start">
+            <div className="min-w-0 rounded-2xl border border-amber-400/25 bg-[var(--surface-card)] p-4 shadow-[0_0_32px_rgba(251,191,36,0.1)] ring-1 ring-amber-400/10 sm:p-5">
+              <div className="mb-4 flex flex-col gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-amber-300/90">Live Arena Betting</p>
-                  <h3 className="mt-1.5 text-xl font-black text-white sm:mt-2 sm:text-2xl xl:text-3xl">Spectator Market</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/90">Live Arena Betting</p>
+                  <h3 className="mt-1.5 text-xl font-black text-white sm:text-2xl">Spectator Market</h3>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -2224,7 +2223,7 @@ export default function ArenaMatchPage() {
               </div>
 
               {spectatorBetLockedForPlayers ? (
-                <div className="mb-5 rounded-[28px] border border-red-300/20 bg-red-500/[0.05] p-5">
+                <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/[0.06] p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="text-xs font-black uppercase tracking-[0.2em] text-red-300">
@@ -2296,10 +2295,10 @@ export default function ArenaMatchPage() {
               </div>
 
               <div className="grid gap-5">
-                <div className="min-w-0 rounded-[28px] border border-amber-300/10 bg-black/25 p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 rounded-2xl border border-amber-400/15 bg-black/30 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="text-sm uppercase tracking-[0.16em] text-white/45">Back Host</div>
+                      <div className="text-xs font-bold uppercase tracking-[0.16em] text-white/45">Back Host</div>
                       <div className="mt-2 text-3xl font-black">{match.host.name}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <RankBadge rank={match.host.rank} />
@@ -2374,10 +2373,10 @@ export default function ArenaMatchPage() {
                   </div>
                 </div>
 
-                <div className="min-w-0 rounded-[28px] border border-emerald-400/10 bg-black/25 p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 rounded-2xl border border-emerald-400/15 bg-black/30 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="text-sm uppercase tracking-[0.16em] text-white/45">Back Challenger</div>
+                      <div className="text-xs font-bold uppercase tracking-[0.16em] text-white/45">Back Challenger</div>
                       <div className="mt-2 text-3xl font-black">
                         {challenger ? challenger.name : "Waiting Opponent"}
                       </div>

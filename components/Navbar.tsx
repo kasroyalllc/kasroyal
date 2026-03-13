@@ -76,7 +76,7 @@ function DesktopNavLink({
     <Link
       href={href}
       onClick={onNavigate}
-      className="inline-flex items-center justify-center rounded-2xl border border-white/8 bg-white/[0.04] px-5 py-3 text-[15px] font-bold text-white/84 shadow-[0_8px_24px_rgba(0,0,0,0.15)] transition hover:border-emerald-300/18 hover:bg-white/[0.08] hover:text-white"
+      className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-[var(--surface-card)] px-4 py-2.5 text-sm font-bold text-white/90 shadow-[0_4px_20px_rgba(0,0,0,0.15)] transition hover:border-emerald-400/20 hover:bg-white/[0.06] hover:text-white"
     >
       {label}
     </Link>
@@ -102,11 +102,11 @@ function LiveStatPill({
           : "text-white"
 
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.15)]">
-      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/45">
+    <div className="rounded-xl border border-white/10 bg-[var(--surface-card)] px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+      <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/45">
         {label}
       </div>
-      <div className={`mt-1 text-sm font-black ${toneClass}`}>{value}</div>
+      <div className={`mt-0.5 text-xs font-black ${toneClass}`}>{value}</div>
     </div>
   )
 }
@@ -403,32 +403,30 @@ export default function Navbar() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_42%),linear-gradient(to_right,rgba(255,200,80,0.03),transparent_20%,transparent_80%,rgba(0,255,200,0.03))]" />
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-300/25 to-transparent" />
 
-        <div className="relative mx-auto max-w-[1460px] px-4 py-4 md:px-6 xl:px-8">
-          <div className="flex items-center justify-between gap-4">
+        <div className="relative mx-auto max-w-[1280px] px-4 py-3 md:px-6 md:py-3.5 xl:px-8">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex shrink-0 items-center">
               <Link
                 href="/"
                 onClick={() => setWalletMenuOpen(false)}
-                className="group flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.22)] transition hover:border-emerald-300/20 hover:bg-white/[0.05]"
+                className="group flex items-center gap-2.5 rounded-xl border border-white/10 bg-[var(--surface-card)] px-3.5 py-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition hover:border-emerald-400/20 hover:bg-white/[0.04]"
               >
-                <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/12 bg-black/40">
-                  <div className="absolute inset-0 rounded-xl bg-emerald-300/10 blur-md" />
+                <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-emerald-400/15 bg-black/40">
                   <Image
                     src="/kasroyal-logo-navbar.png"
                     alt="KasRoyal"
-                    width={32}
-                    height={32}
-                    style={{ width: "auto", height: "30px" }}
+                    width={24}
+                    height={24}
+                    style={{ width: "auto", height: "22px" }}
                     className="relative rounded-md"
                     priority
                   />
                 </div>
-
                 <div className="hidden min-w-0 sm:block">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/75">
-                    Premium Skill Arena
+                  <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300/80">
+                    Skill Arena
                   </div>
-                  <div className="truncate text-base font-black tracking-[0.16em] text-white">
+                  <div className="truncate text-sm font-black tracking-wide text-white">
                     KASROYAL
                   </div>
                 </div>
@@ -447,8 +445,8 @@ export default function Navbar() {
                     Return to Active Game
                   </Link>
                 ) : null}
-                <div className="rounded-[30px] border border-white/8 bg-white/[0.03] px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                  <nav className="flex items-center justify-center gap-3">
+                <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] px-3 py-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
+                  <nav className="flex items-center justify-center gap-2">
                     {navItems.map((item) => (
                       <DesktopNavLink
                         key={item.href}
@@ -510,7 +508,7 @@ export default function Navbar() {
                 {walletMenuOpen ? (
                   <div
                     ref={walletMenuRef}
-                    className="absolute right-0 top-[calc(100%+14px)] z-50 w-[400px] max-w-[calc(100vw-24px)] rounded-[28px] border border-white/10 bg-[#08100f]/98 p-4 shadow-[0_28px_90px_rgba(0,0,0,0.78)] backdrop-blur-2xl"
+                    className="absolute right-0 top-[calc(100%+10px)] z-50 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl"
                   >
                     <div className="mb-4">
                       <div className="text-[11px] uppercase tracking-[0.24em] text-emerald-300/70">
@@ -654,7 +652,7 @@ export default function Navbar() {
             </div>
           </div>
 
-          <div className="mt-4 hidden items-center justify-center gap-3 xl:flex">
+          <div className="mt-3 hidden items-center justify-center gap-2 xl:flex">
             <LiveStatPill label="Open Lobbies" value={`${arenaStats.open}`} tone="amber" />
             <LiveStatPill label="Ready Rooms" value={`${arenaStats.ready}`} tone="sky" />
             <LiveStatPill label="Live Matches" value={`${arenaStats.live}`} tone="emerald" />
@@ -662,7 +660,7 @@ export default function Navbar() {
             <LiveStatPill label="Spectators" value={`${arenaStats.spectators}`} tone="sky" />
           </div>
 
-          <div className="relative mx-auto mt-3 flex max-w-[1460px] flex-wrap items-center justify-center gap-2 overflow-x-auto pb-1 xl:hidden">
+          <div className="relative mx-auto mt-2.5 flex max-w-[1280px] flex-wrap items-center justify-center gap-2 overflow-x-auto pb-1 xl:hidden">
             {activeMatch ? (
               <Link
                 href={`/arena/match/${activeMatch.id}`}

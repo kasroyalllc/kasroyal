@@ -3,11 +3,22 @@
 :root {
   --background: #050807;
   --background-elevated: #0b1110;
+  --surface: #0a0e0d;
+  --surface-card: rgba(12, 18, 16, 0.85);
   --foreground: #f5f7f6;
   --muted-foreground: #9ca3af;
   --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --emerald-glow: rgba(16, 185, 129, 0.35);
+  --emerald-glow-soft: rgba(16, 185, 129, 0.12);
+  --gold-glow: rgba(251, 191, 36, 0.28);
+  --gold-glow-soft: rgba(251, 191, 36, 0.08);
   --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
+  --radius-card: 20px;
+  --radius-pill: 9999px;
+  --space-tight: 0.75rem;
+  --space-section: 1.5rem;
 }
 
 @theme inline {

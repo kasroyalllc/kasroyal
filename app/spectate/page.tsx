@@ -49,9 +49,9 @@ function HeaderStat({
           : "text-white"
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-      <div className="text-[11px] uppercase tracking-[0.24em] text-white/45">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${toneClass}`}>{value}</div>
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5">
+      <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/45">{label}</div>
+      <div className={`mt-1 text-base font-black ${toneClass}`}>{value}</div>
     </div>
   )
 }
@@ -144,10 +144,11 @@ function LiveMatchCard({
   return (
     <button
       onClick={onSelect}
-      className={`w-full rounded-3xl border p-5 text-left transition ${
+      type="button"
+      className={`w-full rounded-2xl border p-4 text-left transition shadow-[0_0_16px_rgba(0,0,0,0.08)] ${
         active
-          ? "border-emerald-300/30 bg-emerald-400/10 shadow-[0_0_0_1px_rgba(52,211,153,0.15)]"
-          : "border-white/10 bg-white/5 hover:bg-white/10"
+          ? "border-emerald-400/30 bg-emerald-500/10 ring-1 ring-emerald-400/20"
+          : "border-white/10 bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.06]"
       }`}
     >
       <div className="flex items-start justify-between gap-4">
@@ -255,8 +256,8 @@ export default function SpectatePage() {
     return filteredMatches
       .filter((match) => isRealSpectatableMatch(match))
       .sort((a, b) => {
-        const aPriority = a.status === "Ready to Start" ? 2 : a.status === "Live" ? 1 : 0
-        const bPriority = b.status === "Ready to Start" ? 2 : b.status === "Live" ? 1 : 0
+        const aPriority = a.status === "Live" ? 2 : a.status === "Ready to Start" ? 1 : 0
+        const bPriority = b.status === "Live" ? 2 : b.status === "Ready to Start" ? 1 : 0
 
         if (bPriority !== aPriority) return bPriority - aPriority
 
@@ -393,52 +394,50 @@ export default function SpectatePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050807] px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-400/15 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+    <main className="min-h-screen bg-[#050807] px-4 py-6 text-white sm:px-6 md:py-8 lg:px-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-20 top-0 h-[280px] w-[280px] rounded-full bg-emerald-500/10 blur-[90px]" />
+        <div className="absolute right-0 top-20 h-[240px] w-[240px] rounded-full bg-amber-400/10 blur-[90px]" />
+      </div>
+      <div className="relative z-10 mx-auto max-w-6xl">
+        <div className="mb-4 overflow-hidden rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2.5 text-xs font-semibold text-emerald-200">
           <div className="animate-pulse whitespace-nowrap">{feed.join(" • ")}</div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="rounded-2xl border border-white/10 bg-[var(--surface-card)] p-5 shadow-[0_0_28px_rgba(0,0,0,0.18)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="text-sm uppercase tracking-[0.3em] text-emerald-300">
-                KasRoyal Live Watch Floor
+              <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/90">
+                Live watch floor
               </div>
-              <h1 className="mt-2 text-4xl font-semibold">Spectate</h1>
-              <p className="mt-3 max-w-3xl text-white/65">
-                Live and pre-start watch floor. Spectators can track momentum, pools, and active rooms in one place.
+              <h1 className="mt-1.5 text-3xl font-black tracking-tight">Spectate</h1>
+              <p className="mt-2 max-w-2xl text-sm text-white/65">
+                Live and countdown rooms. Track pools and place spectator bets when markets are open.
               </p>
             </div>
-
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
               <Link
                 href="/bets"
-                className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-300 hover:bg-amber-300/15"
+                className="rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-sm font-bold text-amber-200 hover:bg-amber-400/15"
               >
-                Open Markets
+                Markets
               </Link>
               <Link
                 href="/arena"
-                className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-500 px-4 py-3 text-sm font-semibold text-black"
+                className="rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:from-emerald-400 hover:to-emerald-500"
               >
-                Arena Lobby
+                Arena
               </Link>
             </div>
           </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <HeaderStat label="Tracked Matches" value={`${liveMatches.length}`} tone="green" />
-            <HeaderStat label="Live Viewers" value={`${totalLiveViewers}`} tone="white" />
-            <HeaderStat
-              label="Pool Volume"
-              value={`${totalLivePools.toFixed(0)} KAS`}
-              tone="gold"
-            />
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <HeaderStat label="Tracked rooms" value={`${liveMatches.length}`} tone="green" />
+            <HeaderStat label="Viewers" value={`${totalLiveViewers}`} tone="white" />
+            <HeaderStat label="Pool volume" value={`${totalLivePools.toFixed(0)} KAS`} tone="gold" />
           </div>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-6">
+        <div className="mt-4 rounded-2xl border border-white/10 bg-[var(--surface-card)] p-4">
           <div className="flex flex-wrap gap-3">
             {(["All", ...gameDisplayOrder] as SpectateFilter[]).map((filter) => {
               const active = selectedFilter === filter
@@ -460,32 +459,30 @@ export default function SpectatePage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <section className="space-y-6">
-            <div className="rounded-3xl border border-emerald-400/15 bg-emerald-400/5 p-6">
-              <div className="flex items-start justify-between gap-4">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-emerald-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_24px_rgba(0,0,0,0.12)]">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm uppercase tracking-[0.3em] text-emerald-300">
-                    Watch Floor
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/90">
+                    Tracked rooms
                   </div>
-                  <h2 className="mt-2 text-3xl font-semibold">Tracked Rooms</h2>
-                  <p className="mt-2 text-white/60">
-                    Live matches and countdown rooms with active markets are surfaced here.
+                  <h2 className="mt-1.5 text-xl font-black">Live & countdown</h2>
+                  <p className="mt-1 text-sm text-white/55">
+                    Real rooms from the arena. Live first, then starting soon.
                   </p>
                 </div>
-
                 {activeLiveMatch ? (
                   <Link
                     href={`/arena/match/${activeLiveMatch.id}`}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                    className="rounded-xl border border-emerald-400/25 bg-emerald-500/15 px-4 py-2.5 text-sm font-bold text-emerald-200 hover:bg-emerald-500/20"
                   >
-                    Open Selected
+                    Open
                   </Link>
                 ) : null}
               </div>
-
               {liveMatches.length ? (
-                <div className="mt-6 grid gap-4">
+                <div className="mt-4 grid gap-3">
                   {liveMatches.map((match) => (
                     <LiveMatchCard
                       key={match.id}
@@ -496,28 +493,28 @@ export default function SpectatePage() {
                   ))}
                 </div>
               ) : (
-                <div className="mt-6">
+                <div className="mt-4">
                   <EmptySection
                     title="No tracked rooms yet"
-                    text="Once countdown or live rooms are active, they will show here automatically."
+                    text="Countdown or live rooms from the arena will appear here automatically."
                   />
                 </div>
               )}
             </div>
           </section>
 
-          <section className="space-y-6">
-            <div className="rounded-3xl border border-sky-400/15 bg-sky-400/5 p-6">
-              <div className="flex items-start justify-between gap-4">
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-amber-400/15 bg-[var(--surface-card)] p-4 shadow-[0_0_24px_rgba(0,0,0,0.12)]">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm uppercase tracking-[0.3em] text-sky-300">
-                    Live Watch Panel
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/90">
+                    Watch panel
                   </div>
-                  <h2 className="mt-2 text-3xl font-semibold">
-                    {activeLiveMatch ? activeLiveMatch.game : "No Match Selected"}
+                  <h2 className="mt-1.5 text-xl font-black">
+                    {activeLiveMatch ? activeLiveMatch.game : "No match selected"}
                   </h2>
-                  <p className="mt-2 text-white/60">
-                    Watch the room, check live pools, and place spectator bets if the market is open.
+                  <p className="mt-1 text-sm text-white/55">
+                    Pools and spectator bets when the market is open.
                   </p>
                 </div>
 
