@@ -80,9 +80,11 @@ export async function getRoomById(
 }
 
 /**
- * Create room: use API POST /api/rooms/create. This helper is for server-side only
- * when you already have a Supabase client (e.g. in API route).
- * Inserts only columns that commonly exist; id/created_at/updated_at are typically defaulted by DB.
+ * Create room: use API POST /api/rooms/create. Server-side only.
+ * The Supabase client MUST be the admin (service role) client so inserts bypass RLS.
+ * This function does not create or use any other client; it uses only the passed-in client.
+ * Inserts only columns that commonly exist: game_type, status, host_wallet, wager.
+ * id/created_at/updated_at are typically defaulted by DB.
  */
 export async function createRoom(
   supabase: SupabaseClient,
@@ -108,7 +110,14 @@ export async function createRoom(
     .select("*")
     .maybeSingle()
 
-  if (error) throw error
+  if (error) {
+    console.error("[rooms-service createRoom] Supabase insert error:", {
+      message: error.message,
+      code: (error as { code?: string }).code,
+      details: (error as { details?: unknown }).details,
+    })
+    throw error
+  }
   if (!data) throw new Error("Insert succeeded but no row returned")
   return mapDbRowToRoom(data as Record<string, unknown>)
 }
@@ -235,8 +244,9 @@ export async function sendRoomMessage(
       message: params.message,
     })
     .select("*")
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return mapMessageRowToRoomMessage((data ?? {}) as Record<string, unknown>)
+  if (!data) throw new Error("Insert succeeded but no message row returned")
+  return mapMessageRowToRoomMessage(data as Record<string, unknown>)
 }

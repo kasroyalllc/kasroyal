@@ -8,6 +8,8 @@ import type { GameType } from "@/lib/engine/match/types"
 
 export const dynamic = "force-dynamic"
 
+const ADMIN_CLIENT_PATH = true
+
 function getErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message
   if (typeof e === "string") return e
@@ -19,6 +21,9 @@ function getErrorMessage(e: unknown): string {
 
 /** Create a room. Quick = no wager; Ranked = wager allowed. One active match per identity. */
 export async function POST(request: NextRequest) {
+  const hasServiceRoleKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+  console.log("[api/rooms/create] Using admin client path:", ADMIN_CLIENT_PATH, "| SUPABASE_SERVICE_ROLE_KEY present:", hasServiceRoleKey)
+
   let body: Record<string, unknown> = {}
   try {
     body = await request.json()
@@ -41,6 +46,15 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
+
+  const createPayload = {
+    mode,
+    game_type: gameType,
+    host_identity_id: hostIdentityId,
+    host_display_name: hostDisplayName,
+    wager_amount: wagerAmount,
+  }
+  console.log("[api/rooms/create] Create payload (safe):", { ...createPayload, host_identity_id_length: hostIdentityId.length })
 
   try {
     const supabase = createAdminClient()
@@ -80,15 +94,13 @@ export async function POST(request: NextRequest) {
         : null
 
     console.error("[api/rooms/create] Room creation failed:", {
+      usingAdminClientPath: ADMIN_CLIENT_PATH,
+      hasServiceRoleKey,
       message,
       stack: e instanceof Error ? e.stack : undefined,
       supabaseError,
-      requestPayload: {
-        mode,
-        game_type: gameType,
-        host_identity_id_length: hostIdentityId.length,
-        wager_amount: wagerAmount,
-      },
+      exactErrorObject: e && typeof e === "object" ? { ...(e as Record<string, unknown>) } : e,
+      requestPayload: createPayload,
     })
 
     return NextResponse.json(
