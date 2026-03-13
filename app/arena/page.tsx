@@ -316,6 +316,15 @@ function MatchCard({
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
               {formatAge(match.createdAt)}
             </span>
+            {match.matchMode === "quick" ? (
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-300">
+                Quick
+              </span>
+            ) : (
+              <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
+                Ranked
+              </span>
+            )}
             <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
               {countdownLabel}
             </span>
@@ -415,7 +424,11 @@ function MatchCard({
                     : "bg-gradient-to-r from-amber-400 to-yellow-300 text-black hover:scale-[1.01]"
                 }`}
               >
-                {joinBlockedByWalletLock ? "Locked: Active Match" : `Join for ${match.wager} KAS`}
+                {joinBlockedByWalletLock
+                  ? "Locked: Active Match"
+                  : match.matchMode === "quick"
+                    ? "Join (Free)"
+                    : `Join for ${match.wager} KAS`}
               </button>
             )
           ) : (
@@ -459,6 +472,7 @@ export default function ArenaPage() {
   const [gameFilter, setGameFilter] = useState<GameFilter>("All")
   const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>("All")
   const [customMode, setCustomMode] = useState(false)
+  const [arenaMode, setArenaMode] = useState<"quick" | "ranked">("quick")
   const [, setTick] = useState(0)
 
   useEffect(() => {
@@ -555,6 +569,15 @@ export default function ArenaPage() {
       .sort((a, b) => b.createdAt - a.createdAt)
   }, [filteredMatches])
 
+  const joinableQuickMatches = useMemo(
+    () => joinableMatches.filter((m) => m.matchMode === "quick"),
+    [joinableMatches]
+  )
+  const joinableRankedMatches = useMemo(
+    () => joinableMatches.filter((m) => m.matchMode !== "quick"),
+    [joinableMatches]
+  )
+
   const myMatches = useMemo(() => {
     const id = getCurrentIdentity().id.toLowerCase()
     const name = getCurrentUser().name
@@ -606,13 +629,35 @@ export default function ArenaPage() {
   }
 
   function handleCreateMatch() {
+    if (arenaMode === "quick") {
+      if (walletLocked) {
+        setMessage("You already have an active match. Resume or finish it before creating another one.")
+        return
+      }
+      try {
+        const created = createArenaMatch({
+          game: selectedGame,
+          matchMode: "quick",
+          bestOf,
+        })
+        setMatches(readArenaMatches())
+        setOwnershipFilter("Mine")
+        setGameFilter(selectedGame)
+        setMessage(`Quick Match created: ${created.game}. Share the room or wait for someone to join.`)
+        router.push(`/arena/match/${created.id}`)
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Failed to create quick match.")
+      }
+      return
+    }
+
     if (walletLocked) {
       setMessage("You already have an active match. Resume or finish it before creating another one.")
       return
     }
 
     if (!Number.isFinite(Number(wagerInput)) || String(wagerInput).trim() === "") {
-      setMessage("Enter a valid wager amount before creating a match.")
+      setMessage("Enter a valid wager amount before creating a ranked match.")
       return
     }
 
@@ -708,7 +753,8 @@ export default function ArenaPage() {
               </h1>
 
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/60 sm:text-lg">
-                Real match creation, real room joins, real live arenas. Your next active match is always surfaced first.
+                <strong className="text-emerald-300/90">Quick Match</strong> — free play, no wallet.{" "}
+                <strong className="text-amber-300/90">Ranked Match</strong> — connect wallet, wager, and climb.
               </p>
             </div>
 
@@ -750,13 +796,48 @@ export default function ArenaPage() {
         {activeWalletMatch ? <ActiveWalletLockBanner match={activeWalletMatch} /> : null}
 
         <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
-          <aside className="xl:sticky xl:top-6 xl:self-start">
+          <aside className="xl:sticky xl:top-6 xl:self-start space-y-6">
+            {/* Mode switcher: Quick (default) vs Ranked */}
             <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl">
+              <div className="mb-4">
+                <p className="text-sm uppercase tracking-[0.2em] text-white/50">
+                  Match type
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setArenaMode("quick")}
+                    className={`rounded-2xl border px-4 py-4 text-left transition ${
+                      arenaMode === "quick"
+                        ? "border-emerald-300/30 bg-emerald-400/15 text-emerald-100"
+                        : "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    <div className="text-base font-black">Quick Match</div>
+                    <div className="mt-1 text-xs opacity-85">Free Play · No wallet</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArenaMode("ranked")}
+                    className={`rounded-2xl border px-4 py-4 text-left transition ${
+                      arenaMode === "ranked"
+                        ? "border-amber-300/30 bg-amber-300/15 text-amber-100"
+                        : "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    <div className="text-base font-black">Ranked Match</div>
+                    <div className="mt-1 text-xs opacity-85">Connect Wallet · Wager</div>
+                  </button>
+                </div>
+              </div>
+
               <div className="mb-5">
                 <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">
-                  Create Match
+                  {arenaMode === "quick" ? "Create Quick Match" : "Create Ranked Match"}
                 </p>
-                <h2 className="mt-2 text-2xl font-black">Open a New Lobby</h2>
+                <h2 className="mt-2 text-2xl font-black">
+                  {arenaMode === "quick" ? "Free to play" : "Open a new lobby"}
+                </h2>
               </div>
 
               <div className="space-y-4">
@@ -769,17 +850,18 @@ export default function ArenaPage() {
                       {getCurrentUser().rating} MMR
                     </span>
                   </div>
-                  <div className="mt-3 text-sm text-white/55">
-                    Wallet Balance:{" "}
-                    <span className="font-bold text-emerald-300">
-                      {getCurrentUser().walletBalance.toFixed(2)} KAS
-                    </span>
-                  </div>
+                  {arenaMode === "ranked" && (
+                    <div className="mt-3 text-sm text-white/55">
+                      Wallet:{" "}
+                      <span className="font-bold text-emerald-300">
+                        {getCurrentUser().walletBalance.toFixed(2)} KAS
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
                   <label className="text-xs uppercase tracking-[0.16em] text-white/45">Game</label>
-
                   <div className="mt-3 grid gap-2">
                     {(["Chess Duel", "Connect 4", "Tic-Tac-Toe"] as GameType[]).map((game) => {
                       const active = selectedGame === game
@@ -795,75 +877,63 @@ export default function ArenaPage() {
                           }`}
                         >
                           <div className="text-base font-black">{game}</div>
-                          <div className="mt-1 text-sm text-white/55">
-                            {gameMeta[game].subtitle}
-                          </div>
+                          <div className="mt-1 text-sm text-white/55">{gameMeta[game].subtitle}</div>
                         </button>
                       )
                     })}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <label className="text-xs uppercase tracking-[0.16em] text-white/45">
-                    Wager (KAS)
-                  </label>
-
-                  <div className="mt-3 grid grid-cols-5 gap-2">
-                    {[2, 5, 10, 25].map((quick) => (
+                {arenaMode === "ranked" ? (
+                  <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                    <label className="text-xs uppercase tracking-[0.16em] text-white/45">Wager (KAS)</label>
+                    <div className="mt-3 grid grid-cols-5 gap-2">
+                      {[2, 5, 10, 25].map((quick) => (
+                        <button
+                          key={quick}
+                          type="button"
+                          onClick={() => handleQuickWager(quick)}
+                          className={`rounded-xl border px-3 py-3 text-xs font-bold transition ${
+                            !customMode && wagerInput === String(quick)
+                              ? "border-amber-300/25 bg-amber-300/10 text-amber-300"
+                              : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                          }`}
+                        >
+                          {quick} KAS
+                        </button>
+                      ))}
                       <button
-                        key={quick}
                         type="button"
-                        onClick={() => handleQuickWager(quick)}
+                        onClick={handleCustomWagerMode}
                         className={`rounded-xl border px-3 py-3 text-xs font-bold transition ${
-                          !customMode && wagerInput === String(quick)
-                            ? "border-amber-300/25 bg-amber-300/10 text-amber-300"
+                          customMode
+                            ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
                             : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
                         }`}
                       >
-                        {quick} KAS
+                        Custom
                       </button>
-                    ))}
-
-                    <button
-                      type="button"
-                      onClick={handleCustomWagerMode}
-                      className={`rounded-xl border px-3 py-3 text-xs font-bold transition ${
-                        customMode
-                          ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
-                          : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
-                      }`}
-                    >
-                      Custom
-                    </button>
+                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      inputMode="numeric"
+                      value={wagerInput}
+                      onChange={(e) => {
+                        setCustomMode(true)
+                        setWagerInput(e.target.value)
+                      }}
+                      placeholder="Custom KAS"
+                      className="mt-4 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-xl font-bold text-white outline-none"
+                    />
+                    <div className="mt-3 text-xs text-white/45">Preview: {wager} KAS</div>
                   </div>
-
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    step={1}
-                    inputMode="numeric"
-                    value={wagerInput}
-                    onChange={(e) => {
-                      setCustomMode(true)
-                      setWagerInput(e.target.value)
-                    }}
-                    placeholder="Enter custom KAS amount"
-                    className="mt-4 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-xl font-bold text-white outline-none"
-                  />
-
-                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-white/45">
-                    <span>Quick buttons or custom entry</span>
-                    <span>Preview: {wager} KAS</span>
-                  </div>
-                </div>
+                ) : null}
 
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <label className="text-xs uppercase tracking-[0.16em] text-white/45">
-                    Match Format
-                  </label>
-
+                  <label className="text-xs uppercase tracking-[0.16em] text-white/45">Format</label>
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     {[1, 3, 5].map((value) => (
                       <button
@@ -888,16 +958,20 @@ export default function ArenaPage() {
                   className={`w-full rounded-2xl px-5 py-4 text-base font-black transition ${
                     walletLocked
                       ? "cursor-not-allowed border border-red-300/20 bg-red-500/10 text-red-300 opacity-70"
-                      : "bg-gradient-to-r from-amber-400 to-yellow-300 text-black hover:scale-[1.01]"
+                      : arenaMode === "quick"
+                        ? "bg-gradient-to-r from-emerald-400 to-emerald-600 text-white hover:scale-[1.01]"
+                        : "bg-gradient-to-r from-amber-400 to-yellow-300 text-black hover:scale-[1.01]"
                   }`}
                 >
-                  {walletLocked ? "Locked: Active Match In Progress" : "Create Arena Match"}
+                  {walletLocked
+                    ? "Locked: Active Match"
+                    : arenaMode === "quick"
+                      ? "Create Quick Match (Free)"
+                      : "Create Ranked Match"}
                 </button>
 
                 <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-                    Lobby Status
-                  </div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">Status</div>
                   <div className="mt-2 text-sm leading-6 text-white/85">{message}</div>
                 </div>
               </div>
@@ -1005,6 +1079,9 @@ export default function ArenaPage() {
                     Joinable Matches
                   </p>
                   <h2 className="mt-2 text-2xl font-black">Open Seats</h2>
+                  <p className="mt-1 text-sm text-white/55">
+                    Quick = free, no wallet. Ranked = connect wallet to join.
+                  </p>
                 </div>
                 <MetricCard
                   label="Open Hosted by You"
@@ -1013,25 +1090,52 @@ export default function ArenaPage() {
                 />
               </div>
 
-              <div className="grid gap-4">
-                {joinableMatches.length ? (
-                  joinableMatches.map((match) => (
-                    <MatchCard
-                      key={match.id}
-                      match={match}
-                      onJoin={handleJoinMatch}
-                      onFill={handleFillOpponent}
-                      walletLocked={walletLocked}
-                      activeMatchId={activeWalletMatch?.id ?? null}
-                    />
-                  ))
-                ) : (
-                  <EmptyState
-                    title="No joinable matches"
-                    text="There are no open seats right now. Create a match to start the action."
-                  />
-                )}
-              </div>
+              {joinableQuickMatches.length > 0 ? (
+                <div className="mb-6">
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-300/90">
+                    Quick Match (Free)
+                  </h3>
+                  <div className="grid gap-4">
+                    {joinableQuickMatches.map((match) => (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        onJoin={handleJoinMatch}
+                        onFill={handleFillOpponent}
+                        walletLocked={walletLocked}
+                        activeMatchId={activeWalletMatch?.id ?? null}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {joinableRankedMatches.length > 0 ? (
+                <div>
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-300/90">
+                    Ranked Match (Wallet)
+                  </h3>
+                  <div className="grid gap-4">
+                    {joinableRankedMatches.map((match) => (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        onJoin={handleJoinMatch}
+                        onFill={handleFillOpponent}
+                        walletLocked={walletLocked}
+                        activeMatchId={activeWalletMatch?.id ?? null}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {joinableMatches.length === 0 ? (
+                <EmptyState
+                  title="No joinable matches"
+                  text="Create a Quick or Ranked match above, or wait for new open seats."
+                />
+              ) : null}
             </div>
 
             <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">

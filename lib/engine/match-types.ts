@@ -26,6 +26,9 @@ export type ArenaStatus =
   | "Live"
   | "Finished"
 
+/** Quick Match = free play, no wallet/betting/rank. Ranked = wallet, wagers, spectator betting. */
+export type MatchMode = "quick" | "ranked"
+
 export type ArenaSide = "host" | "challenger"
 
 export type BettingStatus =
@@ -59,6 +62,8 @@ export type ArenaMatch = {
   id: string
   game: GameType
   status: ArenaStatus
+  /** quick = no betting/rank; ranked = wallet + spectator betting */
+  matchMode?: MatchMode
   bettingStatus: BettingStatus
   marketVisibility: MarketVisibility
   isFeaturedMarket: boolean

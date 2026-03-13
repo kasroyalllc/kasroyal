@@ -4,6 +4,7 @@ import {
   type ArenaStatus,
   type GameType,
   type LeaderboardEntry,
+  type MatchMode,
   type PauseState,
   type PlayerProfile,
   type RankTier,
@@ -53,6 +54,7 @@ export type {
   ArenaStatus,
   GameType,
   LeaderboardEntry,
+  MatchMode,
   PauseState,
   PlayerProfile,
   RankTier,
@@ -222,12 +224,12 @@ const REMOTE_HYDRATE_INTERVAL_MS = 5000
 
 /** @deprecated Use getCurrentUser() for identity-aware profile. */
 export const currentUser: PlayerProfile & { walletBalance: number } = {
-  name: "KasKing01",
-  rank: "Diamond II",
-  rating: 1842,
-  winRate: 61,
-  last10: "7-3",
-  walletBalance: 275.4,
+  name: "Guest",
+  rank: "Bronze III",
+  rating: 1000,
+  winRate: 50,
+  last10: "0-0",
+  walletBalance: 0,
 }
 
 /** Resolved profile for the current session: wallet-based or guest. Use for display and fallback. */
@@ -287,7 +289,7 @@ export const mockOpponentPool: PlayerProfile[] = [
 ]
 
 export const arenaFeedSeed = [
-  "KasKing01 opened with e4 and took center control.",
+  "A host opened with e4 and took center control.",
   "TurboBetGuy just set up a Connect 4 trap on the right side.",
   "3 new spectators joined the Chess Duel market.",
   "LuckyDog23’s side is gaining more bets after a strong defensive sequence.",
@@ -827,13 +829,14 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
               : ARENA_COUNTDOWN_SECONDS
           const bettingClosesAt = match.bettingClosesAt ?? countdownStartedAt + bettingWindowSeconds * 1000
           const countdownSecondsLeft = Math.max(0, Math.ceil((bettingClosesAt - nowTs) / 1000))
+          const isQuick = match.matchMode === "quick"
 
           match = {
             ...match,
-            marketVisibility: "featured",
-            isFeaturedMarket: true,
+            marketVisibility: isQuick ? "watch-only" : "featured",
+            isFeaturedMarket: !isQuick,
             bettingWindowSeconds: ARENA_COUNTDOWN_SECONDS,
-            bettingStatus: countdownSecondsLeft > 0 ? "open" : "locked",
+            bettingStatus: isQuick ? "disabled" : countdownSecondsLeft > 0 ? "open" : "locked",
             seatedAt: match.seatedAt ?? countdownStartedAt,
             countdownStartedAt,
             bettingClosesAt,
@@ -853,13 +856,14 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
 
           if (bettingClosesAt <= nowTs) {
             const startedAt = match.startedAt ?? bettingClosesAt
+            const quickLive = match.matchMode === "quick"
 
             match = {
               ...match,
               status: "Live",
               bettingStatus: "locked",
-              marketVisibility: "featured",
-              isFeaturedMarket: true,
+              marketVisibility: quickLive ? "watch-only" : "featured",
+              isFeaturedMarket: !quickLive,
               startedAt,
               finishedAt: undefined,
               timeoutStrikesHost: match.timeoutStrikesHost ?? 0,
@@ -878,11 +882,12 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
         }
 
         if (match.status === "Live") {
+          const quickLive = match.matchMode === "quick"
           match = {
             ...match,
             bettingStatus: "locked",
-            marketVisibility: "featured",
-            isFeaturedMarket: true,
+            marketVisibility: quickLive ? "watch-only" : "featured",
+            isFeaturedMarket: !quickLive,
             timeoutStrikesHost: match.timeoutStrikesHost ?? 0,
             timeoutStrikesChallenger: match.timeoutStrikesChallenger ?? 0,
             boardState: match.boardState ?? createLiveBoardState(match.game, match.startedAt ?? nowTs),
@@ -893,11 +898,12 @@ function applyArenaLifecycle(matches: ArenaMatch[], nowTs = Date.now()): ArenaMa
         }
 
         if (match.status === "Finished") {
+          const quickFinished = match.matchMode === "quick"
           match = {
             ...match,
             bettingStatus: "locked",
-            marketVisibility: "featured",
-            isFeaturedMarket: true,
+            marketVisibility: quickFinished ? "watch-only" : "featured",
+            isFeaturedMarket: !quickFinished,
           }
         }
       } else {
@@ -1069,6 +1075,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
         {
           id: "arena-1",
           game: "Chess Duel",
+          matchMode: "ranked",
           status: "Live",
           bettingStatus: "locked",
           marketVisibility: "featured",
@@ -1090,7 +1097,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
             last10: "5-5",
           },
           challenger: {
-            name: "KasKing01",
+            name: "DiamondPlayer",
             rank: "Diamond II",
             rating: 1842,
             winRate: 61,
@@ -1115,6 +1122,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
         {
           id: "arena-2",
           game: "Connect 4",
+          matchMode: "ranked",
           status: "Ready to Start",
           bettingStatus: "open",
           marketVisibility: "featured",
@@ -1156,6 +1164,7 @@ function makeSeededArenaMatches(baseNow: number): ArenaMatch[] {
         {
           id: "arena-3",
           game: "Tic-Tac-Toe",
+          matchMode: "ranked",
           status: "Waiting for Opponent",
           bettingStatus: "disabled",
           marketVisibility: "watch-only",
@@ -1199,7 +1208,7 @@ export const initialArenaMatches: ArenaMatch[] = seededArenaMatches
 const leaderboardSeed: LeaderboardEntry[] = [
   {
     id: "lb-1",
-    name: "KasKing01",
+    name: "DiamondPlayer",
     rank: "Diamond II",
     rating: 1842,
     winRate: 61,
@@ -1425,6 +1434,7 @@ function mapDbMatchToArenaMatch(dbMatch: {
     id: dbMatch.id,
     game,
     status,
+    matchMode: "ranked" as MatchMode,
     hostIdentityId: dbMatch.host_wallet.toLowerCase(),
     challengerIdentityId: dbMatch.challenger_wallet?.toLowerCase(),
     bettingStatus:
@@ -1486,7 +1496,9 @@ export function isArenaSpectatable(match: ArenaMatch) {
   )
 }
 
+/** Ranked matches only; Quick Match has no betting. */
 export function isArenaBettable(match: ArenaMatch) {
+  if (match.matchMode === "quick") return false
   return (
     !!match.challenger &&
     match.status === "Ready to Start" &&
@@ -1889,11 +1901,13 @@ export function subscribeRoomChat(matchId: string, callback: () => void): () => 
 
 export function createArenaMatch(input: {
   game: GameType
-  wager: number
+  wager?: number
   bestOf?: 1 | 3 | 5
   hostWallet?: string
+  matchMode?: MatchMode
 }) {
-  const wager = clampWager(input.wager)
+  const mode: MatchMode = input.matchMode ?? "ranked"
+  const wager = mode === "quick" ? 0 : clampWager(input.wager ?? 0)
   const identity = getCurrentIdentity()
   const hostWallet = normalizePlayerIdentity(input.hostWallet ?? identity.id)
 
@@ -1908,9 +1922,10 @@ export function createArenaMatch(input: {
       {
         id: `arena-${cryptoSafeId()}`,
         game: input.game,
+        matchMode: mode,
         status: "Waiting for Opponent",
-        bettingStatus: "disabled",
-        marketVisibility: "watch-only",
+        bettingStatus: mode === "quick" ? "disabled" : "disabled",
+        marketVisibility: mode === "quick" ? "watch-only" : "watch-only",
         isFeaturedMarket: false,
         bestOf: resolvedBestOf,
         wager,
@@ -1954,11 +1969,11 @@ export function createArenaMatch(input: {
       mapped.challengerSideLabel = labels.challenger
       mapped.pauseState = createInitialPauseState()
 
-      // Keep the temp id so the URL /arena/match/${localMatch.id} still resolves
+      // Keep the temp id and mode so the URL /arena/match/${localMatch.id} still resolves
       mutateArenaStore((store) => {
         const idx = store.matches.findIndex((m) => m.id === localMatch.id)
         if (idx < 0) return store
-        const merged: ArenaMatch = { ...mapped, id: localMatch.id }
+        const merged: ArenaMatch = { ...mapped, id: localMatch.id, matchMode: localMatch.matchMode }
         const next = [...store.matches]
         next[idx] = merged
         return { ...store, matches: next }
@@ -1993,13 +2008,14 @@ export function joinArenaMatch(matchId: string, wallet?: string): ArenaMatch | n
   const resolvedBettingClosesAt =
     resolvedCountdownStartedAt + getGameBettingWindowSeconds(existing.game) * 1000
 
+  const isQuick = existing.matchMode === "quick"
   const localJoined = updateArenaMatch(matchId, (current) => ({
     challenger: challengerProfile,
     challengerIdentityId: walletAddress.toLowerCase(),
     status: "Ready to Start",
-    bettingStatus: "open",
-    marketVisibility: "featured",
-    isFeaturedMarket: true,
+    bettingStatus: isQuick ? "disabled" : "open",
+    marketVisibility: isQuick ? "watch-only" : "featured",
+    isFeaturedMarket: !isQuick,
     seatedAt: current.seatedAt ?? resolvedSeatedAt,
     countdownStartedAt: current.countdownStartedAt ?? resolvedCountdownStartedAt,
     bettingClosesAt: resolvedBettingClosesAt,

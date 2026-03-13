@@ -56,6 +56,11 @@ const CONNECT4_MOVE_SECONDS = 20
 const TTT_MOVE_SECONDS = 10
 
 const COUNTDOWN_HYPE_LINES_POOL = [
+  "Crowd is pretending they knew the winner all along…",
+  "Somebody just bet like they saw the future.",
+  "The arena announcer is losing his voice already.",
+  "Last call before chaos begins.",
+  "Smart money and dumb luck are now both in the room.",
   "♞ Knights are stretching before battle...",
   "🔥 Crowd money is starting to heat up...",
   "💰 Last-minute action hitting the market...",
@@ -236,11 +241,13 @@ function CountdownOverlay({
   hostName,
   challengerName,
   hypeLine,
+  isQuickMatch,
 }: {
   seconds: number
   hostName: string
   challengerName: string
   hypeLine: string
+  isQuickMatch?: boolean
 }) {
   const tone =
     seconds <= 5
@@ -266,8 +273,9 @@ function CountdownOverlay({
         </div>
 
         <p className="mt-4 max-w-2xl text-sm leading-7 text-white/75 sm:text-base">
-          Betting is open right now. Lock your side before the market closes and the match goes
-          live.
+          {isQuickMatch
+            ? "Match starts when the timer hits zero. No betting in Quick Play."
+            : "Betting is open right now. Lock your side before the market closes and the match goes live."}
         </p>
 
         <div className="mt-8 flex items-center justify-center gap-4">
@@ -286,9 +294,11 @@ function CountdownOverlay({
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <div className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-300">
-            Betting Active
-          </div>
+          {!isQuickMatch && (
+            <div className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-300">
+              Betting Active
+            </div>
+          )}
           <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white/80">
             Board Visible
           </div>
@@ -862,6 +872,7 @@ export default function ArenaMatchPage() {
   const isFinished = match.status === "Finished"
   const isCountdown = match.status === "Ready to Start"
   const isPaused = match.status === "Live" && pauseState.isPaused
+  const isQuickMatch = match.matchMode === "quick"
   const currentIdentityId = getCurrentIdentity().id.toLowerCase()
   const currentUserProfile = getCurrentUser()
   const isHostUser =
@@ -1707,7 +1718,7 @@ export default function ArenaMatchPage() {
           pausedByName={pausedByName}
         />
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)_minmax(420px,480px)] xl:grid-rows-[auto_auto_auto]">
+        <div className={`grid grid-cols-1 gap-6 xl:grid-rows-[auto_auto_auto] ${isQuickMatch ? "xl:grid-cols-[300px_minmax(0,1fr)]" : "xl:grid-cols-[300px_minmax(0,1fr)_minmax(420px,480px)]"}`}>
           <aside className="order-2 space-y-6 xl:order-1 xl:sticky xl:top-6 xl:row-span-1 xl:self-start">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
               <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player One</p>
@@ -1877,6 +1888,7 @@ export default function ArenaMatchPage() {
                   >
                     {isPaused ? "Paused" : formatArenaPhase(match.status)}
                   </div>
+                  {!isQuickMatch && (
                   <div
                     className={`rounded-full px-4 py-3 text-sm font-bold ${
                       marketOpen ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-white/75"
@@ -1884,6 +1896,7 @@ export default function ArenaMatchPage() {
                   >
                     {marketOpen ? `Betting open • ${bettingSecondsLeft}s left` : "Betting closed"}
                   </div>
+                  )}
                   <div
                     className={`rounded-full px-4 py-3 text-sm font-bold ${
                       isPaused
@@ -1937,6 +1950,7 @@ export default function ArenaMatchPage() {
                       hostName={match.host.name}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
+                      isQuickMatch={isQuickMatch}
                     />
                   ) : null}
 
@@ -2023,6 +2037,7 @@ export default function ArenaMatchPage() {
                       hostName={match.host.name}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
+                      isQuickMatch={isQuickMatch}
                     />
                   ) : null}
 
@@ -2091,6 +2106,7 @@ export default function ArenaMatchPage() {
                       hostName={match.host.name}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
+                      isQuickMatch={isQuickMatch}
                     />
                   ) : null}
 
@@ -2122,10 +2138,75 @@ export default function ArenaMatchPage() {
                   </div>
                 </GameBoardShell>
               )}
+
+              {/* Room Chat — under board, center column, premium size */}
+              <div className="mt-6 w-full">
+                <div className="rounded-[28px] border border-emerald-300/15 bg-[#080c0a] p-5 shadow-[0_0_32px_rgba(0,255,200,0.06)] ring-1 ring-emerald-300/10">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
+                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-200">
+                      Live
+                    </span>
+                  </div>
+                  <div className="min-h-[260px] max-h-[420px] space-y-3 overflow-y-auto rounded-2xl border border-white/5 bg-black/30 p-4">
+                    {chatMessages.length === 0 ? (
+                      <div className="flex min-h-[220px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45">
+                        No messages yet. Say something!
+                      </div>
+                    ) : (
+                      chatMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className="rounded-xl border border-white/5 bg-white/[0.04] px-4 py-3 transition hover:bg-white/[0.06]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-emerald-300">{msg.user}</span>
+                            <span className="text-xs uppercase tracking-wider text-white/40">
+                              {new Date(msg.ts).toLocaleTimeString(undefined, {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <div className="mt-2 break-words text-base leading-snug text-white/90">{msg.text}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <form
+                    className="mt-4 flex gap-3"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const text = chatInput.trim()
+                      if (!text) return
+                      appendRoomChat(matchId, { user: currentUserProfile.name, text })
+                      setChatInput("")
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Type a message…"
+                      maxLength={500}
+                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-4 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim()}
+                      className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-6 py-4 text-base font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Send
+                    </button>
+                  </form>
+                </div>
+              </div>
             </div>
           </section>
 
-          {/* Right column: Live Arena Betting (top), Chat, Feed — visible above the fold on desktop */}
+          {/* Right column: Betting (ranked only) + Feed — hidden for Quick Match */}
+          {!isQuickMatch ? (
+          <>
           <div className="order-1 space-y-6 xl:order-3 xl:col-start-3 xl:row-start-1 xl:sticky xl:top-6 xl:self-start">
             <div className="min-w-0 rounded-[28px] border border-amber-300/20 bg-gradient-to-br from-[#0c1210] to-[#080c0a] p-5 shadow-[0_0_40px_rgba(255,200,80,0.12)] ring-1 ring-amber-300/10 sm:p-6">
               <div className="mb-5 flex flex-col gap-3 sm:gap-4">
@@ -2537,70 +2618,7 @@ export default function ArenaMatchPage() {
             </div>
           </div>
 
-          {/* Room Chat — premium, prominent */}
-          <div className="order-4 min-w-0 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-6">
-            <div className="rounded-[28px] border border-emerald-300/15 bg-[#080c0a] p-5 shadow-[0_0_32px_rgba(0,255,200,0.06)] ring-1 ring-emerald-300/10">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300/90">Room Chat</p>
-                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-200">
-                  Live
-                </span>
-              </div>
-              <div className="max-h-[320px] min-h-[200px] space-y-3 overflow-y-auto rounded-2xl border border-white/5 bg-black/30 p-3">
-                {chatMessages.length === 0 ? (
-                  <div className="flex min-h-[160px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45">
-                    No messages yet. Say something!
-                  </div>
-                ) : (
-                  chatMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3 transition hover:bg-white/[0.05]"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-emerald-300">{msg.user}</span>
-                        <span className="text-xs uppercase tracking-wider text-white/40">
-                          {new Date(msg.ts).toLocaleTimeString(undefined, {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                      <div className="mt-2 break-words text-sm leading-snug text-white/90">{msg.text}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-              <form
-                className="mt-4 flex gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const text = chatInput.trim()
-                  if (!text) return
-                  appendRoomChat(matchId, { user: currentUserProfile.name, text })
-                  setChatInput("")
-                }}
-              >
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Type a message…"
-                  maxLength={500}
-                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20"
-                />
-                <button
-                  type="submit"
-                  disabled={!chatInput.trim()}
-                  className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Send
-                </button>
-              </form>
-            </div>
-          </div>
-
-          {/* Live Feed */}
+          {/* Live Feed — right column when ranked */}
           <div className="order-5 min-w-0 xl:col-start-3 xl:row-start-3">
             <div className="rounded-[28px] border border-white/8 bg-white/[0.04] p-5 shadow-2xl">
               <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/45">Live Feed</div>
@@ -2613,6 +2631,8 @@ export default function ArenaMatchPage() {
               </div>
             </div>
           </div>
+          </>
+          ) : null}
         </div>
       </div>
     </main>
