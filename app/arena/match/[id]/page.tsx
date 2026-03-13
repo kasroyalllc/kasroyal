@@ -711,7 +711,7 @@ export default function ArenaMatchPage() {
       supabase.removeChannel(channel)
       window.clearInterval(pollInterval)
     }
-  }, [matchId, refreshRoom, refreshChat])
+  }, [matchId, refreshRoom])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
