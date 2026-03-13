@@ -365,7 +365,7 @@ export default function SpectatePage() {
         walletAddress: getCurrentIdentity().id,
       })
 
-      setAllMatches(readArenaMatches())
+      setAllMatches(readActiveArenaMatches())
 
       const sideName =
         selectedSide === "host"

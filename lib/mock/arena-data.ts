@@ -2908,6 +2908,11 @@ export function resetAllArenaState(): void {
     window.sessionStorage.removeItem(key)
   }
 
+  // Remove any legacy / old test keys (in case they exist under older names)
+  window.localStorage.removeItem("kasroyal_arena_store")
+  window.localStorage.removeItem("kasroyal_arena_store_v3")
+  window.localStorage.removeItem("kasroyal_navbar_cache")
+
   window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(emptyStore))
   try {
     window.localStorage.setItem(ARENA_NAVBAR_STORAGE_KEY, "[]")
