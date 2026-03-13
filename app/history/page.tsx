@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
-import { formatAge, getMatchResultLabel } from "@/lib/mock/arena-data"
+import { formatAge, getMatchResultLabel, getWinnerDisplayLine } from "@/lib/mock/arena-data"
 import { createClient } from "@/lib/supabase/client"
 import { listHistoryRooms } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
@@ -15,7 +15,7 @@ function HistoryCard({
   match: ReturnType<typeof roomToArenaMatch>
   mounted: boolean
 }) {
-  const resultLabel = getMatchResultLabel(match)
+  const resultLabel = getWinnerDisplayLine(match) || getMatchResultLabel(match)
   const endedTime = formatAge(match.finishedAt ?? match.createdAt)
   const hasWager = match.matchMode === "ranked" && (match.wager ?? 0) > 0
   const poolLabel = hasWager

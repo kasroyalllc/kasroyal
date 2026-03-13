@@ -16,6 +16,7 @@ import {
   getRankColors,
   getSideShare,
   getTicketsForMatch,
+  getWinnerDisplayLine,
   getWinProbability,
   HOUSE_RAKE,
   isArenaBettable,
@@ -35,7 +36,6 @@ import {
   type PersistedBetTicket,
   type RankTier,
   type RoomChatMessage,
-  upsertMatchLocally,
   WHALE_BET_THRESHOLD,
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
@@ -275,7 +275,7 @@ function CountdownOverlay({
           <div
             className={`flex h-24 w-24 shrink-0 items-center justify-center rounded-full border text-4xl font-black shadow-[0_0_45px_rgba(255,215,0,0.18)] sm:h-28 sm:w-28 sm:text-5xl ${tone}`}
           >
-            {seconds}
+            {seconds > 0 ? seconds : "…"}
           </div>
         </div>
 
@@ -412,8 +412,12 @@ function RoomPhaseBanner({
         ? "You are seated and ready"
         : `${hostName} vs ${challengerName} is about to begin`
     body = isPlayer
-      ? `You are already in the correct room. Stay here — the countdown is live and the match starts in ${bettingSecondsLeft}s.`
-      : `Both players are seated. Betting is still open for ${bettingSecondsLeft}s, then the match goes live.`
+      ? bettingSecondsLeft > 0
+        ? `You are already in the correct room. Stay here — the countdown is live and the match starts in ${bettingSecondsLeft}s.`
+        : "Match is starting… Stay here — the arena will go live shortly."
+      : bettingSecondsLeft > 0
+        ? `Both players are seated. Betting is still open for ${bettingSecondsLeft}s, then the match goes live.`
+        : "Both players are seated. Match is starting…"
   }
 
   if (status === "Live") {
@@ -651,6 +655,7 @@ export default function ArenaMatchPage() {
   const [showCancelRoomConfirm, setShowCancelRoomConfirm] = useState(false)
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [roomLoadAttempted, setRoomLoadAttempted] = useState(false)
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
@@ -665,9 +670,7 @@ export default function ArenaMatchPage() {
     const supabase = createClient()
     const room = await getRoomById(supabase, matchId)
     if (room) {
-      const arenaMatch = roomToArenaMatch(room)
-      upsertMatchLocally(arenaMatch)
-      setMatch(arenaMatch)
+      setMatch(roomToArenaMatch(room))
     } else {
       setMatch(null)
     }
@@ -676,12 +679,13 @@ export default function ArenaMatchPage() {
   useEffect(() => {
     if (!matchId) return
 
+    setRoomLoadAttempted(false)
     const syncTickets = () => {
       setTickets(getTicketsForMatch(matchId))
       setMyTickets(readCurrentUserTickets(getCurrentIdentity().id).filter((ticket) => ticket.matchId === matchId))
     }
 
-    refreshRoom()
+    void refreshRoom().then(() => setRoomLoadAttempted(true))
     syncTickets()
 
     const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
@@ -734,9 +738,7 @@ export default function ArenaMatchPage() {
         .then((r) => r.json())
         .then((data) => {
           if (data.ok && data.room) {
-            const updated = roomToArenaMatch(data.room)
-            upsertMatchLocally(updated)
-            setMatch(updated)
+            setMatch(roomToArenaMatch(data.room))
           }
         })
         .catch(() => {})
@@ -837,9 +839,7 @@ export default function ArenaMatchPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data.ok && data.room) {
-          const updated = roomToArenaMatch(data.room)
-          upsertMatchLocally(updated)
-          setMatch(updated)
+          setMatch(roomToArenaMatch(data.room))
         }
       })
       .catch(() => {})
@@ -865,6 +865,7 @@ export default function ArenaMatchPage() {
   }
 
   if (!match) {
+    const isLoading = !roomLoadAttempted
     return (
       <main className="min-h-screen bg-[#050807] text-white">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.06),transparent_24%)]" />
@@ -873,42 +874,13 @@ export default function ArenaMatchPage() {
             <div className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
               KasRoyal Match Room
             </div>
-            <div className="mt-5 text-4xl font-black">Room not loaded yet</div>
-            <p className="mt-4 max-w-2xl text-white/65">
-              This room has not synced into the local engine yet, or the match no longer exists.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/arena"
-                className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white"
-              >
-                Arena Lobby
-              </Link>
-              <Link
-                href="/spectate"
-                className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-3 text-sm font-bold text-emerald-200"
-              >
-                Spectate
-              </Link>
+            <div className="mt-5 text-4xl font-black">
+              {isLoading ? "Loading room…" : "Room not found"}
             </div>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  if (!mounted) {
-    return (
-      <main className="min-h-screen bg-[#050807] text-white">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,255,200,0.08),transparent_28%),radial-gradient(circle_at_bottom,rgba(255,200,80,0.06),transparent_24%)]" />
-        <div className="relative z-10 mx-auto max-w-5xl px-6 py-16">
-          <div className="rounded-[32px] border border-white/8 bg-white/[0.03] p-8 shadow-[0_0_50px_rgba(0,255,200,0.05)]">
-            <div className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">
-              KasRoyal Match Room
-            </div>
-            <div className="mt-5 text-4xl font-black">Loading room…</div>
             <p className="mt-4 max-w-2xl text-white/65">
-              Preparing match room. This avoids server/client mismatch.
+              {isLoading
+                ? "Loading match room from server."
+                : "Room not found or match has ended. It may have been canceled or the ID is invalid."}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
@@ -1360,7 +1332,6 @@ export default function ArenaMatchPage() {
       if (data.ok && data.room) {
         const updated = roomToArenaMatch(data.room)
         setMatch(updated)
-        upsertMatchLocally(updated)
         const winnerName = currentUserSide === "host" ? challenger.name : match.host.name
         setFeed((prev) => [`🏳️ You forfeited. ${winnerName} wins.`, ...prev].slice(0, 12))
         setMessage(`You forfeited. ${winnerName} wins the match.`)
@@ -1408,7 +1379,6 @@ export default function ArenaMatchPage() {
       const data = await res.json()
       if (data.ok && data.room) {
         const updated = roomToArenaMatch(data.room)
-        upsertMatchLocally(updated)
         setMatch(updated)
         const playerLabel = connect4Turn === "host" ? match.host.name : challenger?.name ?? "Challenger"
         setFeed((prev) => [`🎮 ${playerLabel} dropped in column ${col + 1}`, ...prev].slice(0, 12))
@@ -1456,7 +1426,6 @@ export default function ArenaMatchPage() {
       const data = await res.json()
       if (data.ok && data.room) {
         const updated = roomToArenaMatch(data.room)
-        upsertMatchLocally(updated)
         setMatch(updated)
         const playerLabel = tttTurn === "X" ? match.host.name : challenger?.name ?? "Challenger"
         setFeed((prev) => [`🎮 ${playerLabel} marked ${index + 1}`, ...prev].slice(0, 12))
@@ -1515,7 +1484,7 @@ export default function ArenaMatchPage() {
   const boardClockLabel = isFinished
     ? "—"
     : isCountdown
-      ? `Match starts in ${bettingSecondsLeft}s`
+      ? bettingSecondsLeft > 0 ? `Match starts in ${bettingSecondsLeft}s` : "Starting…"
       : isPaused
         ? `${pauseSecondsLeft}s`
         : match.status === "Live"
@@ -1613,27 +1582,26 @@ export default function ArenaMatchPage() {
         {match.status === "Finished" ? (
           <div className="mb-6 rounded-[28px] border-2 border-amber-300/30 bg-amber-300/10 p-6 text-center">
             <h2 className="text-2xl font-black text-amber-200">Match Over</h2>
-            {match.result === "draw" ? (
-              <p className="mt-2 text-lg font-bold text-white/90">Draw</p>
-            ) : match.result != null ? (
-              <>
-                <p className="mt-2 text-lg font-bold text-white/90">
-                  Winner: {match.result === "host" ? match.host.name : challenger?.name ?? "Challenger"}
-                </p>
-                <p className="mt-1 text-sm text-white/70">
-                  {match.winReason === "timeout" ? "Win by timeout" : match.winReason === "forfeit" ? "Win by forfeit" : match.winReason === "win" ? "Win by game" : match.winReason ?? "Finished"}
-                </p>
-                <p className="mt-2 text-sm font-semibold">
-                  {match.result === currentUserSide ? (
-                    <span className="text-emerald-300">You won</span>
-                  ) : (
-                    <span className="text-red-300/90">You lost</span>
-                  )}
-                </p>
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-white/80">{match.statusText}</p>
-            )}
+            {(() => {
+              const winnerLine = getWinnerDisplayLine(match)
+              if (winnerLine) {
+                return (
+                  <>
+                    <p className="mt-2 text-lg font-bold text-white/90">{winnerLine}</p>
+                    {match.result !== "draw" && match.result != null && (
+                      <p className="mt-2 text-sm font-semibold">
+                        {match.result === currentUserSide ? (
+                          <span className="text-emerald-300">You won</span>
+                        ) : (
+                          <span className="text-red-300/90">You lost</span>
+                        )}
+                      </p>
+                    )}
+                  </>
+                )
+              }
+              return <p className="mt-2 text-sm text-white/80">{match.statusText}</p>
+            })()}
             <p className="mt-2 text-xs text-white/60">You can join or create a new match.</p>
             <Link
               href="/arena"
@@ -1682,7 +1650,9 @@ export default function ArenaMatchPage() {
                 label="Timer"
                 value={
                   isCountdown
-                    ? `${bettingSecondsLeft}s`
+                    ? bettingSecondsLeft > 0
+                      ? `${bettingSecondsLeft}s`
+                      : "Starting…"
                     : isPaused
                       ? `${pauseSecondsLeft}s`
                       : match.status === "Live"
@@ -1900,7 +1870,7 @@ export default function ArenaMatchPage() {
                       marketOpen ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-white/75"
                     }`}
                   >
-                    {marketOpen ? `Betting open • ${bettingSecondsLeft}s left` : "Betting closed"}
+                    {marketOpen ? (bettingSecondsLeft > 0 ? `Betting open • ${bettingSecondsLeft}s left` : "Betting closing…") : "Betting closed"}
                   </div>
                   )}
                   <div
@@ -1917,7 +1887,7 @@ export default function ArenaMatchPage() {
                     {isPaused
                       ? `Pause • ${pauseSecondsLeft}s`
                       : isCountdown
-                        ? `Match starts in ${bettingSecondsLeft}s`
+                        ? bettingSecondsLeft > 0 ? `Match starts in ${bettingSecondsLeft}s` : "Starting match…"
                         : match.status === "Live"
                           ? `Move timer • ${moveSecondsLeft}s`
                           : "Move timer idle"}
@@ -1937,8 +1907,8 @@ export default function ArenaMatchPage() {
                   ? `Match finished. Final state: ${match.statusText}.`
                   : isCountdown
                     ? isPlayer
-                      ? `You are seated in this room. Stay here — the countdown is active and the match begins in ${bettingSecondsLeft}s.`
-                      : `Match starts in ${bettingSecondsLeft}s. Betting remains open until lock, then the arena goes live.`
+                      ? bettingSecondsLeft > 0 ? `You are seated in this room. Stay here — the countdown is active and the match begins in ${bettingSecondsLeft}s.` : "Match is starting… Stay here — the arena will go live shortly."
+                      : bettingSecondsLeft > 0 ? `Match starts in ${bettingSecondsLeft}s. Betting remains open until lock, then the arena goes live.` : "Starting match…"
                     : isPaused
                       ? `Pause active. ${pausedByName} paused the match. Gameplay is frozen for ${pauseSecondsLeft}s unless resumed early.`
                       : isSpectatorOnly
@@ -2145,7 +2115,7 @@ export default function ArenaMatchPage() {
                 </GameBoardShell>
               )}
 
-              {/* Room Chat — under board, center column; mobile-friendly composer + scroll */}
+              {/* Room Chat — under board; mobile: fixed bottom composer so keyboard doesn't hide it */}
               <div className="mt-5 w-full">
                 <div className="flex max-h-[75vh] flex-col rounded-2xl border border-emerald-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_28px_rgba(16,185,129,0.08)] ring-1 ring-emerald-400/10 md:max-h-none">
                   <div className="mb-3 flex shrink-0 items-center justify-between">
@@ -2154,7 +2124,7 @@ export default function ArenaMatchPage() {
                       Live
                     </span>
                   </div>
-                  <div className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none">
+                  <div className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none pb-[env(safe-area-inset-bottom)] md:pb-0">
                     {chatMessages.length === 0 ? (
                       <div className="flex min-h-[120px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45 md:min-h-[220px]">
                         No messages yet. Say something!
@@ -2182,8 +2152,9 @@ export default function ArenaMatchPage() {
                       </>
                     )}
                   </div>
+                  {/* Desktop: form inline. Mobile: fixed bottom bar so keyboard doesn't push input off-screen */}
                   <form
-                    className="mt-4 flex shrink-0 gap-2 pb-[env(safe-area-inset-bottom)] md:gap-3 md:pb-0"
+                    className="mt-4 flex shrink-0 gap-2 md:gap-3 md:pb-0 max-md:sticky max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-20 max-md:mt-3 max-md:rounded-2xl max-md:border max-md:border-emerald-400/20 max-md:bg-[var(--surface-card)] max-md:p-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-[0_-4px_24px_rgba(0,0,0,0.2)]"
                     style={{ scrollMarginBottom: 24 }}
                     onSubmit={async (e) => {
                       e.preventDefault()
@@ -2216,13 +2187,13 @@ export default function ArenaMatchPage() {
                       placeholder="Type a message…"
                       maxLength={500}
                       autoComplete="off"
-                      className="min-h-[48px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:py-4"
+                      className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4"
                       style={{ fontSize: "16px" }}
                     />
                     <button
                       type="submit"
                       disabled={!chatInput.trim()}
-                      className="touch-manipulation min-h-[48px] min-w-[52px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:px-6 md:py-4"
+                      className="touch-manipulation min-h-[52px] min-w-[56px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
                     >
                       Send
                     </button>

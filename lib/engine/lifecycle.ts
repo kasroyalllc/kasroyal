@@ -33,13 +33,16 @@ export function getGameBettingWindowLabel(_game?: GameType) {
   return "Betting window: 30s before start"
 }
 
+/** Pre-match countdown: 30s for all rooms (quick and ranked). Do not require betting to be open. */
 export function getArenaBettingSecondsLeft(match: ArenaMatch, now = Date.now()) {
   if (!match.challenger) return 0
   if (match.status !== "Ready to Start") return 0
-  if (match.bettingStatus !== "open") return 0
-  if (!match.bettingClosesAt) return 0
 
-  return Math.max(0, Math.ceil((match.bettingClosesAt - now) / 1000))
+  const windowSeconds = match.bettingWindowSeconds ?? PRE_MATCH_COUNTDOWN_SECONDS
+  const countdownEndMs = match.bettingClosesAt ?? (match.countdownStartedAt != null ? match.countdownStartedAt + windowSeconds * 1000 : 0)
+  if (!countdownEndMs) return 0
+
+  return Math.max(0, Math.ceil((countdownEndMs - now) / 1000))
 }
 
 export function isArenaSpectatable(match: ArenaMatch) {

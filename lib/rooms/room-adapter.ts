@@ -40,12 +40,12 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
         ? ("open" as const)
         : ("locked" as const)
 
-  const countdownStartedAt = room.countdownStartedAt ?? undefined
   const COUNTDOWN_MS = 30 * 1000
+  const countdownStartedAt = room.countdownStartedAt ?? (room.status === "Ready to Start" ? room.updatedAt : undefined) ?? undefined
   const bettingClosesAt =
     room.bettingClosesAt ??
-    (room.status === "Ready to Start" && room.countdownStartedAt
-      ? room.countdownStartedAt + COUNTDOWN_MS
+    (room.status === "Ready to Start" && countdownStartedAt != null
+      ? countdownStartedAt + COUNTDOWN_MS
       : undefined)
   const startedAt = room.liveStartedAt ?? undefined
   const finishedAt = room.finishedAt ?? undefined

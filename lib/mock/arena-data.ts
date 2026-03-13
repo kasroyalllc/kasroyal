@@ -2440,6 +2440,30 @@ export function getMatchResultLabel(match: ArenaMatch | null) {
   return formatArenaPhase(match.status)
 }
 
+/** One-line winner display for finished matches: "Winner: Name", "Winner by Forfeit: Name", "Draw", etc. */
+export function getWinnerDisplayLine(match: ArenaMatch | null): string {
+  if (!match || match.status !== "Finished") return ""
+  if (match.result === "draw") return "Draw"
+  const winnerName =
+    match.result === "host"
+      ? match.host.name
+      : match.result === "challenger"
+        ? (match.challenger?.name ?? "Challenger")
+        : null
+  if (!winnerName) return "Finished"
+  const reason =
+    match.winReason === "forfeit"
+      ? " by Forfeit"
+      : match.winReason === "timeout"
+        ? " by Timeout"
+        : match.winReason === "win"
+          ? ""
+          : match.winReason
+            ? ` (${match.winReason})`
+            : ""
+  return `Winner${reason}: ${winnerName}`
+}
+
 export function getBackedPlayerName(
   ticket: Pick<PersistedBetTicket, "side">,
   match: ArenaMatch | null
