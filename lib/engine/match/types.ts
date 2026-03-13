@@ -1,6 +1,10 @@
 /**
  * Shared room / profile / chat / bet types for Supabase-backed room state.
  * Used by rooms-service, API routes, and UI when reading from backend.
+ *
+ * Transitional schema: DB has both old columns (host_wallet, wager, started_at, ended_at)
+ * and new columns (host_identity_id, wager_amount, live_started_at, finished_at, etc.).
+ * We prefer new fields and fall back to old for compatibility.
  */
 
 export type MatchMode = "quick" | "ranked"
@@ -37,7 +41,7 @@ export type ProfileRecord = {
   updated_at: string
 }
 
-/** Match row from Supabase matches table (authoritative room state). */
+/** Match row from Supabase matches table (authoritative room state). New schema. */
 export type RoomRecord = {
   id: string
   mode: MatchMode
@@ -69,8 +73,8 @@ export type RoomRecord = {
   finished_at: string | null
 }
 
-/** Legacy DB shape (matches table as it may exist today). */
-export type DbMatchRow = {
+/** Legacy DB columns (transitional schema: still present). */
+export type DbMatchRowLegacy = {
   id: string
   game_type: GameType
   status: string
@@ -80,6 +84,9 @@ export type DbMatchRow = {
   created_at: string
   started_at: string | null
   ended_at: string | null
+  turn_expires_at?: string | null
+  last_move_at?: string | null
+  finished_at?: string | null
 }
 
 /** Connect 4 cell: host | challenger | null. Stored in board_state. */
@@ -134,7 +141,7 @@ export type BetRecord = {
   created_at: string
 }
 
-/** UI-facing room (derived from RoomRecord + profiles). */
+/** UI-facing room (derived from DB row; one consistent shape). */
 export type Room = {
   id: string
   mode: MatchMode
@@ -187,30 +194,50 @@ const ROOM_STATUS_TO_UI: Record<string, Room["status"]> = {
   Finished: "Finished",
 }
 
-/** Map DB match row (legacy or extended) to UI Room. */
+/**
+ * Map DB match row (transitional: new + legacy columns) to UI Room.
+ * Prefer new fields (host_identity_id, wager_amount, live_started_at, etc.),
+ * fall back to legacy (host_wallet, wager, started_at, ended_at).
+ */
 export function mapDbRowToRoom(row: Record<string, unknown>): Room {
   const id = String(row.id ?? "")
   const statusRaw = String(row.status ?? "waiting")
   const status = ROOM_STATUS_TO_UI[statusRaw] ?? "Waiting for Opponent"
-  const hostIdentityId = String(row.host_identity_id ?? row.host_wallet ?? "")
-  const challengerIdentityId = row.challenger_identity_id ?? row.challenger_wallet
+
+  // New preferred; legacy fallback
+  const hostIdentityId = String(
+    row.host_identity_id ?? row.host_wallet ?? ""
+  )
+  const challengerIdentityId =
+    row.challenger_identity_id ?? row.challenger_wallet
+  const wager = Number(row.wager_amount ?? row.wager ?? 0)
+  const liveStartedAt = row.live_started_at
+    ? new Date(String(row.live_started_at)).getTime()
+    : row.started_at
+      ? new Date(String(row.started_at)).getTime()
+      : null
+  const finishedAt =
+    row.finished_at != null
+      ? new Date(String(row.finished_at)).getTime()
+      : row.ended_at != null
+        ? new Date(String(row.ended_at)).getTime()
+        : null
+
   const countdownStartedAt = row.countdown_started_at
     ? new Date(String(row.countdown_started_at)).getTime()
     : null
   const bettingClosesAt = row.betting_closes_at
     ? new Date(String(row.betting_closes_at)).getTime()
     : null
-  const liveStartedAt = row.live_started_at
-    ? new Date(String(row.live_started_at)).getTime()
-    : row.started_at ? new Date(String(row.started_at)).getTime() : null
   const moveTurnStartedAt = row.move_turn_started_at
     ? new Date(String(row.move_turn_started_at)).getTime()
-    : null
+    : row.last_move_at
+      ? new Date(String(row.last_move_at)).getTime()
+      : null
   const createdAt = row.created_at ? new Date(String(row.created_at)).getTime() : 0
-  const updatedAt = row.updated_at ? new Date(String(row.updated_at)).getTime() : createdAt
-  const finishedAt = row.finished_at ?? row.ended_at
-    ? new Date(String(row.finished_at ?? row.ended_at)).getTime()
-    : null
+  const updatedAt = row.updated_at
+    ? new Date(String(row.updated_at)).getTime()
+    : createdAt
 
   return {
     id,
@@ -218,29 +245,38 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
     game: (row.game_type as GameType) ?? "Tic-Tac-Toe",
     status,
     hostIdentityId,
-    challengerIdentityId: challengerIdentityId != null ? String(challengerIdentityId) : null,
-    hostDisplayName: String(row.host_display_name ?? row.host_wallet ?? "Host"),
+    challengerIdentityId:
+      challengerIdentityId != null ? String(challengerIdentityId) : null,
+    hostDisplayName: String(
+      row.host_display_name ?? row.host_wallet ?? "Host"
+    ),
     challengerDisplayName:
       row.challenger_display_name != null
         ? String(row.challenger_display_name)
         : row.challenger_wallet != null
           ? String(row.challenger_wallet)
-          : null,
-    wager: Number(row.wager_amount ?? row.wager ?? 0),
+          : row.challenger_identity_id != null
+            ? String(row.challenger_identity_id)
+            : null,
+    wager,
     bettingOpen: Boolean(row.betting_open ?? false),
     bettingClosesAt,
     countdownStartedAt,
     countdownSeconds: Number(row.countdown_seconds ?? 30),
     liveStartedAt,
     moveTurnIdentityId:
-      row.move_turn_identity_id != null ? String(row.move_turn_identity_id) : null,
+      row.move_turn_identity_id != null
+        ? String(row.move_turn_identity_id)
+        : null,
     moveTurnStartedAt,
     moveTurnSeconds:
       row.move_turn_seconds != null ? Number(row.move_turn_seconds) : null,
     hostTimeoutStrikes: Number(row.host_timeout_strikes ?? 0),
     challengerTimeoutStrikes: Number(row.challenger_timeout_strikes ?? 0),
     winnerIdentityId:
-      row.winner_identity_id != null ? String(row.winner_identity_id) : null,
+      row.winner_identity_id != null
+        ? String(row.winner_identity_id)
+        : null,
     winReason: row.win_reason != null ? String(row.win_reason) : null,
     boardState: row.board_state ?? undefined,
     roomHypeIndex: Number(row.room_hype_index ?? 0),
@@ -251,7 +287,9 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
 }
 
 /** Map match_messages row to UI RoomMessage. */
-export function mapMessageRowToRoomMessage(row: Record<string, unknown>): RoomMessage {
+export function mapMessageRowToRoomMessage(
+  row: Record<string, unknown>
+): RoomMessage {
   return {
     id: String(row.id),
     matchId: String(row.match_id),

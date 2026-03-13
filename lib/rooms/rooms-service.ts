@@ -1,40 +1,51 @@
 /**
  * Backend-first room service. Uses Supabase as source of truth.
- * Pass a Supabase client (browser or server). No localStorage authority.
+ * Transitional schema: we write both new and legacy columns where present.
  *
- * Data flow: Supabase → API routes → UI. Do not use readArenaMatches,
- * subscribeArenaMatches, updateArenaMatch, or syncMatchToSupabase in
- * production paths; those are legacy local/mock helpers in arena-data.
+ * Active = Waiting for Opponent | Ready to Start | Live only.
+ * Recently finished = prefer finished_at desc, fallback ended_at.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { mapDbRowToRoom, mapMessageRowToRoomMessage, type Room, type RoomMessage } from "@/lib/engine/match/types"
+import {
+  mapDbRowToRoom,
+  mapMessageRowToRoomMessage,
+  type Room,
+  type RoomMessage,
+} from "@/lib/engine/match/types"
 
-/** Active = Waiting, Ready, or Live (not Finished/canceled). */
-export async function listActiveRooms(supabase: SupabaseClient): Promise<Room[]> {
+const ACTIVE_STATUSES = ["Waiting for Opponent", "Ready to Start", "Live"]
+
+/** Active = waiting, ready, or live only (not finished/canceled). */
+export async function listActiveRooms(
+  supabase: SupabaseClient
+): Promise<Room[]> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
-    .in("status", ["Waiting for Opponent", "Ready to Start", "Live"])
+    .in("status", ACTIVE_STATUSES)
     .order("created_at", { ascending: false })
 
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
-/** History = Finished only. */
-export async function listHistoryRooms(supabase: SupabaseClient): Promise<Room[]> {
+/** History = Finished only. Order by finished_at desc, then ended_at desc. */
+export async function listHistoryRooms(
+  supabase: SupabaseClient
+): Promise<Room[]> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
     .eq("status", "Finished")
+    .order("finished_at", { ascending: false })
     .order("ended_at", { ascending: false })
 
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
-/** Recently resolved = Finished, ordered by ended_at desc, limited (e.g. for homepage). */
+/** Recently resolved = Finished, prefer finished_at desc, fallback ended_at; limited. */
 export async function listRecentResolvedRooms(
   supabase: SupabaseClient,
   limit = 6
@@ -43,6 +54,7 @@ export async function listRecentResolvedRooms(
     .from("matches")
     .select("*")
     .eq("status", "Finished")
+    .order("finished_at", { ascending: false })
     .order("ended_at", { ascending: false })
     .limit(limit)
 
@@ -50,18 +62,19 @@ export async function listRecentResolvedRooms(
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
-/** Spectate = Ready to Start or Live with both players (challenger present). */
-export async function listSpectateRooms(supabase: SupabaseClient): Promise<Room[]> {
+/** Spectate = Ready to Start or Live with a challenger (new or legacy column). */
+export async function listSpectateRooms(
+  supabase: SupabaseClient
+): Promise<Room[]> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
     .in("status", ["Ready to Start", "Live"])
-    .not("challenger_wallet", "is", null)
+    .or("challenger_identity_id.not.is.null,challenger_wallet.not.is.null")
     .order("created_at", { ascending: false })
 
   if (error) throw error
-  const rows = (data ?? []) as Record<string, unknown>[]
-  return rows.map(mapDbRowToRoom)
+  return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
 export async function getRoomById(
@@ -80,11 +93,8 @@ export async function getRoomById(
 }
 
 /**
- * Create room: use API POST /api/rooms/create. Server-side only.
- * The Supabase client MUST be the admin (service role) client so inserts bypass RLS.
- * This function does not create or use any other client; it uses only the passed-in client.
- * Inserts only columns that commonly exist: game_type, status, host_wallet, wager.
- * id/created_at/updated_at are typically defaulted by DB.
+ * Create room. Inserts new + legacy columns for transitional schema.
+ * Requires admin (service role) client for RLS bypass.
  */
 export async function createRoom(
   supabase: SupabaseClient,
@@ -97,11 +107,17 @@ export async function createRoom(
   }
 ): Promise<Room> {
   const status = "Waiting for Opponent"
+  const now = new Date().toISOString()
   const insert: Record<string, unknown> = {
     game_type: params.game_type,
     status,
     host_wallet: params.host_identity_id,
     wager: params.wager_amount,
+    host_identity_id: params.host_identity_id,
+    wager_amount: params.wager_amount,
+    mode: params.mode,
+    host_display_name: params.host_display_name,
+    updated_at: now,
   }
 
   const { data, error } = await supabase
@@ -123,7 +139,7 @@ export async function createRoom(
 }
 
 /**
- * Join room: use API POST /api/rooms/join. This helper is for server-side.
+ * Join room. Sets both new and legacy challenger columns for compatibility.
  */
 export async function joinRoom(
   supabase: SupabaseClient,
@@ -135,15 +151,20 @@ export async function joinRoom(
 ): Promise<Room> {
   const now = new Date().toISOString()
   const countdownSeconds = 30
-  const bettingClosesAt = new Date(Date.now() + countdownSeconds * 1000).toISOString()
+  const bettingClosesAt = new Date(
+    Date.now() + countdownSeconds * 1000
+  ).toISOString()
 
   const updates: Record<string, unknown> = {
     challenger_wallet: params.challenger_identity_id,
+    challenger_identity_id: params.challenger_identity_id,
+    challenger_display_name: params.challenger_display_name,
     status: "Ready to Start",
     countdown_started_at: now,
     countdown_seconds: countdownSeconds,
     betting_open: true,
     betting_closes_at: bettingClosesAt,
+    updated_at: now,
   }
 
   const { data, error } = await supabase
@@ -159,19 +180,21 @@ export async function joinRoom(
 }
 
 /**
- * Cancel room: use API POST /api/rooms/cancel. Server-side helper.
+ * Cancel room. Host only; no challenger. Sets finished_at and ended_at (transitional).
  */
 export async function cancelRoom(
   supabase: SupabaseClient,
   roomId: string,
   hostIdentityId: string
 ): Promise<void> {
+  const now = new Date().toISOString()
   const { error } = await supabase
     .from("matches")
     .update({
       status: "Finished",
-      updated_at: new Date().toISOString(),
-      ended_at: new Date().toISOString(),
+      updated_at: now,
+      ended_at: now,
+      finished_at: now,
     })
     .eq("id", roomId)
     .eq("host_wallet", hostIdentityId)
@@ -181,7 +204,7 @@ export async function cancelRoom(
 }
 
 /**
- * Forfeit: use API POST /api/rooms/forfeit. Server-side helper.
+ * Forfeit. Sets winner, win_reason, finished_at, ended_at (new + legacy).
  */
 export async function forfeitRoom(
   supabase: SupabaseClient,
@@ -220,12 +243,11 @@ export async function listRoomMessages(
     .order("created_at", { ascending: true })
 
   if (error) throw error
-  return ((data ?? []) as Record<string, unknown>[]).map(mapMessageRowToRoomMessage)
+  return ((data ?? []) as Record<string, unknown>[]).map(
+    mapMessageRowToRoomMessage
+  )
 }
 
-/**
- * Send message: use API POST /api/chat/send. Server-side helper.
- */
 export async function sendRoomMessage(
   supabase: SupabaseClient,
   params: {

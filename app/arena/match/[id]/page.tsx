@@ -691,6 +691,16 @@ export default function ArenaMatchPage() {
         { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
         () => { void refreshRoom() }
       )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "match_messages", filter: `match_id=eq.${matchId}` },
+        () => { void refreshChat() }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "moves", filter: `match_id=eq.${matchId}` },
+        () => { void refreshRoom() }
+      )
       .subscribe()
 
     const pollInterval = window.setInterval(() => { void refreshRoom() }, 2000)
@@ -700,7 +710,7 @@ export default function ArenaMatchPage() {
       supabase.removeChannel(channel)
       window.clearInterval(pollInterval)
     }
-  }, [matchId, refreshRoom])
+  }, [matchId, refreshRoom, refreshChat])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -800,20 +810,8 @@ export default function ArenaMatchPage() {
   useEffect(() => {
     if (!matchId) return
     refreshChat()
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`chat-${matchId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "match_messages", filter: `match_id=eq.${matchId}` },
-        () => { void refreshChat() }
-      )
-      .subscribe()
     const poll = window.setInterval(() => { void refreshChat() }, 1500)
-    return () => {
-      supabase.removeChannel(channel)
-      window.clearInterval(poll)
-    }
+    return () => window.clearInterval(poll)
   }, [matchId, refreshChat])
 
   useEffect(() => {
