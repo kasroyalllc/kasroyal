@@ -14,6 +14,7 @@ import {
   formatArenaPhase,
   getArenaBettingSecondsLeft,
   getArenaById,
+  getArenaByIdAsync,
   getCurrentUser,
   getFavoriteData,
   getMultiplier,
@@ -35,6 +36,7 @@ import {
   readArenaMatches,
   readCurrentUserTickets,
   resumeArenaMatch,
+  sendRoomChatMessage,
   subscribeArenaMatches,
   subscribeRoomChat,
   subscribeSpectatorTickets,
@@ -668,7 +670,7 @@ export default function ArenaMatchPage() {
   useEffect(() => {
     if (!matchId) return
 
-    const syncRoom = () => {
+    const syncRoomFromStore = () => {
       const latest = getArenaById(matchId, readArenaMatches()) ?? null
       setMatch(latest)
     }
@@ -678,17 +680,25 @@ export default function ArenaMatchPage() {
       setMyTickets(readCurrentUserTickets(getCurrentIdentity().id).filter((ticket) => ticket.matchId === matchId))
     }
 
-    syncRoom()
+    syncRoomFromStore()
     syncTickets()
 
-    const unsubscribeMatches = subscribeArenaMatches(syncRoom)
+    const unsubscribeMatches = subscribeArenaMatches(syncRoomFromStore)
     const unsubscribeTickets = subscribeSpectatorTickets(syncTickets)
 
-    const pollInterval = window.setInterval(syncRoom, 1500)
+    const storePollInterval = window.setInterval(syncRoomFromStore, 800)
+
+    const remotePollInterval = window.setInterval(() => {
+      getArenaByIdAsync(matchId).then((latest) => {
+        if (latest) setMatch(latest)
+      })
+    }, 2000)
+
     return () => {
       unsubscribeMatches()
       unsubscribeTickets()
-      window.clearInterval(pollInterval)
+      window.clearInterval(storePollInterval)
+      window.clearInterval(remotePollInterval)
     }
   }, [matchId])
 
@@ -1685,6 +1695,20 @@ export default function ArenaMatchPage() {
       ) : null}
 
       <div className="relative z-10 mx-auto max-w-[1700px] px-5 py-8 md:px-8 xl:px-10">
+        {match.status === "Finished" ? (
+          <div className="mb-6 rounded-[28px] border-2 border-amber-300/30 bg-amber-300/10 p-6 text-center">
+            <h2 className="text-2xl font-black text-amber-200">Match Over</h2>
+            <p className="mt-2 text-sm text-white/80">{match.statusText}</p>
+            <p className="mt-1 text-xs text-white/60">You are no longer in an active match. You can join or create a new one.</p>
+            <Link
+              href="/arena"
+              className="mt-4 inline-flex rounded-2xl bg-amber-300/20 px-6 py-3 text-sm font-bold text-amber-200 transition hover:bg-amber-300/30"
+            >
+              Back to Arena
+            </Link>
+          </div>
+        ) : null}
+
         <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-400/15 bg-emerald-400/8">
           <div className="whitespace-nowrap py-3 text-sm font-semibold text-emerald-200">
             <div className="animate-[marquee_24s_linear_infinite] [@keyframes_marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}]">
@@ -2226,7 +2250,10 @@ export default function ArenaMatchPage() {
                       e.preventDefault()
                       const text = chatInput.trim()
                       if (!text) return
-                      appendRoomChat(matchId, { user: currentUserProfile.name, text })
+                      sendRoomChatMessage(matchId, {
+                        user: currentUserProfile.name,
+                        text,
+                      })
                       setChatMessages(getRoomChat(matchId))
                       setChatInput("")
                     }}

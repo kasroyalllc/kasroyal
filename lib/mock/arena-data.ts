@@ -560,9 +560,11 @@ function isActiveMatchStatus(status: ArenaStatus) {
   )
 }
 
-/** Only treat as active if state is consistent: Waiting => no challenger; Ready/Live => has challenger. */
+/** Only treat as active if state is consistent: Waiting => no challenger; Ready/Live => has challenger. Never treat Finished/forfeited/canceled as active. */
 export function isValidActiveMatch(match: ArenaMatch): boolean {
   if (!match.id || typeof match.id !== "string") return false
+  if (match.status === "Finished") return false
+  if (match.finishedAt != null && Number.isFinite(match.finishedAt)) return false
   if (match.status === "Waiting for Opponent") {
     return !match.challenger
   }
@@ -594,6 +596,8 @@ function getActiveMatchForIdentity(identity?: string, excludeMatchId?: string) {
   return (
     readArenaMatches().find((match) => {
       if (excludeMatchId && match.id === excludeMatchId) return false
+      if (match.status === "Finished") return false
+      if (match.finishedAt != null && Number.isFinite(match.finishedAt)) return false
       if (!isActiveMatchStatus(match.status)) return false
       if (!isValidActiveMatch(match)) return false
       return matchHasIdentity(match, normalized)

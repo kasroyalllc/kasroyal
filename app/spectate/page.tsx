@@ -18,7 +18,7 @@ import {
   isArenaSpectatable,
   isRealSpectatableMatch,
   placeArenaSpectatorBet,
-  readArenaMatches,
+  readActiveArenaMatches,
   subscribeArenaMatches,
   type ArenaMatch,
   type ArenaSide,
@@ -210,11 +210,13 @@ export default function SpectatePage() {
 
   useEffect(() => {
     const syncMatches = () => {
-      setAllMatches(readArenaMatches())
+      setAllMatches(readActiveArenaMatches())
     }
 
     syncMatches()
-    const unsubscribeMatches = subscribeArenaMatches(syncMatches)
+    const unsubscribeMatches = subscribeArenaMatches(() => {
+      setAllMatches(readActiveArenaMatches())
+    })
 
     return () => {
       unsubscribeMatches()
@@ -224,7 +226,7 @@ export default function SpectatePage() {
   useEffect(() => {
     const timer = setInterval(() => {
       setTick((value) => value + 1)
-      setAllMatches(readArenaMatches())
+      setAllMatches(readActiveArenaMatches())
     }, 1000)
 
     return () => clearInterval(timer)
