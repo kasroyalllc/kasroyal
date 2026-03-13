@@ -1,6 +1,10 @@
 /**
  * Backend-first room service. Uses Supabase as source of truth.
  * Pass a Supabase client (browser or server). No localStorage authority.
+ *
+ * Data flow: Supabase → API routes → UI. Do not use readArenaMatches,
+ * subscribeArenaMatches, updateArenaMatch, or syncMatchToSupabase in
+ * production paths; those are legacy local/mock helpers in arena-data.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -25,6 +29,22 @@ export async function listHistoryRooms(supabase: SupabaseClient): Promise<Room[]
     .select("*")
     .eq("status", "Finished")
     .order("ended_at", { ascending: false })
+
+  if (error) throw error
+  return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
+}
+
+/** Recently resolved = Finished, ordered by ended_at desc, limited (e.g. for homepage). */
+export async function listRecentResolvedRooms(
+  supabase: SupabaseClient,
+  limit = 6
+): Promise<Room[]> {
+  const { data, error } = await supabase
+    .from("matches")
+    .select("*")
+    .eq("status", "Finished")
+    .order("ended_at", { ascending: false })
+    .limit(limit)
 
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)

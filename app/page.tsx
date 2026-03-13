@@ -4,7 +4,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { listActiveRooms, listHistoryRooms } from "@/lib/rooms/rooms-service"
+import { listActiveRooms, listRecentResolvedRooms } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 import type { Room } from "@/lib/engine/match/types"
 import type { ArenaMatch } from "@/lib/engine/match-types"
@@ -39,19 +39,18 @@ export default function HomePage() {
 
   const loadRooms = useCallback(async () => {
     const supabase = createClient()
-    const [active, history] = await Promise.all([
+    const [active, resolved] = await Promise.all([
       listActiveRooms(supabase),
-      listHistoryRooms(supabase),
+      listRecentResolvedRooms(supabase, 6),
     ])
     const activeMatch = active.map((r: Room) => roomToArenaMatch(r))
     const live = activeMatch.filter((m) => m.status === "Live")
     const open = activeMatch.filter(
       (m) => m.status === "Waiting for Opponent" || m.status === "Ready to Start"
     )
-    const resolved = history.slice(0, 6).map((r: Room) => roomToArenaMatch(r))
     setLiveRooms(live)
     setOpenRooms(open)
-    setRecentResolved(resolved)
+    setRecentResolved(resolved.map((r: Room) => roomToArenaMatch(r)))
   }, [])
 
   useEffect(() => {
@@ -61,10 +60,14 @@ export default function HomePage() {
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
-      .channel("home-matches")
-      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, () => {
-        loadRooms()
-      })
+      .channel("matches-home")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => {
+          void loadRooms()
+        }
+      )
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -140,17 +143,17 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Live now: real rooms */}
+        {/* Live arenas: real rooms */}
         <section className="mb-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold tracking-tight text-white md:text-xl">
-              Live now
+              Live arenas
             </h2>
             <span className="text-xs font-medium uppercase tracking-wider text-white/45">
               {liveRooms.length} match{liveRooms.length !== 1 ? "es" : ""}
             </span>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 md:p-4">
+          <div className="rounded-[var(--radius-card)] border border-[var(--border-strong)] bg-white/[0.02] p-3 md:p-4">
             {liveRooms.length > 0 ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {liveRooms.slice(0, 6).map((m) => (
@@ -185,6 +188,37 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Skill arenas strip + CTA — games before lobbies */}
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold tracking-tight text-white md:text-xl">
+              Skill arenas
+            </h2>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {GAMES.map((g) => (
+              <Link
+                key={g.name}
+                href={g.href}
+                onClick={playClick}
+                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3.5 transition hover:border-emerald-400/20 hover:bg-emerald-500/5"
+              >
+                <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-bold uppercase text-white/70">
+                  {g.tag}
+                </span>
+                <span className="font-semibold text-white">{g.name}</span>
+              </Link>
+            ))}
+            <Link
+              href="/arena"
+              onClick={playClick}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.2)] transition hover:from-emerald-400 hover:to-emerald-500"
+            >
+              Enter Arena
+            </Link>
+          </div>
+        </section>
+
         {/* Open seats: joinable + ready */}
         <section className="mb-8">
           <div className="mb-3 flex items-center justify-between">
@@ -199,7 +233,7 @@ export default function HomePage() {
               Arena →
             </Link>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 md:p-4">
+          <div className="rounded-[var(--radius-card)] border border-[var(--border-strong)] bg-white/[0.02] p-3 md:p-4">
             {openRooms.length > 0 ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {openRooms.slice(0, 6).map((m) => (
@@ -240,37 +274,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Skill arenas strip + CTA */}
-        <section className="mb-8">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold tracking-tight text-white md:text-xl">
-              Skill arenas
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            {GAMES.map((g) => (
-              <Link
-                key={g.name}
-                href={g.href}
-                onClick={playClick}
-                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3.5 transition hover:border-emerald-400/20 hover:bg-emerald-500/5"
-              >
-                <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-bold uppercase text-white/70">
-                  {g.tag}
-                </span>
-                <span className="font-semibold text-white">{g.name}</span>
-              </Link>
-            ))}
-            <Link
-              href="/arena"
-              onClick={playClick}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.2)] transition hover:from-emerald-400 hover:to-emerald-500"
-            >
-              Enter Arena
-            </Link>
-          </div>
-        </section>
-
         {/* Recently resolved: trust */}
         <section className="mb-8">
           <div className="mb-3 flex items-center justify-between">
@@ -285,7 +288,7 @@ export default function HomePage() {
               History →
             </Link>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 md:p-4">
+          <div className="rounded-[var(--radius-card)] border border-[var(--border-strong)] bg-white/[0.02] p-3 md:p-4">
             {recentResolved.length > 0 ? (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {recentResolved.map((m) => (

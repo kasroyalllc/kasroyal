@@ -21,6 +21,13 @@
   --space-section: 1.5rem;
 }
 
+/* Use tokens for cards: background var(--surface-card), border var(--border-strong), border-radius var(--radius-card). */
+.card-token {
+  background: var(--surface-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
