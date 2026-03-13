@@ -8,8 +8,6 @@ import type { GameType } from "@/lib/engine/match/types"
 
 export const dynamic = "force-dynamic"
 
-const ADMIN_CLIENT_PATH = true
-
 function getErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message
   if (typeof e === "string") return e
@@ -19,10 +17,17 @@ function getErrorMessage(e: unknown): string {
   return "Create room failed"
 }
 
-/** Create a room. Quick = no wager; Ranked = wager allowed. One active match per identity. */
+/** Create a room. Uses admin client (SUPABASE_SERVICE_ROLE_KEY) only. */
 export async function POST(request: NextRequest) {
-  const hasServiceRoleKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
-  console.log("[api/rooms/create] Using admin client path:", ADMIN_CLIENT_PATH, "| SUPABASE_SERVICE_ROLE_KEY present:", hasServiceRoleKey)
+  const urlExists = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  )
+  const serviceRoleKeyExists = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+  console.log("[api/rooms/create] Env check (safe):", {
+    urlExists,
+    serviceRoleKeyExists,
+  })
 
   let body: Record<string, unknown> = {}
   try {
@@ -54,7 +59,6 @@ export async function POST(request: NextRequest) {
     host_display_name: hostDisplayName,
     wager_amount: wagerAmount,
   }
-  console.log("[api/rooms/create] Create payload (safe):", { ...createPayload, host_identity_id_length: hostIdentityId.length })
 
   try {
     const supabase = createAdminClient()
@@ -85,21 +89,21 @@ export async function POST(request: NextRequest) {
     )
   } catch (e) {
     const message = getErrorMessage(e)
-    const supabaseError =
+    const supabaseMessage =
+      e && typeof e === "object" && "message" in e
+        ? String((e as { message: unknown }).message)
+        : null
+    const supabaseCode =
       e && typeof e === "object" && "code" in e
-        ? {
-            code: (e as { code?: string }).code,
-            details: (e as { details?: unknown }).details,
-          }
+        ? (e as { code?: string }).code
         : null
 
-    console.error("[api/rooms/create] Room creation failed:", {
-      usingAdminClientPath: ADMIN_CLIENT_PATH,
-      hasServiceRoleKey,
+    console.error("[api/rooms/create] Room creation failed (safe log):", {
+      urlExists,
+      serviceRoleKeyExists,
       message,
-      stack: e instanceof Error ? e.stack : undefined,
-      supabaseError,
-      exactErrorObject: e && typeof e === "object" ? { ...(e as Record<string, unknown>) } : e,
+      supabaseExactMessage: supabaseMessage,
+      supabaseCode,
       requestPayload: createPayload,
     })
 
