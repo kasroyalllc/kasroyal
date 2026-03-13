@@ -17,7 +17,21 @@ function defaultPlayer(name: string): PlayerProfile {
   }
 }
 
-/** Convert a Room from Supabase to ArenaMatch for the arena UI. */
+/** Enrich board_state with backend move timer (turnDeadlineTs) when missing. */
+function enrichBoardStateWithMoveTimer(room: Room): unknown {
+  const raw = room.boardState
+  if (room.status !== "Live" || !raw || typeof raw !== "object") return raw
+  const moveStart = room.moveTurnStartedAt
+  const moveSeconds = room.moveTurnSeconds
+  const deadlineMs =
+    moveStart != null && moveSeconds != null
+      ? moveStart + moveSeconds * 1000
+      : null
+  const withDeadline = { ...(raw as Record<string, unknown>), turnDeadlineTs: deadlineMs }
+  return withDeadline
+}
+
+/** Convert a Room from Supabase to ArenaMatch for the arena UI (presentation only). */
 export function roomToArenaMatch(room: Room): ArenaMatch {
   const host: PlayerProfile = defaultPlayer(room.hostDisplayName)
   const challenger: PlayerProfile | null = room.challengerDisplayName
@@ -40,6 +54,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
       : undefined)
   const startedAt = room.liveStartedAt ?? undefined
   const finishedAt = room.finishedAt ?? undefined
+  const boardState = enrichBoardStateWithMoveTimer(room)
 
   return {
     id: room.id,
@@ -84,7 +99,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
           : null
       : null,
     moveHistory: [],
-    boardState: room.boardState,
+    boardState: boardState ?? room.boardState,
     timeoutStrikesHost: room.hostTimeoutStrikes,
     timeoutStrikesChallenger: room.challengerTimeoutStrikes,
   }

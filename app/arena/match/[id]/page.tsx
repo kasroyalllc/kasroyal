@@ -7,7 +7,6 @@ import { useParams } from "next/navigation"
 import {
   clampBetAmount,
   DEFAULT_BET,
-  forceEmitArenaStoreUpdate,
   formatArenaPhase,
   getArenaBettingSecondsLeft,
   getCurrentUser,
@@ -648,7 +647,7 @@ export default function ArenaMatchPage() {
   )
   const [poolFlash, setPoolFlash] = useState<ArenaSide | null>(null)
   const [countdownLineIndex, setCountdownLineIndex] = useState(0)
-  const [, setTick] = useState(0)
+  const [tick, setTick] = useState(0)
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
   const [showCancelRoomConfirm, setShowCancelRoomConfirm] = useState(false)
@@ -714,12 +713,26 @@ export default function ArenaMatchPage() {
   }, [])
 
   useEffect(() => {
-    if (!match || (match.status !== "Ready to Start" && match.status !== "Live")) return
-    const interval = window.setInterval(() => {
-      forceEmitArenaStoreUpdate()
-    }, 400)
-    return () => window.clearInterval(interval)
-  }, [match?.id, match?.status])
+    if (!matchId || !match) return
+    if (match.status !== "Ready to Start" && match.status !== "Live") return
+    const t = window.setInterval(() => {
+      fetch("/api/rooms/tick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room_id: matchId }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ok && data.room) {
+            const updated = roomToArenaMatch(data.room)
+            upsertMatchLocally(updated)
+            setMatch(updated)
+          }
+        })
+        .catch(() => {})
+    }, 2000)
+    return () => clearInterval(t)
+  }, [matchId, match?.id, match?.status])
 
   useEffect(() => {
     if (!match) return
@@ -806,45 +819,24 @@ export default function ArenaMatchPage() {
   }, [matchId, refreshChat])
 
   useEffect(() => {
-    if (!match || match.status !== "Live" || !match.challenger) return
-
-    if (match.game === "Connect 4" && !connect4State.hasPersistedState) {
-      const updated = updateArenaMatch(match.id, (current) => ({
-        ...current,
-        boardState: {
-          mode: "connect4-live",
-          board: getEmptyConnect4Board(),
-          turn: "host",
-          turnDeadlineTs: Date.now() + CONNECT4_MOVE_SECONDS * 1000,
-        },
-        moveText: "New round",
-        statusText: `${match.host.name} to move`,
-      }))
-      if (updated) {
-        setMatch(updated)
-        setMessage("Fresh Connect 4 game initialized.")
-      }
-      return
-    }
-
-    if (match.game === "Tic-Tac-Toe" && !tttState.hasPersistedState) {
-      const updated = updateArenaMatch(match.id, (current) => ({
-        ...current,
-        boardState: {
-          mode: "ttt-live",
-          board: getEmptyTttBoard(),
-          turn: "X",
-          turnDeadlineTs: Date.now() + TTT_MOVE_SECONDS * 1000,
-        },
-        moveText: "New round",
-        statusText: `${match.host.name} to move`,
-      }))
-      if (updated) {
-        setMatch(updated)
-        setMessage("Fresh Tic-Tac-Toe game initialized.")
-      }
-    }
-  }, [match, connect4State.hasPersistedState, tttState.hasPersistedState])
+    if (!matchId || !match || match.status !== "Ready to Start" || !match.challenger) return
+    const secondsLeft = getArenaBettingSecondsLeft(match)
+    if (secondsLeft > 0) return
+    fetch("/api/rooms/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room_id: matchId }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && data.room) {
+          const updated = roomToArenaMatch(data.room)
+          upsertMatchLocally(updated)
+          setMatch(updated)
+        }
+      })
+      .catch(() => {})
+  }, [matchId, match?.id, match?.status, match?.challenger, tick])
 
   if (!matchId) {
     return (
@@ -1168,54 +1160,6 @@ export default function ArenaMatchPage() {
     }
   }
 
-  function persistConnect4Board(
-    board: Connect4Cell[][],
-    turn: ArenaSide,
-    turnDeadlineTs: number | null,
-    partial?: Partial<ArenaMatch>
-  ) {
-    if (!match) return
-
-    const updated = updateArenaMatch(match.id, (current) => ({
-      ...current,
-      ...partial,
-      boardState: {
-        mode: "connect4-live",
-        board,
-        turn,
-        turnDeadlineTs,
-      },
-    }))
-
-    if (updated) {
-      setMatch(updated)
-    }
-  }
-
-  function persistTttBoard(
-    board: TttCell[],
-    turn: "X" | "O",
-    turnDeadlineTs: number | null,
-    partial?: Partial<ArenaMatch>
-  ) {
-    if (!match) return
-
-    const updated = updateArenaMatch(match.id, (current) => ({
-      ...current,
-      ...partial,
-      boardState: {
-        mode: "ttt-live",
-        board,
-        turn,
-        turnDeadlineTs,
-      },
-    }))
-
-    if (updated) {
-      setMatch(updated)
-    }
-  }
-
   function handleSelectBetSide(side: ArenaSide) {
     if (!match) return
 
@@ -1429,9 +1373,8 @@ export default function ArenaMatchPage() {
     }
   }
 
-  function dropConnect4(col: number) {
+  async function dropConnect4(col: number) {
     if (!match) return
-
     if (match.game !== "Connect 4") return
     if (isFinished) return
     if (isCountdown) {
@@ -1445,73 +1388,41 @@ export default function ArenaMatchPage() {
     if (connect4Winner) return
     if (isConnect4Full(connect4Board)) return
     if (match.status !== "Live") return
-
     if (isSpectatorOnly) {
       setMessage("Spectating only. You are not seated in this match.")
       return
     }
-
     if (!canCurrentUserMove) {
       setMessage(`It is not your turn. Current turn: ${currentTurnPlayerName}.`)
       return
     }
-
-    const next = connect4Board.map((row) => [...row])
-    let placed = false
-
-    for (let row = next.length - 1; row >= 0; row--) {
-      if (next[row][col] === null) {
-        next[row][col] = connect4Turn
-        placed = true
-        break
+    try {
+      const res = await fetch("/api/rooms/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: match.id,
+          player_identity_id: getCurrentIdentity().id,
+          move: col,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok && data.room) {
+        const updated = roomToArenaMatch(data.room)
+        upsertMatchLocally(updated)
+        setMatch(updated)
+        const playerLabel = connect4Turn === "host" ? match.host.name : challenger?.name ?? "Challenger"
+        setFeed((prev) => [`🎮 ${playerLabel} dropped in column ${col + 1}`, ...prev].slice(0, 12))
+      } else {
+        setMessage(data.error ?? "Move failed.")
       }
+    } catch {
+      setMessage("Move failed.")
     }
-
-    if (!placed) return
-
-    const playerLabel = connect4Turn === "host" ? match.host.name : challenger?.name ?? "Challenger"
-    setFeed((prev) => [`🎮 ${playerLabel} dropped in column ${col + 1}`, ...prev].slice(0, 12))
-
-    const winner = getConnect4Winner(next)
-    if (winner) {
-      const winnerName = winner === "host" ? match.host.name : challenger?.name ?? "Challenger"
-      persistConnect4Board(next, connect4Turn, null, {
-        status: "Finished",
-        result: winner,
-        moveText: `${winnerName} wins`,
-        statusText: "Connect 4 resolved",
-        finishedAt: Date.now(),
-      })
-      setMessage(`${winnerName} wins the Connect 4 round.`)
-      return
-    }
-
-    if (isConnect4Full(next)) {
-      persistConnect4Board(next, connect4Turn, null, {
-        status: "Finished",
-        result: "draw",
-        moveText: "Board filled",
-        statusText: "Draw",
-        finishedAt: Date.now(),
-      })
-      setMessage("Connect 4 round ended in a draw.")
-      return
-    }
-
-    const nextTurn = connect4Turn === "host" ? "challenger" : "host"
-
-    persistConnect4Board(next, nextTurn, Date.now() + CONNECT4_MOVE_SECONDS * 1000, {
-      moveText: `Column ${col + 1}`,
-      statusText:
-        nextTurn === "host"
-          ? `${match.host.name} to move`
-          : `${challenger?.name ?? "Challenger"} to move`,
-    })
   }
 
-  function playTtt(index: number) {
+  async function playTtt(index: number) {
     if (!match) return
-
     if (match.game !== "Tic-Tac-Toe") return
     if (isFinished) return
     if (isCountdown) {
@@ -1525,58 +1436,37 @@ export default function ArenaMatchPage() {
     if (tttWinner) return
     if (tttBoard[index] !== null) return
     if (match.status !== "Live") return
-
     if (isSpectatorOnly) {
       setMessage("Spectating only. You are not seated in this match.")
       return
     }
-
     if (!canCurrentUserMove) {
       setMessage(`It is not your turn. Current turn: ${currentTurnPlayerName}.`)
       return
     }
-
-    const next = [...tttBoard]
-    next[index] = tttTurn
-
-    const playerLabel = tttTurn === "X" ? match.host.name : challenger?.name ?? "Challenger"
-    setFeed((prev) => [`🎮 ${playerLabel} marked ${index + 1}`, ...prev].slice(0, 12))
-
-    const winner = getTttWinner(next)
-    if (winner) {
-      const winnerName = winner === "X" ? match.host.name : challenger?.name ?? "Challenger"
-      persistTttBoard(next, tttTurn, null, {
-        status: "Finished",
-        result: winner === "X" ? "host" : "challenger",
-        moveText: `${winnerName} wins`,
-        statusText: "Tic-Tac-Toe resolved",
-        finishedAt: Date.now(),
+    try {
+      const res = await fetch("/api/rooms/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: match.id,
+          player_identity_id: getCurrentIdentity().id,
+          move: index,
+        }),
       })
-      setMessage(`${winnerName} wins the Tic-Tac-Toe round.`)
-      return
+      const data = await res.json()
+      if (data.ok && data.room) {
+        const updated = roomToArenaMatch(data.room)
+        upsertMatchLocally(updated)
+        setMatch(updated)
+        const playerLabel = tttTurn === "X" ? match.host.name : challenger?.name ?? "Challenger"
+        setFeed((prev) => [`🎮 ${playerLabel} marked ${index + 1}`, ...prev].slice(0, 12))
+      } else {
+        setMessage(data.error ?? "Move failed.")
+      }
+    } catch {
+      setMessage("Move failed.")
     }
-
-    if (next.every((cell) => cell !== null)) {
-      persistTttBoard(next, tttTurn, null, {
-        status: "Finished",
-        result: "draw",
-        moveText: "Board filled",
-        statusText: "Draw",
-        finishedAt: Date.now(),
-      })
-      setMessage("Tic-Tac-Toe ended in a draw.")
-      return
-    }
-
-    const nextTurn = tttTurn === "X" ? "O" : "X"
-
-    persistTttBoard(next, nextTurn, Date.now() + TTT_MOVE_SECONDS * 1000, {
-      moveText: `Cell ${index + 1}`,
-      statusText:
-        nextTurn === "X"
-          ? `${match.host.name} to move`
-          : `${challenger?.name ?? "Challenger"} to move`,
-    })
   }
 
   function resetCurrentGame() {
@@ -1587,27 +1477,8 @@ export default function ArenaMatchPage() {
       return
     }
 
-    if (match.game === "Connect 4") {
-      persistConnect4Board(getEmptyConnect4Board(), "host", Date.now() + CONNECT4_MOVE_SECONDS * 1000, {
-        status: "Live",
-        result: null,
-        finishedAt: undefined,
-        moveText: "New round",
-        statusText: `${match.host.name} to move`,
-      })
-      setMessage("Connect 4 board reset to a fresh empty game.")
-      return
-    }
-
-    if (match.game === "Tic-Tac-Toe") {
-      persistTttBoard(getEmptyTttBoard(), "X", Date.now() + TTT_MOVE_SECONDS * 1000, {
-        status: "Live",
-        result: null,
-        finishedAt: undefined,
-        moveText: "New round",
-        statusText: `${match.host.name} to move`,
-      })
-      setMessage("Tic-Tac-Toe board reset to a fresh empty game.")
+    if (match.game === "Connect 4" || match.game === "Tic-Tac-Toe") {
+      setMessage("Board state is server-authoritative. Reset is not available for this game.")
       return
     }
 

@@ -82,6 +82,30 @@ export type DbMatchRow = {
   ended_at: string | null
 }
 
+/** Connect 4 cell: host | challenger | null. Stored in board_state. */
+export type Connect4Cell = "host" | "challenger" | null
+
+/** Tic-Tac-Toe cell: X (host) | O (challenger) | null. Stored in board_state. */
+export type TttCell = "X" | "O" | null
+
+/** Backend board state for Connect 4. Stored in matches.board_state. */
+export type Connect4BoardState = {
+  mode: "connect4-live"
+  board: Connect4Cell[][]
+  turn: MatchSide
+  turnDeadlineTs: number | null
+}
+
+/** Backend board state for Tic-Tac-Toe. Stored in matches.board_state. */
+export type TttBoardState = {
+  mode: "ttt-live"
+  board: TttCell[]
+  turn: TttCell
+  turnDeadlineTs: number | null
+}
+
+export type GameBoardState = Connect4BoardState | TttBoardState
+
 export type MoveRecord = {
   id: string
   match_id: string

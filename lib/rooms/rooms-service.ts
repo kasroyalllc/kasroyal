@@ -105,9 +105,17 @@ export async function joinRoom(
     challenger_display_name: string
   }
 ): Promise<Room> {
+  const now = new Date().toISOString()
+  const countdownSeconds = 30
+  const bettingClosesAt = new Date(Date.now() + countdownSeconds * 1000).toISOString()
+
   const updates: Record<string, unknown> = {
     challenger_wallet: params.challenger_identity_id,
     status: "Ready to Start",
+    countdown_started_at: now,
+    countdown_seconds: countdownSeconds,
+    betting_open: true,
+    betting_closes_at: bettingClosesAt,
   }
 
   const { data, error } = await supabase
