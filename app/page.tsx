@@ -171,14 +171,26 @@ export default function HomePage() {
           aria-label="Hero"
         >
           <div className="mx-auto max-w-4xl">
-            <div className="mb-6 flex justify-center md:mb-8">
-              <Image
-                src="/kasroyal-logo-navbar.png"
-                alt="KasRoyal"
-                width={48}
-                height={48}
-                className="h-12 w-12 opacity-95 md:h-14 md:w-14"
-              />
+            {/* Hero brand mark: premium insignia with halo and wordmark */}
+            <div className="mb-10 flex flex-col items-center md:mb-12">
+              <div className="relative h-32 w-32 sm:h-36 sm:w-36 md:h-40 md:w-40 lg:h-44 lg:w-44 flex items-center justify-center">
+                {/* Soft radial bloom behind logo */}
+                <div className="absolute -inset-6 rounded-full bg-emerald-500/15 blur-2xl" aria-hidden />
+                <div className="absolute -inset-3 rounded-full bg-amber-400/10 blur-xl" aria-hidden />
+                {/* Dark plate + emerald/gold glow halo */}
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border border-white/10 bg-[var(--surface-card)] shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_32px_rgba(0,0,0,0.4),0_0_40px_rgba(16,185,129,0.1),0_0_80px_rgba(251,191,36,0.05)] sm:h-24 sm:w-24 md:h-28 md:w-28 md:rounded-3xl lg:h-32 lg:w-32">
+                  <Image
+                    src="/kasroyal-logo-navbar.png"
+                    alt="KasRoyal"
+                    width={128}
+                    height={128}
+                    className="h-[70%] w-[70%] opacity-95 sm:h-[72%] sm:w-[72%] md:h-[75%] md:w-[75%] lg:h-[78%] lg:w-[78%]"
+                  />
+                </div>
+              </div>
+              <p className="mt-5 text-xl font-black tracking-[0.2em] text-white/95 sm:mt-6 sm:text-2xl sm:tracking-[0.24em] md:mt-6 md:text-3xl md:tracking-[0.28em]">
+                KASROYAL
+              </p>
             </div>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-300 md:mb-8">
               <LiveDot />
