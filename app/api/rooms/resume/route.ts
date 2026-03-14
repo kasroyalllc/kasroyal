@@ -5,6 +5,7 @@ import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
 import { logRoomAction } from "@/lib/log"
+import { insertMatchEvent } from "@/lib/rooms/match-events"
 export const dynamic = "force-dynamic"
 
 /**
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
     }
 
     const updatedRoom = mapDbRowToRoom(data as Record<string, unknown>)
+    await insertMatchEvent(supabase, roomId, "resumed", {})
     logRoomAction("resume", roomId)
     return NextResponse.json(
       { ok: true, room: updatedRoom },

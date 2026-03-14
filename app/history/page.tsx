@@ -54,6 +54,12 @@ function HistoryCard({
       : `Wager ${match.wager} KAS`
     : null
   const modeLabel = match.matchMode === "ranked" ? "Ranked" : "Quick Match"
+  const bestOf = match.bestOf ?? 1
+  const seriesScore =
+    match.status === "Finished" &&
+    (match.roundScore?.host != null || match.roundScore?.challenger != null)
+      ? `${match.roundScore?.host ?? 0}–${match.roundScore?.challenger ?? 0}`
+      : null
   const resultCopy = match.status === "Finished"
     ? (match.result === "draw"
         ? "Draw"
@@ -76,6 +82,12 @@ function HistoryCard({
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70" title="Ended">
               {mounted ? endedTime : "—"}
             </span>
+            {bestOf > 1 ? (
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
+                BO{bestOf}
+                {seriesScore != null ? ` • ${seriesScore}` : ""}
+              </span>
+            ) : null}
             {poolLabel ? (
               <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
                 {poolLabel}

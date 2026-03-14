@@ -16,6 +16,7 @@ import {
   resolveMoveToDbUpdate,
   type MoveDbUpdate,
 } from "@/lib/rooms/move-pipeline"
+import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
 
 export const dynamic = "force-dynamic"
 
@@ -163,6 +164,54 @@ export async function POST(request: NextRequest) {
 
     if (dbUpdate.updateType === "series_finished" && dbUpdate.releaseMatch) {
       await releaseActiveMatchByMatch(supabase, roomId)
+    }
+
+    await insertMatchEvent(supabase, roomId, "move_applied", {
+      game: room.game,
+      round_number: room.currentRound ?? 1,
+    })
+    if (dbUpdate.updateType === "intermission") {
+      await insertMatchEvent(supabase, roomId, dbUpdate.roundRecord.resultType === "draw" ? "round_draw" : "round_won", {
+        round_number: dbUpdate.roundRecord.roundNumber,
+        winner_identity_id: dbUpdate.roundRecord.winnerIdentityId,
+        host_score: dbUpdate.roundRecord.hostScoreAfter,
+        challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
+      })
+      await insertMatchRound(
+        supabase,
+        roomId,
+        dbUpdate.roundRecord.roundNumber,
+        dbUpdate.roundRecord.winnerIdentityId,
+        dbUpdate.roundRecord.resultType,
+        dbUpdate.roundRecord.hostScoreAfter,
+        dbUpdate.roundRecord.challengerScoreAfter
+      )
+      await insertMatchEvent(supabase, roomId, "intermission_started", {
+        round_number: dbUpdate.payload.round_number as number,
+      })
+    }
+    if (dbUpdate.updateType === "series_finished") {
+      await insertMatchEvent(supabase, roomId, dbUpdate.roundRecord.resultType === "draw" ? "round_draw" : "round_won", {
+        round_number: dbUpdate.roundRecord.roundNumber,
+        winner_identity_id: dbUpdate.roundRecord.winnerIdentityId,
+        host_score: dbUpdate.roundRecord.hostScoreAfter,
+        challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
+      })
+      await insertMatchRound(
+        supabase,
+        roomId,
+        dbUpdate.roundRecord.roundNumber,
+        dbUpdate.roundRecord.winnerIdentityId,
+        dbUpdate.roundRecord.resultType,
+        dbUpdate.roundRecord.hostScoreAfter,
+        dbUpdate.roundRecord.challengerScoreAfter
+      )
+      await insertMatchEvent(supabase, roomId, "match_finished", {
+        winner_identity_id: dbUpdate.payload.winner_identity_id,
+        win_reason: dbUpdate.payload.win_reason,
+        host_score: dbUpdate.roundRecord.hostScoreAfter,
+        challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
+      })
     }
 
     logRoomAction(dbUpdate.logEvent, roomId, {

@@ -69,10 +69,29 @@ export function getSeriesUpdate(
   }
 }
 
+export type RoundRecord = {
+  roundNumber: number
+  winnerIdentityId: string | null
+  resultType: "win" | "draw" | "timeout" | "forfeit"
+  hostScoreAfter: number
+  challengerScoreAfter: number
+}
+
 export type MoveDbUpdate =
   | { updateType: "in_round"; payload: Record<string, unknown>; logEvent: "move_applied" }
-  | { updateType: "series_finished"; payload: Record<string, unknown>; releaseMatch: true; logEvent: string }
-  | { updateType: "intermission"; payload: Record<string, unknown>; logEvent: string }
+  | {
+      updateType: "series_finished"
+      payload: Record<string, unknown>
+      releaseMatch: true
+      logEvent: string
+      roundRecord: RoundRecord
+    }
+  | {
+      updateType: "intermission"
+      payload: Record<string, unknown>
+      logEvent: string
+      roundRecord: RoundRecord
+    }
 
 /**
  * Build the canonical DB update payload for a move result.
@@ -111,6 +130,14 @@ export function resolveMoveToDbUpdate(
         : null
   const series = getSeriesUpdate(room, roundWinner)
 
+  const roundRecord: RoundRecord = {
+    roundNumber: series.currentRound,
+    winnerIdentityId: roundWinnerIdentityId,
+    resultType: outcome.isDraw ? "draw" : "win",
+    hostScoreAfter: series.hostRoundWins,
+    challengerScoreAfter: series.challengerRoundWins,
+  }
+
   if (series.seriesOver) {
     const payload: Record<string, unknown> = {
       status: DB_STATUS.FINISHED,
@@ -125,7 +152,7 @@ export function resolveMoveToDbUpdate(
       ended_at: nowIso,
     }
     const logEvent = outcome.isDraw ? "series_finished_draw" : "series_finished"
-    return { updateType: "series_finished", payload, releaseMatch: true, logEvent }
+    return { updateType: "series_finished", payload, releaseMatch: true, logEvent, roundRecord }
   }
 
   const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
@@ -138,6 +165,12 @@ export function resolveMoveToDbUpdate(
     last_round_winner_identity_id: roundWinnerIdentityId,
     updated_at: nowIso,
   }
+  const roundJustEnded = series.currentRound - 1
   const logEvent = outcome.isDraw ? "round_draw_intermission" : "round_ended_intermission"
-  return { updateType: "intermission", payload, logEvent }
+  return {
+    updateType: "intermission",
+    payload,
+    logEvent,
+    roundRecord: { ...roundRecord, roundNumber: roundJustEnded },
+  }
 }

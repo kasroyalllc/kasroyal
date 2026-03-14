@@ -44,6 +44,31 @@ ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS round_intermission_until TIM
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS last_round_winner_identity_id TEXT;
 
 -- =============================================================================
+-- 1b. MATCH_EVENTS + MATCH_ROUNDS (timeline and round result record)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.match_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id UUID NOT NULL REFERENCES public.matches(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_match_events_match_id_created_at ON public.match_events (match_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS public.match_rounds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id UUID NOT NULL REFERENCES public.matches(id) ON DELETE CASCADE,
+  round_number INTEGER NOT NULL,
+  winner_identity_id TEXT,
+  result_type TEXT NOT NULL,
+  host_score_after INTEGER NOT NULL,
+  challenger_score_after INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_match_rounds_match_id ON public.match_rounds (match_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_match_rounds_match_round ON public.match_rounds (match_id, round_number);
+
+-- =============================================================================
 -- 2. PROFILES (users/leaderboard display names)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -130,6 +155,14 @@ CREATE POLICY "moves_select" ON public.moves FOR SELECT TO anon, authenticated U
 ALTER TABLE public.bets ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "bets_select" ON public.bets;
 CREATE POLICY "bets_select" ON public.bets FOR SELECT TO anon, authenticated USING (true);
+
+-- MATCH_EVENTS, MATCH_ROUNDS (read-only for anon/authenticated)
+ALTER TABLE public.match_events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "match_events_select" ON public.match_events;
+CREATE POLICY "match_events_select" ON public.match_events FOR SELECT TO anon, authenticated USING (true);
+ALTER TABLE public.match_rounds ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "match_rounds_select" ON public.match_rounds;
+CREATE POLICY "match_rounds_select" ON public.match_rounds FOR SELECT TO anon, authenticated USING (true);
 
 -- ACTIVE_IDENTITY_MATCHES (no client policies; service role only)
 ALTER TABLE public.active_identity_matches ENABLE ROW LEVEL SECURITY;

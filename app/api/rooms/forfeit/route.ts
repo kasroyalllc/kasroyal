@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById, forfeitRoom } from "@/lib/rooms/rooms-service"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { logRoomAction } from "@/lib/log"
+import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
 
 export const dynamic = "force-dynamic"
 
@@ -61,6 +62,27 @@ export async function POST(request: NextRequest) {
       roomId,
       forfeiterIdentityId,
       winnerIdentityId
+    )
+    await insertMatchEvent(supabase, roomId, "forfeit", {
+      forfeiter_identity_id: forfeiterIdentityId,
+    })
+    await insertMatchEvent(supabase, roomId, "match_finished", {
+      winner_identity_id: winnerIdentityId,
+      win_reason: "forfeit",
+    })
+    const roundNum = room.currentRound ?? 1
+    const hostScore = room.hostRoundWins ?? 0
+    const challengerScore = room.challengerRoundWins ?? 0
+    const hostScoreAfter = winnerIdentityId === room.hostIdentityId ? hostScore + 1 : hostScore
+    const challengerScoreAfter = winnerIdentityId === room.challengerIdentityId ? challengerScore + 1 : challengerScore
+    await insertMatchRound(
+      supabase,
+      roomId,
+      roundNum,
+      winnerIdentityId,
+      "forfeit",
+      hostScoreAfter,
+      challengerScoreAfter
     )
     logRoomAction("forfeit", roomId, { winner: isHost ? "challenger" : "host" })
 

@@ -48,6 +48,7 @@ import { acceptAndReconcile, reconcileRoom } from "@/lib/rooms/sync-policy"
 import type { Room } from "@/lib/engine/match/types"
 import { getMatchRole } from "@/lib/rooms/match-role"
 import { COUNTDOWN_PHRASES } from "@/lib/countdown-phrases"
+import type { MatchRoundRow } from "@/lib/rooms/match-events"
 
 type Connect4Cell = "host" | "challenger" | null
 type TttCell = "X" | "O" | null
@@ -639,6 +640,8 @@ export default function ArenaMatchPage() {
   })
   /** Ticks every second during pre-game countdown so displayed seconds update smoothly. */
   const [countdownTick, setCountdownTick] = useState(0)
+  /** Round-by-round record when match is finished (from timeline API). */
+  const [timelineRounds, setTimelineRounds] = useState<MatchRoundRow[]>([])
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
@@ -932,6 +935,21 @@ export default function ArenaMatchPage() {
     if (!hadNewMessage) return
     chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
   }, [chatMessages, match?.status])
+
+  useEffect(() => {
+    if (!matchId || match?.status !== "Finished") return
+    let cancelled = false
+    fetch(`/api/rooms/${matchId}/timeline`)
+      .then((res) => res.json())
+      .then((data: { ok?: boolean; rounds?: MatchRoundRow[] }) => {
+        if (cancelled || !data?.ok || !Array.isArray(data.rounds)) return
+        setTimelineRounds(data.rounds)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [matchId, match?.status])
 
   const handleChatScroll = useCallback(() => {
     const el = chatScrollContainerRef.current
@@ -1824,6 +1842,33 @@ export default function ArenaMatchPage() {
                 </>
               )
             })()}
+            {timelineRounds.length > 0 ? (
+              <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/5 px-4 py-3 text-left">
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-200/90">Round-by-round</p>
+                <ul className="mt-2 space-y-1 text-sm text-white/90">
+                  {timelineRounds.map((r) => {
+                    const winnerName =
+                      r.winner_identity_id === match.hostIdentityId
+                        ? (match.host?.name ?? "Host")
+                        : r.winner_identity_id === match.challengerIdentityId
+                          ? (challenger?.name ?? "Challenger")
+                          : null
+                    const resultText =
+                      r.result_type === "draw"
+                        ? "Draw"
+                        : winnerName
+                          ? `${winnerName} won`
+                          : `Round ${r.round_number} (${r.result_type})`
+                    return (
+                      <li key={r.id}>
+                        Round {r.round_number}: {resultText}
+                        {r.result_type !== "draw" && winnerName ? ` — ${r.host_score_after}–${r.challenger_score_after}` : ""}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ) : null}
             <p className="mt-2 text-xs text-white/60">You can join or create a new match.</p>
             <Link
               href="/arena"

@@ -8,6 +8,7 @@ import {
   getReadyToLivePayload,
   READY_LIKE_STATUSES,
 } from "@/lib/rooms/lifecycle"
+import { insertMatchEvent } from "@/lib/rooms/match-events"
 
 export const dynamic = "force-dynamic"
 
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    await insertMatchEvent(supabase, roomId, "match_live", {})
     const updatedRoom = mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
 
     return NextResponse.json(

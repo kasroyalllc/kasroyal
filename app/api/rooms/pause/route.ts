@@ -4,6 +4,7 @@ import { getRoomById } from "@/lib/rooms/rooms-service"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import { DB_STATUS } from "@/lib/rooms/db-status"
 import { logRoomAction } from "@/lib/log"
+import { insertMatchEvent } from "@/lib/rooms/match-events"
 
 export const dynamic = "force-dynamic"
 
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     const updatedRoom = mapDbRowToRoom(data as Record<string, unknown>)
+    await insertMatchEvent(supabase, roomId, "pause_requested", { paused_by: side })
     logRoomAction("pause", roomId, { paused_by: side, pause_count: usedPauses + 1 })
     return NextResponse.json(
       { ok: true, room: updatedRoom, pause_duration_seconds: PAUSE_DURATION_SECONDS },

@@ -17,6 +17,7 @@ import {
   DB_SPECTATE_STATUSES,
   DB_STATUS,
 } from "@/lib/rooms/db-status"
+import { insertMatchEvent } from "@/lib/rooms/match-events"
 
 /** Query statuses that mean "active" — support both canonical and legacy. */
 const ACTIVE_STATUS_VALUES = [
@@ -200,6 +201,7 @@ export async function createRoom(
   } catch (e) {
     console.warn("[rooms-service createRoom] claimActiveMatch failed:", e)
   }
+  await insertMatchEvent(supabase, room.id, "room_created", { game: params.game_type })
   return room
 }
 
@@ -248,6 +250,8 @@ export async function joinRoom(
   } catch (e) {
     console.warn("[rooms-service joinRoom] claimActiveMatch failed:", e)
   }
+  await insertMatchEvent(supabase, roomId, "challenger_joined", {})
+  await insertMatchEvent(supabase, roomId, "countdown_started", {})
   return room
 }
 

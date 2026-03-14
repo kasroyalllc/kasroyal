@@ -18,6 +18,7 @@ import {
   READY_LIKE_STATUSES,
 } from "@/lib/rooms/lifecycle"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
+import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
 
 export const dynamic = "force-dynamic"
 
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       if (error) throw error
       if (data) {
+        await insertMatchEvent(supabase, roomId, "match_live", {})
         logRoomAction("ready_to_live", roomId, { game: gameType })
         return NextResponse.json(
           {
@@ -145,6 +147,9 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (!intermissionError && intermissionData) {
+          await insertMatchEvent(supabase, roomId, "next_round_started", {
+            round_number: (room.round_number ?? 1) + 1,
+          })
           logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
           return NextResponse.json(
             {
@@ -244,6 +249,19 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (error) throw error
+        await insertMatchEvent(supabase, roomId, "match_finished", {
+          winner_identity_id: room.challengerIdentityId,
+          win_reason: "timeout",
+        })
+        await insertMatchRound(
+          supabase,
+          roomId,
+          room.currentRound ?? 1,
+          room.challengerIdentityId,
+          "timeout",
+          room.hostRoundWins ?? 0,
+          (room.challengerRoundWins ?? 0) + 1
+        )
         await releaseActiveMatchByMatch(supabase, roomId)
         logRoomAction("timeout_finish", roomId, { winner: "challenger", reason: "timeout" })
         return NextResponse.json(
@@ -275,6 +293,19 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (error) throw error
+        await insertMatchEvent(supabase, roomId, "match_finished", {
+          winner_identity_id: room.hostIdentityId,
+          win_reason: "timeout",
+        })
+        await insertMatchRound(
+          supabase,
+          roomId,
+          room.currentRound ?? 1,
+          room.hostIdentityId,
+          "timeout",
+          (room.hostRoundWins ?? 0) + 1,
+          room.challengerRoundWins ?? 0
+        )
         await releaseActiveMatchByMatch(supabase, roomId)
         logRoomAction("timeout_finish", roomId, { winner: "host", reason: "timeout" })
         return NextResponse.json(
