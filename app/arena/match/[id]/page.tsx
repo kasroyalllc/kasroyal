@@ -702,7 +702,7 @@ export default function ArenaMatchPage() {
         { event: "INSERT", schema: "public", table: "moves", filter: `match_id=eq.${matchId}` },
         () => { void refreshRoom() }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") void refreshRoom()
       })
 
