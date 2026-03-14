@@ -22,6 +22,24 @@ Lessons learned while building the system. Each entry includes symptom, root cau
 
 ---
 
+## RPS host (or one side) stuck: prior-round hand persists
+
+- **Symptom**: One side (e.g. host) keeps seeing their previous round’s choice across rounds; the other side (e.g. challenger) gets a fresh choice each round.
+- **Root cause**: New-round board_state was built by spreading a previous object (e.g. `{ ...driver.createInitialBoardState(), roundExpiresAt }` or reusing a reference), so in some code paths or with certain timing one client could receive or retain a board that still had the previous round’s hostChoice/challengerChoice. Role-specific behavior can occur depending on who triggers tick first and how the other client gets the update (tick response vs refetch vs realtime).
+- **Fix**: Use an **explicit clean RPS board** for every new round with no spread from any prior state. In `lib/rooms/game-board.ts` add `createRpsRoundBoard(roundExpiresAtMs)` that returns a literal `{ mode: "rps-live", hostChoice: null, challengerChoice: null, revealed: false, winner: null, roundExpiresAt }`. In `lib/rooms/lifecycle.ts` (Ready→Live) and `app/api/rooms/tick/route.ts` (intermission→next round), use `createRpsRoundBoard(nowMs + RPS_ROUND_SECONDS * 1000)` instead of spreading from createInitialBoardState. This guarantees no key carry-over.
+- **Prevention**: For RPS (and any simultaneous round-based game), never build the next-round board by spreading a previous board or a shared initial state; use a dedicated function that returns a fresh literal object for each new round.
+
+---
+
+## RPS round timer not auto-resolving (stalled round)
+
+- **Symptom**: A player can stall the round; the 15s timer appears but the round never ends without forfeit.
+- **Root cause**: (1) Tick was only run every 2s during a live RPS round, so the server might not evaluate the RPS timeout branch until well after roundExpiresAt. (2) The RPS timeout branch in tick was correct but ran too infrequently to resolve promptly.
+- **Fix**: (1) On the client, when game is RPS and status is Live and not in intermission, use the same 1s tick interval as intermission/Ready→Start (`intervalMs = 1000` for `isRpsLiveRound`). So tick is called every second during the round and the server’s `resolveRpsRoundTimeout(room, nowMs)` runs within ~1s of expiry. (2) Ensure tick route does not return early for RPS before checking the timeout: when status is Live and not in intermission, the RPS block runs and persists intermission/series_finished via resolveMoveToDbUpdate when the round has expired.
+- **Prevention**: For games with a round-level timer (e.g. RPS 15s), poll tick at 1s during the live round so the backend can resolve the round as soon as the timer expires. Document in lifecycle and game-drivers that RPS uses a round timer, not a turn timer.
+
+---
+
 ## DB NOT NULL constraint (move_turn_seconds)
 
 - **Symptom**: Tick or start route returns 500; Supabase error about null value in column move_turn_seconds (or similar turn column).

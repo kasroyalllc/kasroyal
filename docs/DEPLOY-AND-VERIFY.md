@@ -95,3 +95,24 @@ After deployment, verify in this order:
 ```
 
 Then reload and run through the verification checklist again.
+
+---
+
+## 6. RPS reset and 15s timer verification (after RPS patch)
+
+After deploying the RPS round-reset and 15s timer patch, verify live behavior (two browsers or host + challenger):
+
+| # | Check | How | Pass condition |
+|---|--------|-----|----------------|
+| 1 | Host can change hand every round | Host: play RPS BO3. After each round (reveal → intermission → next round), pick a **different** hand (e.g. rock then paper then scissors). | Host can choose a new hand at the start of round 2 and round 3; no “stuck” previous choice. |
+| 2 | Challenger can change hand every round | Challenger: same flow. Pick a different hand each round. | Challenger can choose a new hand every round; no stuck previous choice. |
+| 3 | Both can choose immediately at round start | As soon as “Choose your hand” appears (and “Round ends in 15s” or similar), both players click a choice without waiting for the other. | Neither side is blocked by “waiting for opponent to move first”; both can click as soon as the round starts. |
+| 4 | Timer auto-resolves in ~15s without forfeit | Start a round and **do not** lock in either choice. Wait 15–17 seconds. | Round ends automatically (one wins by timeout or draw); no need to forfeit. |
+| 5 | BO3/BO5 still works | Play RPS BO3 to 2 wins (or BO5 to 3). | Series score advances, intermission and “X won Round N” appear, match finishes at 2 (or 3) wins. |
+| 6 | No stale hand for either side | After each round transition (intermission → next round), both clients show “Choose your hand” with **no** prior choice pre-selected or locked. | Neither host nor challenger sees their previous round’s hand carried into the new round. |
+
+**If any one of these fails:**
+
+1. Note the **exact failing behavior** (e.g. “host’s hand stays ‘rock’ in round 2”, “timer never ends”, “challenger can’t click until host picks”).  
+2. Report back with: **which check failed**, **exact steps**, and (if possible) **Network/Console** details (e.g. tick response, any 500s).  
+3. You will get back: **exact file/function/line** still responsible and an **exact next patch**.

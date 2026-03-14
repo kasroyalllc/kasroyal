@@ -838,7 +838,9 @@ export default function ArenaMatchPage() {
     if (match.status !== "Ready to Start" && match.status !== "Live") return
     const intermissionUntil = typeof match.roundIntermissionUntil === "number" ? match.roundIntermissionUntil : null
     const inIntermission = match.status === "Live" && intermissionUntil != null && Date.now() < intermissionUntil
-    const intervalMs = match.status === "Ready to Start" || inIntermission ? 1000 : 2000
+    const isRpsLiveRound = match.game === "Rock Paper Scissors" && match.status === "Live" && !inIntermission
+    const intervalMs =
+      match.status === "Ready to Start" || inIntermission || isRpsLiveRound ? 1000 : 2000
     const runTick = () => {
       const body: { room_id: string; client_time_ms?: number } = { room_id: matchId }
       if (match?.status === "Ready to Start") body.client_time_ms = Date.now()
@@ -880,7 +882,7 @@ export default function ArenaMatchPage() {
     runTick()
     const t = window.setInterval(runTick, intervalMs)
     return () => clearInterval(t)
-  }, [matchId, match?.id, match?.status, match?.roundIntermissionUntil])
+  }, [matchId, match?.id, match?.status, match?.game, match?.roundIntermissionUntil])
 
   // When in Ready to Start, every 2s check if countdown has ended (via ref) and call start + refetch until Live. Refs avoid tearing down interval on match refetch.
   useEffect(() => {

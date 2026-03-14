@@ -9,6 +9,7 @@ import type { GameType } from "@/lib/engine/match/types"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
 import { DB_STATUS } from "@/lib/rooms/db-status"
 import { RPS_ROUND_SECONDS } from "@/lib/engine/game-constants"
+import { createRpsRoundBoard } from "@/lib/rooms/game-board"
 
 /** Top-level lifecycle phases. */
 export type LifecyclePhase =
@@ -79,14 +80,13 @@ export function getReadyToLivePayload(
   const gameKey = normalizeGameForDriver(room.game)
   const driver = getGameDriver(gameKey as GameType)
   if (!driver) return null
-  let boardState = driver.createInitialBoardState()
-  if (gameKey === "Rock Paper Scissors" && typeof boardState === "object" && boardState !== null) {
-    const nowMs = now.getTime()
-    boardState = { ...(boardState as Record<string, unknown>), roundExpiresAt: nowMs + RPS_ROUND_SECONDS * 1000 }
-  }
+  const nowMs = now.getTime()
+  const boardState =
+    gameKey === "Rock Paper Scissors"
+      ? createRpsRoundBoard(nowMs + RPS_ROUND_SECONDS * 1000)
+      : driver.createInitialBoardState()
   const moveSeconds = driver.getMoveSeconds()
   const nowIso = now.toISOString()
-  const nowMs = now.getTime()
   const turnExpiresAt = driver.hasTurnTimer
     ? new Date(nowMs + moveSeconds * 1000).toISOString()
     : null

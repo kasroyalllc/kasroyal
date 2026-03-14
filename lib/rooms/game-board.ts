@@ -53,6 +53,21 @@ export function createInitialBoardState(gameType: GameType):
   throw new Error(`Unsupported game type for board init: ${gameType}`)
 }
 
+/**
+ * Create a clean RPS board for a new round with no keys carried over from any previous state.
+ * Use this whenever starting a new RPS round (Ready→Live or intermission→next round).
+ */
+export function createRpsRoundBoard(roundExpiresAtMs: number): RpsBoardState {
+  return {
+    mode: "rps-live",
+    hostChoice: null,
+    challengerChoice: null,
+    revealed: false,
+    winner: null,
+    roundExpiresAt: roundExpiresAtMs,
+  }
+}
+
 /** Resolve RPS winner from both choices. Returns "host" | "challenger" | "draw". */
 export function resolveRps(
   hostChoice: RpsChoice,

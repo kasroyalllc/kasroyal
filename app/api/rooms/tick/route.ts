@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
-import { createInitialBoardState } from "@/lib/rooms/game-board"
+import { createInitialBoardState, createRpsRoundBoard } from "@/lib/rooms/game-board"
 import {
   getMoveSecondsForGame,
   RPS_ROUND_SECONDS,
@@ -183,12 +183,12 @@ export async function POST(request: NextRequest) {
           )
         }
         const driver = getGameDriver(gameTypeLive)
-        let nextBoardState = driver
-          ? driver.createInitialBoardState()
-          : createInitialBoardState(gameTypeLive)
-        if (gameTypeLive === "Rock Paper Scissors" && typeof nextBoardState === "object" && nextBoardState !== null) {
-          nextBoardState = { ...(nextBoardState as Record<string, unknown>), roundExpiresAt: nowMs + RPS_ROUND_SECONDS * 1000 }
-        }
+        const nextBoardState =
+          gameTypeLive === "Rock Paper Scissors"
+            ? createRpsRoundBoard(nowMs + RPS_ROUND_SECONDS * 1000)
+            : driver
+              ? driver.createInitialBoardState()
+              : createInitialBoardState(gameTypeLive)
         const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
         const moveSeconds = getMoveSecondsForGame(gameTypeLive)
         const turnExpiresAt =
