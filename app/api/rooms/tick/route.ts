@@ -410,9 +410,8 @@ export async function POST(request: NextRequest) {
     const err = e instanceof Error ? e : new Error(String(e))
     const errMessage = err.message
     const errStack = err.stack ?? ""
-    if (process.env.NODE_ENV !== "production") {
-      console.error("[tick] 500 error", errMessage, errStack)
-    }
+    // Always log so production (e.g. Vercel) server logs show the real exception.
+    console.error("[tick] 500", errMessage, errStack)
     return NextResponse.json(
       { ok: false, error: errMessage },
       { status: 500 }

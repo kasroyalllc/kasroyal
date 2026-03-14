@@ -1419,13 +1419,24 @@ function persistStore(nextStore: ArenaStore) {
   if (!isBrowser()) return
 
   try {
-    // Cap stored matches to avoid quota.
-    const MAX_PERSISTED_MATCHES = 80
-    const toStore: ArenaStore =
-      resolved.matches.length <= MAX_PERSISTED_MATCHES
-        ? resolved
-        : { ...resolved, matches: resolved.matches.slice(0, MAX_PERSISTED_MATCHES) }
-    window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(toStore))
+    // Cap and trim to stay under quota; strip heavy fields for persistence only.
+    const MAX_PERSISTED_MATCHES = 30
+    const trimmedMatches = resolved.matches.slice(0, MAX_PERSISTED_MATCHES).map((m) => ({
+      ...m,
+      boardState: undefined,
+      moveHistory: [],
+    }))
+    const toStore: ArenaStore = {
+      ...resolved,
+      matches: trimmedMatches,
+    }
+    const serialized = JSON.stringify(toStore)
+    const MAX_PERSIST_BYTES = 1.5 * 1024 * 1024 // 1.5 MB
+    if (serialized.length > MAX_PERSIST_BYTES) {
+      console.warn("KasRoyal arena store: payload too large; skipping persistence.")
+      return
+    }
+    window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, serialized)
   } catch (e) {
     if (e instanceof DOMException && (e.name === "QuotaExceededError" || e.code === 22)) {
       console.warn("KasRoyal arena store: localStorage quota exceeded; continuing without persistence.")
@@ -1470,10 +1481,16 @@ function readArenaStore(): ArenaStore {
     return arenaStoreCache
   }
 
-  const parsed = safeJsonParse<ArenaStore>(
-    window.localStorage.getItem(ARENA_STORE_STORAGE_KEY),
-    createDefaultStore()
-  )
+  let raw: string | null = null
+  try {
+    raw = window.localStorage.getItem(ARENA_STORE_STORAGE_KEY)
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "QuotaExceededError" || e.code === 22)) {
+      console.warn("KasRoyal arena store: read failed (quota); using default store.")
+    }
+    return createDefaultStore()
+  }
+  const parsed = safeJsonParse<ArenaStore>(raw, createDefaultStore())
 
   arenaStoreCache = {
     revision: typeof parsed.revision === "number" ? parsed.revision : 1,
@@ -3012,11 +3029,16 @@ export function resetAllArenaState(): void {
   }
 
   // Remove any legacy / old test keys (in case they exist under older names)
-  window.localStorage.removeItem("kasroyal_arena_store")
-  window.localStorage.removeItem("kasroyal_arena_store_v3")
-  window.localStorage.removeItem("kasroyal_navbar_cache")
-
-  window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(emptyStore))
+  try {
+    window.localStorage.removeItem("kasroyal_arena_store")
+    window.localStorage.removeItem("kasroyal_arena_store_v3")
+    window.localStorage.removeItem("kasroyal_navbar_cache")
+    window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(emptyStore))
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "QuotaExceededError" || e.code === 22)) {
+      console.warn("KasRoyal resetAllArenaState: quota exceeded; in-memory state cleared.")
+    }
+  }
   try {
     window.localStorage.setItem(ARENA_NAVBAR_STORAGE_KEY, "[]")
   } catch {
