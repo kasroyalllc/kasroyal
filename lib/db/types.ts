@@ -4,7 +4,7 @@ export type DbMatchStatus =
   | "Live"
   | "Finished"
 
-export type DbGameType = "Chess Duel" | "Connect 4" | "Tic-Tac-Toe"
+export type DbGameType = "Chess Duel" | "Connect 4" | "Rock Paper Scissors" | "Tic-Tac-Toe"
 
 export type DbMatchRow = {
   id: string
