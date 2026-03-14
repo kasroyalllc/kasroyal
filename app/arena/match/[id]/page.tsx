@@ -723,6 +723,25 @@ export default function ArenaMatchPage() {
       const supabase = createClient()
       const room = await getRoomById(supabase, matchId)
       if (room) {
+        if (room.game === "Rock Paper Scissors" && room.status === "Live") {
+          const intermissionUntil = (room as { roundIntermissionUntil?: number | null }).roundIntermissionUntil ?? null
+          const board = room.boardState as PersistedRpsBoardState | undefined
+          const looksLikeRoundStart =
+            intermissionUntil == null &&
+            board &&
+            (board as Record<string, unknown>).revealed === false &&
+            typeof (board as Record<string, unknown>).roundExpiresAt === "number"
+          if (looksLikeRoundStart) {
+            console.log("[client] Room state AFTER intermission (from refetch) — next round board", {
+              roundIntermissionUntil: intermissionUntil,
+              board_state: room.boardState,
+              hostChoice: board?.hostChoice ?? (room.boardState as Record<string, unknown>)?.hostChoice,
+              challengerChoice: board?.challengerChoice ?? (room.boardState as Record<string, unknown>)?.challengerChoice,
+              revealed: board?.revealed ?? (room.boardState as Record<string, unknown>)?.revealed,
+              roundExpiresAt: board?.roundExpiresAt ?? (room.boardState as Record<string, unknown>)?.roundExpiresAt,
+            })
+          }
+        }
         const reconciled = reconcileRoom(room)
         setMatch((prev) => acceptAndReconcile(reconciled, prev, "refetch"))
       } else {
@@ -864,6 +883,18 @@ export default function ArenaMatchPage() {
           }
           if (data.ok && data.room) {
             let room = data.room as Room
+            if (data.transition === "intermission_next_round" && room.game === "Rock Paper Scissors") {
+              const board = room.boardState as PersistedRpsBoardState | undefined
+              console.log("[client] FIRST room state AFTER intermission (from tick response)", {
+                roundIntermissionUntil: room.roundIntermissionUntil,
+                lastRoundWinnerIdentityId: (room as { lastRoundWinnerIdentityId?: unknown }).lastRoundWinnerIdentityId,
+                board_state: room.boardState,
+                hostChoice: board?.hostChoice ?? (room.boardState as Record<string, unknown>)?.hostChoice,
+                challengerChoice: board?.challengerChoice ?? (room.boardState as Record<string, unknown>)?.challengerChoice,
+                revealed: board?.revealed ?? (room.boardState as Record<string, unknown>)?.revealed,
+                roundExpiresAt: board?.roundExpiresAt ?? (room.boardState as Record<string, unknown>)?.roundExpiresAt,
+              })
+            }
             if (data.transition === "ready_to_live") {
               room = { ...room, status: "Live" }
             }

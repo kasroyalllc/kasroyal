@@ -189,6 +189,16 @@ export async function POST(request: NextRequest) {
             : driver
               ? driver.createInitialBoardState()
               : createInitialBoardState(gameTypeLive)
+        if (gameTypeLive === "Rock Paper Scissors") {
+          const rpsBoard = nextBoardState as { hostChoice?: unknown; challengerChoice?: unknown; revealed?: unknown; roundExpiresAt?: unknown }
+          console.info("[tick RPS intermission→next] payload we are writing (createRpsRoundBoard)", {
+            room_id: roomId,
+            hostChoice: rpsBoard.hostChoice,
+            challengerChoice: rpsBoard.challengerChoice,
+            revealed: rpsBoard.revealed,
+            roundExpiresAt: rpsBoard.roundExpiresAt,
+          })
+        }
         const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
         const moveSeconds = getMoveSecondsForGame(gameTypeLive)
         const turnExpiresAt =
@@ -212,6 +222,20 @@ export async function POST(request: NextRequest) {
           .select("*")
           .maybeSingle()
         if (!intermissionError && intermissionData) {
+          const row = intermissionData as Record<string, unknown>
+          if (gameTypeLive === "Rock Paper Scissors" && row.board_state) {
+            const written = row.board_state as Record<string, unknown>
+            console.info("[tick RPS intermission→next] room row AFTER write (first state after intermission)", {
+              room_id: roomId,
+              round_intermission_until: row.round_intermission_until,
+              last_round_winner_identity_id: row.last_round_winner_identity_id,
+              board_state: JSON.stringify(written),
+              hostChoice: written.hostChoice,
+              challengerChoice: written.challengerChoice,
+              revealed: written.revealed,
+              roundExpiresAt: written.roundExpiresAt,
+            })
+          }
           await insertMatchEvent(supabase, roomId, "next_round_started", {
             round_number: (room.currentRound ?? 1) + 1,
           })
