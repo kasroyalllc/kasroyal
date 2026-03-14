@@ -13,7 +13,7 @@ This document describes the public tables and canonical fields used by KasRoyal,
 | **match_rounds** | One row per completed round: round_number, winner_identity_id, result_type (win/draw/timeout/forfeit), host_score_after, challenger_score_after. |
 | **match_messages** | In-room chat (match_id, sender_identity_id, sender_display_name, message, created_at). |
 | **spectate_messages** | Crowd/spectator chat. |
-| **profiles** | Display names keyed by identity_id (wallet/guest). |
+| **profiles** | Display names keyed by identity_id (wallet/guest). Referred to in migrations as “users/leaderboard” (display names for players and future leaderboard views). No separate `users` or `leaderboard` table in this schema; auth is Supabase Auth; leaderboard would be derived from profiles + match results. |
 | **moves** | Optional move log (match_id, move_number, player_identity_id, move_data, created_at). |
 | **bets** | Spectator bets (match_id, bettor, side, amount, etc.). |
 | **active_identity_matches** | One active match per identity (identity_id, match_id). Used to block create/join when already in a match. No client RLS; service role only. |

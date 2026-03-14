@@ -48,7 +48,7 @@ MapDbRowToRoom maps DB status to UI (e.g. waiting → Waiting for Opponent, read
 
 ## Intermission
 
-- **Purpose**: Between rounds in BO3/BO5, a short delay (e.g. 5 seconds) before the next round starts. UI can show “X won Round N” and countdown.
+- **Purpose**: Between rounds in BO3/BO5, a short delay (**8 seconds**; `INTERMISSION_SECONDS` in lib/rooms/move-pipeline.ts) before the next round starts. UI can show “X won Round N” and countdown.
 - **When**: Move pipeline returns “intermission” when a round ends (win or draw) and the series is not over (scores have not reached required wins).
 - **DB**: round_intermission_until (timestamptz), last_round_winner_identity_id. Optionally round_number already advanced (convention: round_number is the *next* round to play; last_round_winner is who won the previous round).
 - **Tick**: When status is Live and round_intermission_until is set and now >= round_intermission_until, tick clears round_intermission_until and last_round_winner_identity_id, sets board_state to driver.createInitialBoardState(), sets move_turn_identity_id and turn_expires_at for the new round.

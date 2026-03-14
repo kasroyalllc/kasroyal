@@ -31,6 +31,8 @@ This document is the internal handoff layer: current mental model, key files to 
 - **app/api/rooms/move/route.ts** — Single move pipeline: validate → driver.applyMove → resolveMoveToDbUpdate → write matches + events/rounds.
 - **app/api/rooms/tick/route.ts** — Ready→Live, intermission→next round, turn timeout, pause expiry.
 - **supabase/kasroyal_schema.sql** — Tables, RLS, realtime. **docs/SUPABASE_SCHEMA.md** — Canonical fields and assumptions.
+- **docs/DEPLOY-AND-VERIFY.md** — Commit hash, deploy steps, production verification checklist.
+- **docs/PRODUCTION-STABILIZATION.md** — Tick 500 and arena store quota: write paths, error capture, what to paste back.
 
 ---
 
@@ -52,6 +54,7 @@ This document is the internal handoff layer: current mental model, key files to 
 - **Sync policy**: Do not remove or weaken acceptAndReconcile or shouldAcceptRoomUpdate so that refetch/realtime overwrite a newer mutation/tick response.
 - **Lifecycle consistency**: Do not duplicate Ready→Live or intermission→next round logic; keep using getReadyToLivePayload and the same tick behavior for intermission expiry.
 - **DB as authority**: Do not rely on client-computed scores or winner for display of final result; read from matches and match_rounds.
+- **Production diagnostics**: Do not remove tick-route error capture or storage quota-safe persistence (arena store); they are required for production diagnosis and avoiding localStorage-full breakage. See PRODUCTION-STABILIZATION.md.
 
 ---
 

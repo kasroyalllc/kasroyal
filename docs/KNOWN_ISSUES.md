@@ -14,6 +14,7 @@ A concise list of unresolved issues and watchpoints. Do not treat items here as 
 
 ## Architecture and data
 
+- **Tick 500 and arena store in production**: Fixes are in code (tick error capture, storage quota-safe persistence). Verify deploy and production behavior; if tick still 500s or storage errors recur, use docs/PRODUCTION-STABILIZATION.md and docs/DEPLOY-AND-VERIFY.md to capture payloads and next steps.
 - **History/event timeline**: The event timeline and round record (match_events, match_rounds) and timeline API are implemented. Any future “deeper architecture pass” for history (e.g. event log UI, audit views) should build on this; do not replace it with UI-only summaries.
 - **Legacy compatibility reads**: mapDbRowToRoom and related mapping still read legacy columns (host_wallet, wager, started_at, ended_at, host_round_wins, current_round) as fallbacks. This is intentional for backward compatibility. New features should use canonical columns only; avoid adding new legacy fallbacks.
 - **Bets write path**: If RLS is enabled with SELECT-only for clients, placing a bet must go through an API route (service role). See SUPABASE_SECURITY_MODEL.md for the note on moving placeBet to an API route.

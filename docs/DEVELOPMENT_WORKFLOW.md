@@ -21,7 +21,7 @@ This document explains how we typically work: Cursor + GitHub + Vercel flow, Sup
 3. **Commit**: Commit with clear messages. Reference docs or ticket if applicable.
 4. **Push / PR**: Push to a branch; open a PR to main if the change is non-trivial. Review and merge.
 5. **Deploy**: Vercel builds and deploys from main (or from the branch for previews). Ensure env vars are set for the target environment.
-6. **Verify**: Smoke-test production (or preview) after deploy. If schema changed, migrations must be applied to that Supabase project before or at deploy.
+6. **Verify**: Smoke-test production (or preview) after deploy. If schema changed, migrations must be applied to that Supabase project before or at deploy. For production verification steps and checklist (tick, RPS, storage), see **docs/DEPLOY-AND-VERIFY.md**.
 
 ---
 

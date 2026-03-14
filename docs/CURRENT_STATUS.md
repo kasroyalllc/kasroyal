@@ -38,6 +38,15 @@ This page is the “where we are right now” snapshot. It reflects current real
 
 ---
 
+## Production stabilization (recent)
+
+- **Tick production error logging**: Tick route captures errors and returns structured responses so production 500s can be diagnosed (see docs/PRODUCTION-STABILIZATION.md).
+- **Storage quota-safe persistence**: Arena store (e.g. kasroyal_arena_store_v3) is written with quota checks and fallbacks so localStorage full does not break the app; see PRODUCTION-STABILIZATION for write paths and what to paste back if issues recur.
+- **React hook-order fix**: Client hook order corrected so arena state and subscriptions behave consistently.
+- **Verification pending**: RPS and tick 500 behavior should be re-verified in production after deploy; see docs/DEPLOY-AND-VERIFY.md for the checklist.
+
+---
+
 ## Current known open issues
 
 - **RPS**: Implemented in the driver and pipeline; user testing has previously reported it “stuck” in the pre-start shell. Live product verification is still recommended before treating RPS as fully resolved.

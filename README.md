@@ -117,7 +117,7 @@ See [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) and [docs/KNOWN_ISSUES.md](
 
 ## Documentation index
 
-Use these as the canonical handoff and reference layer:
+These docs are the canonical handoff and reference layer. **Suggested order when joining or resuming:** README → HANDOFF → ARCHITECTURE → CURRENT_STATUS.
 
 | Doc | Purpose |
 |-----|---------|
@@ -127,12 +127,14 @@ Use these as the canonical handoff and reference layer:
 | [docs/MATCH_LIFECYCLE.md](docs/MATCH_LIFECYCLE.md) | Waiting, ready, countdown, live, intermission, finished, pause, DB fields. |
 | [docs/SUPABASE_SCHEMA.md](docs/SUPABASE_SCHEMA.md) | Tables, canonical match fields, RLS, realtime, migrations. |
 | [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) | How we work, Cursor/GitHub/Vercel, schema changes, testing, handoffs. |
-| [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) | What’s working, recent refactors, next priorities. |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Unresolved issues and watchpoints. |
-| [docs/HANDOFF.md](docs/HANDOFF.md) | Mental model, key files, priorities, what not to regress. |
+| [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) | What’s working, recent refactors, production stabilization, next priorities. |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Unresolved issues and watchpoints (no fake-complete status). |
+| [docs/HANDOFF.md](docs/HANDOFF.md) | Mental model, key files, priorities, what not to regress, resume from fresh context. |
+| [docs/DEPLOY-AND-VERIFY.md](docs/DEPLOY-AND-VERIFY.md) | Commit hash, deploy steps, production verification checklist. |
+| [docs/PRODUCTION-STABILIZATION.md](docs/PRODUCTION-STABILIZATION.md) | Tick 500 and arena store quota: write paths, error capture. |
 | [docs/MATCH_HISTORY_SPRINT.md](docs/MATCH_HISTORY_SPRINT.md) | Event timeline and round record design and implementation. |
 
-Other references: [ROADMAP.md](ROADMAP.md) (e.g. transactional email), [docs/MOVE_ROUTE_REFACTOR.md](docs/MOVE_ROUTE_REFACTOR.md), [docs/SUPABASE_SECURITY_MODEL.md](docs/SUPABASE_SECURITY_MODEL.md).
+Other references: [ROADMAP.md](ROADMAP.md), [docs/MOVE_ROUTE_REFACTOR.md](docs/MOVE_ROUTE_REFACTOR.md), [docs/SUPABASE_SECURITY_MODEL.md](docs/SUPABASE_SECURITY_MODEL.md), [VERIFICATION-RPS-AND-FEATURES.md](VERIFICATION-RPS-AND-FEATURES.md) (RPS/phrase verification).
 
 ---
 
