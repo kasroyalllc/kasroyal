@@ -9,6 +9,7 @@ import {
   READY_LIKE_STATUSES,
 } from "@/lib/rooms/lifecycle"
 import { insertMatchEvent } from "@/lib/rooms/match-events"
+import { serializeApiError } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -165,9 +166,8 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "Start failed" },
-      { status: 500 }
-    )
+    const payload = serializeApiError(e)
+    console.error("[start] 500", payload.error, (e as Error)?.stack ?? "")
+    return NextResponse.json({ ok: false, ...payload }, { status: 500 })
   }
 }

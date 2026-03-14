@@ -73,7 +73,6 @@ export function getReadyToLivePayload(
   return {
     status: DB_STATUS.LIVE,
     live_started_at: nowIso,
-    started_at: nowIso,
     betting_open: false,
     board_state: boardState,
     move_turn_identity_id: driver.hasTurnTimer ? room.hostIdentityId : null,

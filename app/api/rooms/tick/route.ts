@@ -19,6 +19,7 @@ import {
 } from "@/lib/rooms/lifecycle"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
 import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
+import { serializeApiError } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -407,14 +408,8 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e))
-    const errMessage = err.message
-    const errStack = err.stack ?? ""
-    // Always log so production (e.g. Vercel) server logs show the real exception.
-    console.error("[tick] 500", errMessage, errStack)
-    return NextResponse.json(
-      { ok: false, error: errMessage },
-      { status: 500 }
-    )
+    const payload = serializeApiError(e)
+    console.error("[tick] 500", payload.error, (e as Error)?.stack ?? "")
+    return NextResponse.json({ ok: false, ...payload }, { status: 500 })
   }
 }
