@@ -979,11 +979,10 @@ export default function ArenaMatchPage() {
       countdownStartedAt: match.countdownStartedAt,
       bettingClosesAt: match.bettingClosesAt,
       bettingWindowSeconds: match.bettingWindowSeconds,
-      moveTurnIdentityId: match.moveTurnIdentityId,
       board_state_mode: board?.mode,
       rps_hasPersistedState: board && typeof board === "object" && "mode" in board && (board as { mode?: string }).mode === "rps-live",
     })
-  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, match?.countdownStartedAt, match?.bettingClosesAt, match?.bettingWindowSeconds, match?.moveTurnIdentityId])
+  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, match?.countdownStartedAt, match?.bettingClosesAt, match?.bettingWindowSeconds])
 
   // When we leave Ready to Start, stop advancing (ref is updated above every render).
   // No extra effect needed — interval just no-ops when status isn't Ready.
