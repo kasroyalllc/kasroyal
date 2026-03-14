@@ -81,10 +81,30 @@
 
 ---
 
-## 5. How This Pass Improves KasRoyal
+## 5. Migration SQL
 
-- **Single source of truth for "what phase are we in" and "what can the user do"**: UI and routes both use the same runtime view and lifecycle phase, reducing conditional bugs.
-- **One place to add a new game**: Implement a GameDriver and register it; move/tick/start use the driver instead of new branches everywhere.
-- **Stale overwrite addressed**: Sync policy and updated_at comparison prevent a late refetch from undoing a successful transition.
-- **Observability and recovery**: Structured logs and reconcileRoom make debugging and production safety better; impossible states are clamped instead of crashing.
-- **Clearer contract**: Canonical names and a single mapping layer (mapDbRowToRoom) reduce confusion and regression when changing DB or API.
+**None required.** The schema already has canonical columns: `round_number`, `host_score`, `challenger_score`, `best_of`, `is_paused`, `pause_expires_at`, `paused_by`, `pause_count_host`, `pause_count_challenger`, `round_intermission_until`, `last_round_winner_identity_id`. All new logic uses these; legacy fallbacks remain only in `mapDbRowToRoom`.
+
+---
+
+## 6. Summary: How This Pass Improves KasRoyal
+
+| Area | Before | After |
+|------|--------|--------|
+| **Lifecycle** | Ready→Live and intermission logic duplicated in start, tick, move; game-specific branches everywhere. | Single `getReadyToLivePayload(room, now)` and `canTransitionReadyToLive(room, nowMs)` in `lib/rooms/lifecycle.ts`. Tick uses them; same payload for all games. |
+| **Game handling** | RPS and others branched in routes and UI with ad hoc checks. | `GameDriver` in `lib/rooms/game-drivers.ts`: TTT, C4, RPS implement one interface (createInitialBoardState, getMoveSeconds, hasTurnTimer, applyMove). Tick and start use `getGameDriver(gameType)`; RPS is no longer a one-off. |
+| **Match state for UI** | UI derived isCountdown, isPaused, canMove, etc. from raw match fields in many places. | `getMatchRuntime(room)` in `lib/engine/match-runtime.ts` produces a single canonical view (status, series, pause, intermission, movePermissions, winnerResult, view flags). UI can migrate to this for one source of truth. |
+| **Sync / stale overwrite** | refreshRoom and realtime could overwrite newer mutation response; no ordering. | `acceptAndReconcile(room, currentMatch, source)` in `lib/rooms/sync-policy.ts`: mutation/tick always accepted; refetch/realtime accepted only if `incoming.updatedAt >= current.updatedAt`. Match page uses it for all setMatch paths. |
+| **Recovery** | Bad or missing board_state / scores could cause confusing UI or errors. | `reconcileRoom(room)` clamps impossible state (missing board when Live, scores > requiredWins, invalid status). All room updates go through reconciliation before roomToArenaMatch. |
+| **Observability** | Pause/resume had no structured logs. | `logRoomAction("pause", roomId, { paused_by, pause_count })` and `logRoomAction("resume", roomId)` added. Existing lifecycle logs (ready_to_live, intermission_next_round, move_round_win, timeout_finish) unchanged. |
+| **Adding new games** | New game required editing move, tick, start, and match page in many places. | New game: implement `GameDriver`, register in `game-drivers.ts`, and add UI branch. Lifecycle and sync stay the same; no hidden "grid game" assumptions in shared code. |
+
+---
+
+## 7. How This Pass Improves KasRoyal (narrative)
+
+- **Single source of truth for "what phase are we in" and "what can the user do"**: `MatchRuntime` and `getLifecyclePhase(room)` give one place for phase and permissions; UI can rely on `runtime.view` instead of re-deriving from raw fields.
+- **One place to add a new game**: Implement a `GameDriver` and register it in `game-drivers.ts`; move/tick/start use `getGameDriver(gameType)` instead of new branches everywhere. RPS is no longer a special case.
+- **Stale overwrite addressed**: Sync policy and `updatedAt` comparison prevent a late refetch from undoing a successful transition; mutation and tick responses are always accepted.
+- **Observability and recovery**: Structured logs (pause, resume, ready_to_live, intermission_next_round, move_round_win, timeout_finish) and `reconcileRoom` make debugging and production safety better; impossible states are clamped instead of crashing.
+- **Clearer contract**: Canonical names and a single mapping layer (mapDbRowToRoom) remain the only place for legacy fallbacks; new code uses only canonical fields.

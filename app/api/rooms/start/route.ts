@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
-import { createInitialBoardState } from "@/lib/rooms/game-board"
-import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
-import { mapDbRowToRoom, type GameType } from "@/lib/engine/match/types"
-import { DB_STATUS } from "@/lib/rooms/db-status"
+import { mapDbRowToRoom } from "@/lib/engine/match/types"
+import {
+  canTransitionReadyToLive,
+  getReadyToLivePayload,
+  READY_LIKE_STATUSES,
+} from "@/lib/rooms/lifecycle"
 
 export const dynamic = "force-dynamic"
 
@@ -53,61 +55,26 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const nowMs = now.getTime()
-    const countdownStartedAt = room.countdownStartedAt ?? null
-    if (!countdownStartedAt) {
-      return NextResponse.json(
-        { ok: true, room, countdownNotExpired: true },
-        { headers: { "Cache-Control": "no-store" } }
-      )
-    }
-    const countdownEndMs = countdownStartedAt + room.countdownSeconds * 1000
-    if (nowMs < countdownEndMs) {
+    if (!canTransitionReadyToLive(room, nowMs)) {
       return NextResponse.json(
         { ok: true, room, countdownNotExpired: true },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
-    const gameType = room.game as GameType
-    if (
-      gameType !== "Connect 4" &&
-      gameType !== "Tic-Tac-Toe" &&
-      gameType !== "Rock Paper Scissors"
-    ) {
+    const payload = getReadyToLivePayload(room, now)
+    if (!payload) {
       return NextResponse.json(
         { ok: false, error: "Only Connect 4, Tic-Tac-Toe, and Rock Paper Scissors support start" },
         { status: 400 }
       )
     }
 
-    const nowIso = now.toISOString()
-    const moveSeconds = getMoveSecondsForGame(gameType)
-    const boardState = createInitialBoardState(gameType)
-    const isRps = gameType === "Rock Paper Scissors"
-    const turnExpiresAt = isRps
-      ? null
-      : new Date(nowMs + moveSeconds * 1000).toISOString()
-
-    const bestOf = room.bestOf === 3 || room.bestOf === 5 ? room.bestOf : 1
     const { data, error } = await supabase
       .from("matches")
-      .update({
-        status: DB_STATUS.LIVE,
-        live_started_at: nowIso,
-        started_at: nowIso,
-        betting_open: false,
-        board_state: boardState,
-        move_turn_identity_id: isRps ? null : room.hostIdentityId,
-        move_turn_started_at: isRps ? null : nowIso,
-        move_turn_seconds: isRps ? null : moveSeconds,
-        turn_expires_at: turnExpiresAt,
-        round_number: 1,
-        host_score: 0,
-        challenger_score: 0,
-        updated_at: nowIso,
-      })
+      .update(payload)
       .eq("id", roomId)
-      .in("status", ["ready", "countdown", "Ready to Start"])
+      .in("status", READY_LIKE_STATUSES)
       .select("*")
       .maybeSingle()
 

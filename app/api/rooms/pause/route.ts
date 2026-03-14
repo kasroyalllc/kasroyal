@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import { DB_STATUS } from "@/lib/rooms/db-status"
+import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
 
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
     }
 
     const updatedRoom = mapDbRowToRoom(data as Record<string, unknown>)
+    logRoomAction("pause", roomId, { paused_by: side, pause_count: usedPauses + 1 })
     return NextResponse.json(
       { ok: true, room: updatedRoom, pause_duration_seconds: PAUSE_DURATION_SECONDS },
       { headers: { "Cache-Control": "no-store" } }

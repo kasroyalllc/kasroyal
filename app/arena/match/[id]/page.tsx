@@ -44,6 +44,8 @@ import { getCurrentIdentity } from "@/lib/identity"
 import { createClient } from "@/lib/supabase/client"
 import { getRoomById, listRoomMessages } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
+import { acceptAndReconcile, reconcileRoom } from "@/lib/rooms/sync-policy"
+import type { Room } from "@/lib/engine/match/types"
 import { getMatchRole } from "@/lib/rooms/match-role"
 import { COUNTDOWN_PHRASES } from "@/lib/countdown-phrases"
 
@@ -665,7 +667,8 @@ export default function ArenaMatchPage() {
       const supabase = createClient()
       const room = await getRoomById(supabase, matchId)
       if (room) {
-        setMatch(roomToArenaMatch(room))
+        const reconciled = reconcileRoom(room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "refetch"))
       } else {
         setMatch(null)
       }
@@ -784,11 +787,12 @@ export default function ArenaMatchPage() {
         .then((r) => r.json())
         .then((data) => {
           if (data.ok && data.room) {
-            let room = data.room as Record<string, unknown>
+            let room = data.room as Room
             if (data.transition === "ready_to_live") {
               room = { ...room, status: "Live" }
             }
-            setMatch(roomToArenaMatch(room as Parameters<typeof roomToArenaMatch>[0]))
+            const reconciled = reconcileRoom(room)
+            setMatch((prev) => acceptAndReconcile(reconciled, prev, "tick"))
             if (typeof data.server_time_ms === "number") {
               setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
             }
@@ -1396,7 +1400,10 @@ export default function ArenaMatchPage() {
         setMessage(data.error ?? "Failed to pause match.")
         return
       }
-      if (data.room) setMatch(roomToArenaMatch(data.room))
+      if (data.room) {
+        const reconciled = reconcileRoom(data.room as Room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "mutation"))
+      }
       const actor = currentUserSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Challenger"
       setFeed((prev) => [`⏸ ${actor} used a pause`, ...prev].slice(0, 12))
       setMessage(
@@ -1424,7 +1431,10 @@ export default function ArenaMatchPage() {
         setMessage(data.error ?? "Failed to resume match.")
         return
       }
-      if (data.room) setMatch(roomToArenaMatch(data.room))
+      if (data.room) {
+        const reconciled = reconcileRoom(data.room as Room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "mutation"))
+      }
       const actor =
         currentUserSide === "host"
           ? match.host?.name ?? "Host"
@@ -1477,8 +1487,8 @@ export default function ArenaMatchPage() {
       })
       const data = await res.json()
       if (data.ok && data.room) {
-        const updated = roomToArenaMatch(data.room)
-        setMatch(updated)
+        const reconciled = reconcileRoom(data.room as Room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "mutation"))
         const winnerName = currentUserSide === "host" ? challenger?.name ?? "Challenger" : match.host?.name ?? "Host"
         setFeed((prev) => [`🏳️ You forfeited. ${winnerName} wins.`, ...prev].slice(0, 12))
         setMessage(`You forfeited. ${winnerName} wins the match.`)
@@ -1525,8 +1535,8 @@ export default function ArenaMatchPage() {
       })
       const data = await res.json()
       if (data.ok && data.room) {
-        const updated = roomToArenaMatch(data.room)
-        setMatch(updated)
+        const reconciled = reconcileRoom(data.room as Room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "mutation"))
         if (typeof data.server_time_ms === "number") {
           setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
         }
@@ -1575,8 +1585,8 @@ export default function ArenaMatchPage() {
       })
       const data = await res.json()
       if (data.ok && data.room) {
-        const updated = roomToArenaMatch(data.room)
-        setMatch(updated)
+        const reconciled = reconcileRoom(data.room as Room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "mutation"))
         if (typeof data.server_time_ms === "number") {
           setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
         }
@@ -1625,8 +1635,8 @@ export default function ArenaMatchPage() {
       })
       const data = await res.json()
       if (data.ok && data.room) {
-        const updated = roomToArenaMatch(data.room)
-        setMatch(updated)
+        const reconciled = reconcileRoom(data.room as Room)
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "mutation"))
         if (typeof data.server_time_ms === "number") {
           setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
         }
