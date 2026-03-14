@@ -26,17 +26,32 @@ export function shouldAcceptRoomUpdate(
   const incomingStatus = incomingRoom.status ?? "Waiting for Opponent"
   const currentStatus = current?.status
 
+  let decision: boolean
   if (source === "mutation" || source === "tick") {
-    return true
+    decision = true
+  } else if (source === "refetch" || source === "realtime") {
+    if (!current) {
+      decision = true
+    } else if (currentStatus === "Live" && incomingStatus === "Ready to Start") {
+      decision = false
+    } else {
+      decision = incomingUpdatedAt >= currentUpdatedAt
+    }
+  } else {
+    decision = true
   }
-  if (source === "refetch" || source === "realtime") {
-    if (!current) return true
-    // Never replace Live with Ready to Start (stale refetch/realtime after tick transition).
-    if (currentStatus === "Live" && incomingStatus === "Ready to Start") return false
-    if (incomingUpdatedAt >= currentUpdatedAt) return true
-    return false
+
+  if (process.env.NODE_ENV !== "production" && (incomingStatus === "Ready to Start" || incomingStatus === "Live" || currentStatus === "Live")) {
+    console.info("[sync-policy]", {
+      source,
+      current_updatedAt: currentUpdatedAt,
+      current_status: currentStatus ?? null,
+      incoming_updatedAt: incomingUpdatedAt,
+      incoming_status: incomingStatus,
+      decision: decision ? "accept" : "reject",
+    })
   }
-  return true
+  return decision
 }
 
 /**

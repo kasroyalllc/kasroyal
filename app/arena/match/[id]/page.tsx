@@ -687,6 +687,8 @@ export default function ArenaMatchPage() {
   const matchStatusRef = useRef<string>("")
   const countdownEndMsRef = useRef<number>(0)
   const rpsStuckLoggedRef = useRef(false)
+  /** RPS live-debug: throttle render log to avoid spam (dev only). */
+  const rpsDebugLastLogRef = useRef<{ at: number; status: string; shell: boolean; controls: boolean; boardMode: string } | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
@@ -839,6 +841,17 @@ export default function ArenaMatchPage() {
       })
         .then((r) => r.json())
         .then((data) => {
+          if (process.env.NODE_ENV !== "production" && data?.ok && data?.room) {
+            const r = data.room as { status?: string; updatedAt?: number | string }
+            if (r?.status === "Ready to Start" || data.transition === "ready_to_live") {
+              console.info("[tick response]", {
+                room_status: r?.status,
+                transition: data.transition,
+                server_time_ms: data.server_time_ms,
+                room_updatedAt: r?.updatedAt,
+              })
+            }
+          }
           if (data.ok && data.room) {
             let room = data.room as Room
             if (data.transition === "ready_to_live") {
@@ -887,7 +900,8 @@ export default function ArenaMatchPage() {
           if (process.env.NODE_ENV !== "production") {
             console.info("[start response]", {
               ok: data.ok,
-              roomStatus: room?.status,
+              room_status: room?.status,
+              room_updatedAt: (room as { updatedAt?: number | string })?.updatedAt,
               countdownNotExpired: data.countdownNotExpired,
               alreadyLive: data.alreadyLive,
               willApply: !data.countdownNotExpired && (room?.status === "Live" || data.alreadyLive),
@@ -1341,6 +1355,32 @@ export default function ArenaMatchPage() {
             : null)
       : null
   const nextRoundNumber = match.currentRound ?? 1
+
+  // RPS live-debug: one render log (dev only, throttled) — shell_visible, controls_visible, status, board mode, runtime flags.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !match || match.game !== "Rock Paper Scissors") return
+    const shell_visible = match.status === "Ready to Start" && !!challenger
+    const controls_visible = match.status === "Live" && !rpsState.revealed
+    const board = (match.boardState ?? null) as { mode?: string } | null
+    const board_mode = board && typeof board === "object" && "mode" in board ? String((board as { mode?: string }).mode) : "none"
+    const now = Date.now()
+    const last = rpsDebugLastLogRef.current
+    const fingerprint = `${match.status}|${shell_visible}|${controls_visible}|${board_mode}`
+    const changed = !last || last.status !== match.status || last.shell !== shell_visible || last.controls !== controls_visible || last.boardMode !== board_mode
+    const throttleMs = 3000
+    const elapsed = last ? now - last.at : throttleMs
+    if (changed || elapsed >= throttleMs) {
+      rpsDebugLastLogRef.current = { at: now, status: match.status, shell: shell_visible, controls: controls_visible, boardMode: board_mode }
+      console.info("[RPS render]", {
+        shell_visible,
+        controls_visible,
+        match_status: match.status,
+        updatedAt: match.updatedAt,
+        board_state_mode: board_mode,
+        runtime: { isCountdown, isIntermission, bettingSecondsLeft, countdownEndMs },
+      })
+    }
+  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, challenger, rpsState.revealed, isCountdown, isIntermission, bettingSecondsLeft, countdownEndMs])
 
   const canHostMove =
     !isFinished &&

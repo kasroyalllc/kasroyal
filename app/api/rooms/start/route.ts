@@ -68,17 +68,18 @@ export async function POST(request: NextRequest) {
         ? clientTimeMs >= countdownEndMs
         : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
 
-    if (!serverSaysGo && !clientSaysGo) {
+    const transitionAllowed = serverSaysGo || clientSaysGo
+    if (!transitionAllowed) {
       if (process.env.NODE_ENV !== "production") {
-        console.info("[start] countdown not expired", {
-          roomId,
-          status: room.status,
-          countdownStartedAt,
-          countdownEndMs,
-          nowMs,
-          clientTimeMs,
-          serverSaysGo,
-          clientSaysGo,
+        console.info("[start Ready->Live]", {
+          room_id: roomId,
+          previous_status: room.status,
+          countdown_end_ms: countdownEndMs,
+          server_now_ms: nowMs,
+          client_time_ms: clientTimeMs ?? null,
+          transition_allowed: false,
+          db_rows_affected: 0,
+          final_returned_room_status: "Ready to Start",
         })
       }
       return NextResponse.json(
@@ -93,6 +94,18 @@ export async function POST(request: NextRequest) {
 
     const payload = getReadyToLivePayload(room, now)
     if (!payload) {
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[start Ready->Live]", {
+          room_id: roomId,
+          previous_status: room.status,
+          countdown_end_ms: countdownEndMs,
+          server_now_ms: nowMs,
+          client_time_ms: clientTimeMs ?? null,
+          transition_allowed: true,
+          db_rows_affected: 0,
+          final_returned_room_status: "error_no_payload",
+        })
+      }
       return NextResponse.json(
         { ok: false, error: "Only Connect 4, Tic-Tac-Toe, and Rock Paper Scissors support start" },
         { status: 400 }
@@ -113,12 +126,37 @@ export async function POST(request: NextRequest) {
       const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
       const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
       const isLive = latestRoom.status === "Live"
+      const finalStatus = latestRoom.status ?? "unknown"
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[start Ready->Live]", {
+          room_id: roomId,
+          previous_status: room.status,
+          countdown_end_ms: countdownEndMs,
+          server_now_ms: nowMs,
+          client_time_ms: clientTimeMs ?? null,
+          transition_allowed: true,
+          db_rows_affected: 0,
+          final_returned_room_status: finalStatus,
+        })
+      }
       return NextResponse.json(
         { ok: true, room: latestRoom, alreadyLive: isLive },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[start Ready->Live]", {
+        room_id: roomId,
+        previous_status: room.status,
+        countdown_end_ms: countdownEndMs,
+        server_now_ms: nowMs,
+        client_time_ms: clientTimeMs ?? null,
+        transition_allowed: true,
+        db_rows_affected: 1,
+        final_returned_room_status: "Live",
+      })
+    }
     await insertMatchEvent(supabase, roomId, "match_live", {})
     const updatedRoom = mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
 
