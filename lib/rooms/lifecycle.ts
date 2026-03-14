@@ -56,12 +56,27 @@ export const READY_LIKE_STATUSES = [
  * Build the update payload for Ready → Live transition.
  * Used by both start route and tick route so behavior is identical.
  * Caller must .eq("id", roomId).in("status", READY_LIKE_STATUSES).select("*").
+ *
+ * Payload by game (audit):
+ * - Tic-Tac-Toe / Connect 4 (hasTurnTimer: true): base + move_turn_identity_id (host), move_turn_started_at, move_turn_seconds, turn_expires_at.
+ * - Rock Paper Scissors (hasTurnTimer: false): base only. No move_turn_* or turn_expires_at.
+ * RPS must never include turn-based fields; the shared path must not assume a single current mover for RPS.
  */
+/** Normalize game_type from DB so RPS is recognized regardless of casing. */
+function normalizeGameForDriver(game: string): string {
+  const g = String(game ?? "").trim()
+  if (/^rock\s+paper\s+scissors$/i.test(g)) return "Rock Paper Scissors"
+  if (/^tic[- ]?tac[- ]?toe$/i.test(g)) return "Tic-Tac-Toe"
+  if (/^connect\s*4$/i.test(g)) return "Connect 4"
+  return g
+}
+
 export function getReadyToLivePayload(
   room: Room,
   now: Date
 ): Record<string, unknown> | null {
-  const driver = getGameDriver(room.game)
+  const gameKey = normalizeGameForDriver(room.game)
+  const driver = getGameDriver(gameKey as GameType)
   if (!driver) return null
   const boardState = driver.createInitialBoardState()
   const moveSeconds = driver.getMoveSeconds()
@@ -82,7 +97,7 @@ export function getReadyToLivePayload(
     updated_at: nowIso,
   }
   if (driver.hasTurnTimer) {
-    base.move_turn_identity_id = room.hostIdentityId
+    base.move_turn_identity_id = room.hostIdentityId ?? ""
     base.move_turn_started_at = nowIso
     base.move_turn_seconds = moveSeconds
     base.turn_expires_at = turnExpiresAt
@@ -100,5 +115,6 @@ export function canTransitionReadyToLive(room: Room, nowMs: number): boolean {
   if (!countdownStartedAt) return false
   const countdownEndMs = countdownStartedAt + (room.countdownSeconds ?? 30) * 1000
   if (nowMs < countdownEndMs) return false
-  return getGameDriver(room.game) != null
+  const gameKey = normalizeGameForDriver(room.game)
+  return getGameDriver(gameKey as GameType) != null
 }
