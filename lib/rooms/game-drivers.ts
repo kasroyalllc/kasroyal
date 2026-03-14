@@ -30,11 +30,16 @@ import type {
 
 export type CanonicalGameKey = "Tic-Tac-Toe" | "Connect 4" | "Rock Paper Scissors"
 
+/** Canonical result from driver.applyMove when move is accepted. */
 export type RoundOutcome = {
   newBoardState: unknown
   roundWinner: "host" | "challenger" | null
   isDraw: boolean
   isBoardFull: boolean
+  /** True when this move ended the round (winner, draw, or both chose in RPS). */
+  roundEnded: boolean
+  /** For turn-based games when round not ended: identity id of next mover. Null for RPS or when round ended. */
+  nextTurnIdentityId: string | null
   winReason?: string
 }
 
@@ -75,7 +80,8 @@ function connect4Driver(): GameDriver {
       if (!boardState || boardState.mode !== "connect4-live") {
         return { error: "Invalid board state" }
       }
-      const col = typeof payload.column === "number" ? payload.column : parseInt(String(payload.column ?? ""), 10)
+      const raw = payload.column ?? payload.move
+      const col = typeof raw === "number" ? Math.floor(raw) : parseInt(String(raw ?? ""), 10)
       if (Number.isNaN(col) || col < 0 || col > 6) {
         return { error: "Invalid column" }
       }
@@ -94,11 +100,17 @@ function connect4Driver(): GameDriver {
       }
       const roundWinner =
         winner === "host" ? "host" : winner === "challenger" ? "challenger" : null
+      const roundEnded = !!roundWinner || full
+      const nextTurnIdentityId = !roundEnded
+        ? (nextTurn === "host" ? room.hostIdentityId : room.challengerIdentityId ?? null)
+        : null
       return {
         newBoardState,
         roundWinner,
         isDraw: full && !roundWinner,
         isBoardFull: full,
+        roundEnded,
+        nextTurnIdentityId,
       }
     },
   }
@@ -120,7 +132,8 @@ function tttDriver(): GameDriver {
       if (!boardState || boardState.mode !== "ttt-live") {
         return { error: "Invalid board state" }
       }
-      const index = typeof payload.index === "number" ? payload.index : parseInt(String(payload.index ?? ""), 10)
+      const raw = payload.index ?? payload.move
+      const index = typeof raw === "number" ? Math.floor(raw) : parseInt(String(raw ?? ""), 10)
       if (Number.isNaN(index) || index < 0 || index > 8) {
         return { error: "Invalid index" }
       }
@@ -139,11 +152,17 @@ function tttDriver(): GameDriver {
       }
       const roundWinner =
         winner === "X" ? "host" : winner === "O" ? "challenger" : null
+      const roundEnded = !!roundWinner || full
+      const nextTurnIdentityId = !roundEnded
+        ? (nextTurn === "X" ? room.hostIdentityId : room.challengerIdentityId ?? null)
+        : null
       return {
         newBoardState,
         roundWinner,
         isDraw: full && !roundWinner,
         isBoardFull: full,
+        roundEnded,
+        nextTurnIdentityId,
       }
     },
   }
@@ -187,6 +206,8 @@ function rpsDriver(): GameDriver {
           roundWinner: null,
           isDraw: false,
           isBoardFull: false,
+          roundEnded: false,
+          nextTurnIdentityId: null,
         }
       }
       const winner = resolveRps(hostChoice, challengerChoice)
@@ -204,6 +225,8 @@ function rpsDriver(): GameDriver {
         roundWinner,
         isDraw: winner === "draw",
         isBoardFull: true,
+        roundEnded: true,
+        nextTurnIdentityId: null,
         winReason,
       }
     },
