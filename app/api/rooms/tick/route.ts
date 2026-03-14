@@ -86,24 +86,53 @@ export async function POST(request: NextRequest) {
         )
       }
       const gameType = room.game as GameType
-      const payload = getReadyToLivePayload(room, now)
-      if (!payload) {
-        return NextResponse.json(
-          { ok: true, room, transition: null, server_time_ms: nowMs },
-          { headers: { "Cache-Control": "no-store" } }
-        )
-      }
-      assertTransition(room.status, "Live", "tick_ready_to_live")
+      try {
+        const payload = getReadyToLivePayload(room, now)
+        if (!payload) {
+          return NextResponse.json(
+            { ok: true, room, transition: null, server_time_ms: nowMs },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+        assertTransition(room.status, "Live", "tick_ready_to_live")
 
-      const { data, error } = await supabase
-        .from("matches")
-        .update(payload)
-        .eq("id", roomId)
-        .in("status", READY_LIKE_STATUSES)
-        .select("*")
-        .maybeSingle()
-      if (error) throw error
-      if (data) {
+        const { data, error } = await supabase
+          .from("matches")
+          .update(payload)
+          .eq("id", roomId)
+          .in("status", READY_LIKE_STATUSES)
+          .select("*")
+          .maybeSingle()
+        if (error) throw error
+        if (data) {
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[tick Ready->Live]", {
+              room_id: roomId,
+              previous_status: room.status,
+              countdown_end_ms: countdownEndMs,
+              server_now_ms: nowMs,
+              client_time_ms: clientTimeMs ?? null,
+              transition_allowed: true,
+              db_rows_affected: 1,
+              final_returned_room_status: "Live",
+            })
+          }
+          await insertMatchEvent(supabase, roomId, "match_live", {})
+          logRoomAction("ready_to_live", roomId, { game: gameType })
+          return NextResponse.json(
+            {
+              ok: true,
+              room: mapDbRowToRoom((data as Record<string, unknown>)),
+              transition: "ready_to_live",
+              server_time_ms: Date.now(),
+            },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+        // Update matched 0 rows (e.g. another request already transitioned). Re-fetch and return latest so client gets Live.
+        const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
+        const refetchedStatus = refetched != null ? String((refetched as Record<string, unknown>).status) : "null"
+        const finalStatus = refetched ? refetchedStatus : "Ready to Start"
         if (process.env.NODE_ENV !== "production") {
           console.info("[tick Ready->Live]", {
             room_id: roomId,
@@ -112,50 +141,29 @@ export async function POST(request: NextRequest) {
             server_now_ms: nowMs,
             client_time_ms: clientTimeMs ?? null,
             transition_allowed: true,
-            db_rows_affected: 1,
-            final_returned_room_status: "Live",
+            db_rows_affected: 0,
+            final_returned_room_status: finalStatus,
           })
         }
-        await insertMatchEvent(supabase, roomId, "match_live", {})
-        logRoomAction("ready_to_live", roomId, { game: gameType })
+        logRoomAction("tick_ready_to_live_0_rows", roomId, { game: gameType, refetched_status: refetchedStatus })
+        const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
+        const isNowLive = refetched && refetchedStatus === DB_STATUS.LIVE
         return NextResponse.json(
           {
             ok: true,
-            room: mapDbRowToRoom((data as Record<string, unknown>)),
-            transition: "ready_to_live",
+            room: latestRoom,
+            transition: isNowLive ? "ready_to_live" : null,
             server_time_ms: Date.now(),
           },
           { headers: { "Cache-Control": "no-store" } }
         )
+      } catch (readyToLiveErr) {
+        const msg = readyToLiveErr instanceof Error ? readyToLiveErr.message : String(readyToLiveErr)
+        const code = (readyToLiveErr as { code?: string })?.code
+        throw new Error(
+          `Tick Ready→Live failed (room_id=${roomId}, game=${String(room.game)}): ${msg}${code ? ` [${code}]` : ""}`
+        )
       }
-      // Update matched 0 rows (e.g. another request already transitioned). Re-fetch and return latest so client gets Live.
-      const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
-      const refetchedStatus = refetched != null ? String((refetched as Record<string, unknown>).status) : "null"
-      const finalStatus = refetched ? refetchedStatus : "Ready to Start"
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[tick Ready->Live]", {
-          room_id: roomId,
-          previous_status: room.status,
-          countdown_end_ms: countdownEndMs,
-          server_now_ms: nowMs,
-          client_time_ms: clientTimeMs ?? null,
-          transition_allowed: true,
-          db_rows_affected: 0,
-          final_returned_room_status: finalStatus,
-        })
-      }
-      logRoomAction("tick_ready_to_live_0_rows", roomId, { game: gameType, refetched_status: refetchedStatus })
-      const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
-      const isNowLive = refetched && refetchedStatus === DB_STATUS.LIVE
-      return NextResponse.json(
-        {
-          ok: true,
-          room: latestRoom,
-          transition: isNowLive ? "ready_to_live" : null,
-          server_time_ms: Date.now(),
-        },
-        { headers: { "Cache-Control": "no-store" } }
-      )
     }
 
     if (room.status === "Live") {

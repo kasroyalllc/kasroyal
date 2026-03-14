@@ -70,20 +70,24 @@ export function getReadyToLivePayload(
   const turnExpiresAt = driver.hasTurnTimer
     ? new Date(nowMs + moveSeconds * 1000).toISOString()
     : null
-  return {
+
+  const base: Record<string, unknown> = {
     status: DB_STATUS.LIVE,
     live_started_at: nowIso,
     betting_open: false,
     board_state: boardState,
-    move_turn_identity_id: driver.hasTurnTimer ? room.hostIdentityId : null,
-    move_turn_started_at: driver.hasTurnTimer ? nowIso : null,
-    move_turn_seconds: driver.hasTurnTimer ? moveSeconds : null,
-    turn_expires_at: turnExpiresAt,
     round_number: 1,
     host_score: 0,
     challenger_score: 0,
     updated_at: nowIso,
   }
+  if (driver.hasTurnTimer) {
+    base.move_turn_identity_id = room.hostIdentityId
+    base.move_turn_started_at = nowIso
+    base.move_turn_seconds = moveSeconds
+    base.turn_expires_at = turnExpiresAt
+  }
+  return base
 }
 
 /**
