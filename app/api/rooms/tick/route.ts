@@ -407,8 +407,14 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e))
+    const errMessage = err.message
+    const errStack = err.stack ?? ""
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[tick] 500 error", errMessage, errStack)
+    }
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "Tick failed" },
+      { ok: false, error: errMessage },
       { status: 500 }
     )
   }

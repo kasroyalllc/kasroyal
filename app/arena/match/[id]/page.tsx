@@ -1182,6 +1182,92 @@ export default function ArenaMatchPage() {
     [match, getCurrentIdentity().id]
   )
 
+  // RPS live-debug: one render log (dev only, throttled). Must run unconditionally (before any early return).
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !match || match.game !== "Rock Paper Scissors") return
+    const challenger = match.challenger
+    const rpsState = getRpsState(match)
+    const shell_visible = match.status === "Ready to Start" && !!challenger
+    const controls_visible = match.status === "Live" && !rpsState.revealed
+    const board = (match.boardState ?? null) as { mode?: string } | null
+    const board_mode = board && typeof board === "object" && "mode" in board ? String((board as { mode?: string }).mode) : "none"
+    const now = Date.now()
+    const last = rpsDebugLastLogRef.current
+    const fingerprint = `${match.status}|${shell_visible}|${controls_visible}|${board_mode}`
+    const changed = !last || last.status !== match.status || last.shell !== shell_visible || last.controls !== controls_visible || last.boardMode !== board_mode
+    const throttleMs = 3000
+    const elapsed = last ? now - last.at : throttleMs
+    if (changed || elapsed >= throttleMs) {
+      const countdownEndMs =
+        match.bettingClosesAt ??
+        (match.countdownStartedAt != null
+          ? match.countdownStartedAt + (match.bettingWindowSeconds ?? 30) * 1000
+          : 0)
+      const nowForCountdownMs =
+        serverTimeSync.receivedAtMs > 0
+          ? serverTimeSync.serverMs + (Date.now() - serverTimeSync.receivedAtMs)
+          : Date.now()
+      const bettingSecondsLeft =
+        match.status === "Ready to Start" && countdownEndMs > 0
+          ? Math.max(0, Math.ceil((countdownEndMs - nowForCountdownMs) / 1000))
+          : 0
+      const isIntermission =
+        match.status === "Live" &&
+        typeof match.roundIntermissionUntil === "number" &&
+        Date.now() < match.roundIntermissionUntil
+      rpsDebugLastLogRef.current = { at: now, status: match.status, shell: shell_visible, controls: controls_visible, boardMode: board_mode }
+      console.info("[RPS render]", {
+        shell_visible,
+        controls_visible,
+        match_status: match.status,
+        updatedAt: match.updatedAt,
+        board_state_mode: board_mode,
+        runtime: {
+          isCountdown: match.status === "Ready to Start",
+          isIntermission,
+          bettingSecondsLeft,
+          countdownEndMs,
+        },
+      })
+    }
+  }, [match, serverTimeSync.receivedAtMs, serverTimeSync.serverMs])
+
+  // Pregame phrase live-debug: role, phrase_index, match.status, etc. (dev only, throttled). Must run unconditionally (before any early return).
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !match || match.status !== "Ready to Start") return
+    const role = roleInfo.isHost ? "host" : roleInfo.isChallenger ? "challenger" : "spectator"
+    const challenger = match.challenger
+    const shell_visible = !!challenger
+    const countdownEndMs =
+      match.bettingClosesAt ??
+      (match.countdownStartedAt != null
+        ? match.countdownStartedAt + (match.bettingWindowSeconds ?? 30) * 1000
+        : 0)
+    const nowForCountdownMs =
+      serverTimeSync.receivedAtMs > 0
+        ? serverTimeSync.serverMs + (Date.now() - serverTimeSync.receivedAtMs)
+        : Date.now()
+    const bettingSecondsLeft =
+      countdownEndMs > 0 ? Math.max(0, Math.ceil((countdownEndMs - nowForCountdownMs) / 1000)) : 0
+    const fingerprint = `${role}|${match.status}|${countdownLineIndex}|${bettingSecondsLeft}|${shell_visible}`
+    const now = Date.now()
+    const last = pregamePhraseLogRef.current
+    const throttleMs = 3000
+    if (last && last.fingerprint === fingerprint && now - last.at < throttleMs) return
+    pregamePhraseLogRef.current = { at: now, fingerprint }
+    console.info("[pregame phrase] state", {
+      role,
+      phrase_index: countdownLineIndex,
+      phrase_rotation_active: true,
+      match_status: match.status,
+      runtime_phase: "countdown",
+      bettingSecondsLeft,
+      countdown_started_at: match.countdownStartedAt ?? null,
+      updated_at: match.updatedAt ?? null,
+      shell_visible,
+    })
+  }, [match, roleInfo.isHost, roleInfo.isChallenger, countdownLineIndex, serverTimeSync.receivedAtMs, serverTimeSync.serverMs])
+
   // Ready -> Live transition is handled by the DB-authoritative /api/rooms/tick endpoint.
 
   if (!matchId) {
@@ -1362,57 +1448,6 @@ export default function ArenaMatchPage() {
             : null)
       : null
   const nextRoundNumber = match.currentRound ?? 1
-
-  // RPS live-debug: one render log (dev only, throttled) — shell_visible, controls_visible, status, board mode, runtime flags.
-  useEffect(() => {
-    if (process.env.NODE_ENV === "production" || !match || match.game !== "Rock Paper Scissors") return
-    const shell_visible = match.status === "Ready to Start" && !!challenger
-    const controls_visible = match.status === "Live" && !rpsState.revealed
-    const board = (match.boardState ?? null) as { mode?: string } | null
-    const board_mode = board && typeof board === "object" && "mode" in board ? String((board as { mode?: string }).mode) : "none"
-    const now = Date.now()
-    const last = rpsDebugLastLogRef.current
-    const fingerprint = `${match.status}|${shell_visible}|${controls_visible}|${board_mode}`
-    const changed = !last || last.status !== match.status || last.shell !== shell_visible || last.controls !== controls_visible || last.boardMode !== board_mode
-    const throttleMs = 3000
-    const elapsed = last ? now - last.at : throttleMs
-    if (changed || elapsed >= throttleMs) {
-      rpsDebugLastLogRef.current = { at: now, status: match.status, shell: shell_visible, controls: controls_visible, boardMode: board_mode }
-      console.info("[RPS render]", {
-        shell_visible,
-        controls_visible,
-        match_status: match.status,
-        updatedAt: match.updatedAt,
-        board_state_mode: board_mode,
-        runtime: { isCountdown, isIntermission, bettingSecondsLeft, countdownEndMs },
-      })
-    }
-  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, challenger, rpsState.revealed, isCountdown, isIntermission, bettingSecondsLeft, countdownEndMs])
-
-  // Pregame phrase live-debug: role, phrase_index, phrase_rotation_active, match.status, runtime, shell_visible (dev only, throttled).
-  useEffect(() => {
-    if (process.env.NODE_ENV === "production" || !match || match.status !== "Ready to Start") return
-    const role = isHostUser ? "host" : isChallengerUser ? "challenger" : "spectator"
-    const phrase_rotation_active = match.status === "Ready to Start"
-    const shell_visible = !!challenger
-    const fingerprint = `${role}|${match.status}|${countdownLineIndex}|${bettingSecondsLeft}|${shell_visible}`
-    const now = Date.now()
-    const last = pregamePhraseLogRef.current
-    const throttleMs = 3000
-    if (last && last.fingerprint === fingerprint && now - last.at < throttleMs) return
-    pregamePhraseLogRef.current = { at: now, fingerprint }
-    console.info("[pregame phrase] state", {
-      role,
-      phrase_index: countdownLineIndex,
-      phrase_rotation_active,
-      match_status: match.status,
-      runtime_phase: isCountdown ? "countdown" : "other",
-      bettingSecondsLeft,
-      countdown_started_at: match.countdownStartedAt ?? null,
-      updated_at: match.updatedAt ?? null,
-      shell_visible,
-    })
-  }, [match?.status, match?.countdownStartedAt, match?.updatedAt, isHostUser, isChallengerUser, countdownLineIndex, isCountdown, bettingSecondsLeft, challenger])
 
   const canHostMove =
     !isFinished &&

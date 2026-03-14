@@ -1418,7 +1418,22 @@ function persistStore(nextStore: ArenaStore) {
 
   if (!isBrowser()) return
 
-  window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(resolved))
+  try {
+    // Cap stored matches to avoid quota.
+    const MAX_PERSISTED_MATCHES = 80
+    const toStore: ArenaStore =
+      resolved.matches.length <= MAX_PERSISTED_MATCHES
+        ? resolved
+        : { ...resolved, matches: resolved.matches.slice(0, MAX_PERSISTED_MATCHES) }
+    window.localStorage.setItem(ARENA_STORE_STORAGE_KEY, JSON.stringify(toStore))
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "QuotaExceededError" || e.code === 22)) {
+      console.warn("KasRoyal arena store: localStorage quota exceeded; continuing without persistence.")
+    } else {
+      console.warn("KasRoyal arena store: persist failed", e)
+    }
+    return
+  }
 
   try {
     const navbarMatches = resolved.matches.map((match) => ({
@@ -1706,7 +1721,11 @@ async function hydrateMatchesFromSupabase() {
       }
     })
   } catch (error) {
-    console.error("KasRoyal hydrateMatchesFromSupabase failed", error)
+    if (typeof DOMException !== "undefined" && error instanceof DOMException && (error.name === "QuotaExceededError" || (error as DOMException & { code?: number }).code === 22)) {
+      console.warn("KasRoyal hydrateMatchesFromSupabase: storage quota exceeded; continuing without persistence.")
+    } else {
+      console.error("KasRoyal hydrateMatchesFromSupabase failed", error)
+    }
   }
 }
 
