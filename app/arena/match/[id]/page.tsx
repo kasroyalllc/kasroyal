@@ -47,7 +47,7 @@ import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 import { acceptAndReconcile, reconcileRoom } from "@/lib/rooms/sync-policy"
 import type { Room } from "@/lib/engine/match/types"
 import { getMatchRole } from "@/lib/rooms/match-role"
-import { COUNTDOWN_PHRASES } from "@/lib/countdown-phrases"
+import { COUNTDOWN_PHRASES, PREGAME_COUNTDOWN_LINES } from "@/lib/countdown-phrases"
 import type { MatchRoundRow } from "@/lib/rooms/match-events"
 
 type Connect4Cell = "host" | "challenger" | null
@@ -248,6 +248,41 @@ function CountdownOverlay({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Between-round intermission: celebrate (win visible) then countdown. Board stays visible behind. */
+function IntermissionBanner({
+  phase,
+  roundJustEnded,
+  roundWinnerName,
+  nextRoundNumber,
+  secondsLeft,
+}: {
+  phase: "celebrate" | "countdown"
+  roundJustEnded: number
+  roundWinnerName: string | null
+  nextRoundNumber: number
+  secondsLeft: number
+}) {
+  return (
+    <div className="z-20 mb-4 w-full rounded-2xl border-2 border-amber-300/35 bg-amber-300/15 px-5 py-4 shadow-[0_0_28px_rgba(251,191,36,0.15)]">
+      <div className="mb-1.5 inline-flex rounded-full border border-amber-300/30 bg-amber-300/20 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-200">
+        Between rounds
+      </div>
+      {phase === "celebrate" ? (
+        <p className="text-center text-lg font-black text-amber-100 sm:text-xl">
+          {roundWinnerName != null
+            ? `Round ${roundJustEnded} over — ${roundWinnerName} won!`
+            : `Round ${roundJustEnded} was a draw.`}
+          <span className="mt-2 block text-sm font-semibold text-amber-200/90">Next round in a moment…</span>
+        </p>
+      ) : (
+        <p className="text-center text-lg font-black text-amber-100 sm:text-xl">
+          Round {nextRoundNumber} starts in {secondsLeft}…
+        </p>
+      )}
     </div>
   )
 }
@@ -858,8 +893,9 @@ export default function ArenaMatchPage() {
   )
   const tttWinner = useMemo(() => getTttWinner(tttState.board), [tttState.board])
 
+  /** Premium short lines for pregame overlay; rotate every ~1.2s so countdown feels alive. */
   const countdownLines = useMemo(() => {
-    const base = [...COUNTDOWN_PHRASES]
+    const base = [...PREGAME_COUNTDOWN_LINES]
     let seed = 0
     for (let i = 0; i < matchId.length; i++) seed += matchId.charCodeAt(i)
     const rng = () => (seed = (seed * 9301 + 49297) % 233280) / 233280
@@ -1132,6 +1168,19 @@ export default function ArenaMatchPage() {
   const intermissionSecondsLeft = isIntermission && intermissionUntilMs != null
     ? Math.max(0, Math.ceil((intermissionUntilMs - Date.now()) / 1000))
     : 0
+  /** First ~3s of intermission: show "Round over — X won!" (board fully visible). Then show "Round N starts in X". */
+  const intermissionPhase: "celebrate" | "countdown" =
+    isIntermission && intermissionSecondsLeft >= 3 ? "celebrate" : "countdown"
+  const roundJustEnded = isIntermission ? Math.max(1, (match.currentRound ?? 2) - 1) : 1
+  const intermissionRoundWinnerName =
+    isIntermission && match.lastRoundWinnerIdentityId != null
+      ? (match.lastRoundWinnerIdentityId === match.hostIdentityId
+          ? match.host?.name ?? "Host"
+          : match.lastRoundWinnerIdentityId === match.challengerIdentityId
+            ? challenger?.name ?? "Challenger"
+            : null)
+      : null
+  const nextRoundNumber = match.currentRound ?? 1
 
   const canHostMove =
     !isFinished &&
@@ -1910,7 +1959,27 @@ export default function ArenaMatchPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-6 sm:gap-3">
-              <StatCard label="Phase" value={formatArenaPhase(match.status)} accent="text-emerald-300" />
+              <StatCard
+                label="Phase"
+                value={
+                  isCountdown
+                    ? "Pregame countdown"
+                    : isPaused
+                      ? "Paused"
+                      : isIntermission
+                        ? "Between rounds"
+                        : formatArenaPhase(match.status)
+                }
+                accent={
+                  isCountdown
+                    ? "text-fuchsia-300"
+                    : isPaused
+                      ? "text-sky-300"
+                      : isIntermission
+                        ? "text-amber-300"
+                        : "text-emerald-300"
+                }
+              />
               <StatCard label="Player Pot" value={`${totalPlayerPot} KAS`} accent="text-amber-300" />
               <StatCard label="Spectators" value={`${match.spectators}`} accent="text-sky-300" />
               <StatCard
@@ -2170,16 +2239,26 @@ export default function ArenaMatchPage() {
                   </div>
                   <div
                     className={`rounded-full px-4 py-3 text-sm font-bold ${
-                      match.status === "Live"
-                        ? isPaused
-                          ? "bg-sky-300/10 text-sky-300"
-                          : "bg-red-500/10 text-red-300"
-                        : match.status === "Waiting for Opponent" || match.status === "Ready to Start"
-                          ? "bg-amber-400/10 text-amber-300"
-                          : "bg-emerald-400/10 text-emerald-300"
+                      isCountdown
+                        ? "bg-fuchsia-400/15 text-fuchsia-300"
+                        : match.status === "Live"
+                          ? isPaused
+                            ? "bg-sky-300/10 text-sky-300"
+                            : isIntermission
+                              ? "bg-amber-400/15 text-amber-300"
+                              : "bg-red-500/10 text-red-300"
+                          : match.status === "Waiting for Opponent" || match.status === "Ready to Start"
+                            ? "bg-amber-400/10 text-amber-300"
+                            : "bg-emerald-400/10 text-emerald-300"
                     }`}
                   >
-                    {isPaused ? "Paused" : formatArenaPhase(match.status)}
+                    {isCountdown
+                      ? "Pregame countdown"
+                      : isPaused
+                        ? "Paused"
+                        : isIntermission
+                          ? "Between rounds"
+                          : formatArenaPhase(match.status)}
                   </div>
                   {!isQuickMatch && (
                   <div
@@ -2216,23 +2295,11 @@ export default function ArenaMatchPage() {
                 {isFinished
                   ? `Match finished. Final state: ${match.statusText}.`
                   : isIntermission
-                    ? (() => {
-                        const roundJustEnded = Math.max(1, (match.currentRound ?? 2) - 1)
-                        const roundWinnerName =
-                          match.lastRoundWinnerIdentityId === match.hostIdentityId
-                            ? (match.host?.name ?? "Host")
-                            : match.lastRoundWinnerIdentityId === match.challengerIdentityId
-                              ? (challenger?.name ?? "Challenger")
-                              : null
-                        return (
-                          <>
-                            {roundWinnerName != null
-                              ? `${roundWinnerName} won Round ${roundJustEnded}. `
-                              : `Round ${roundJustEnded} was a draw. `}
-                            Next round starts in {intermissionSecondsLeft}s…
-                          </>
-                        )
-                      })()
+                    ? intermissionPhase === "celebrate"
+                      ? (intermissionRoundWinnerName != null
+                          ? `${intermissionRoundWinnerName} won Round ${roundJustEnded}. The board stays visible briefly, then the next round countdown begins.`
+                          : `Round ${roundJustEnded} was a draw. Next round countdown starts in a moment.`)
+                      : `Round ${nextRoundNumber} starts in ${intermissionSecondsLeft}s. Stay here — the board will reset automatically.`
                     : isCountdown
                       ? isPlayer
                         ? bettingSecondsLeft > 0 ? `You are seated in this room. Stay here — the countdown is active and the match begins in ${bettingSecondsLeft}s.` : "Match is starting… Stay here — the arena will go live shortly."
@@ -2264,6 +2331,16 @@ export default function ArenaMatchPage() {
                       pausedByName={pausedByName}
                       canResume={canResumeCurrentUser}
                       onResume={handleResumeMatch}
+                    />
+                  ) : null}
+
+                  {isIntermission ? (
+                    <IntermissionBanner
+                      phase={intermissionPhase}
+                      roundJustEnded={roundJustEnded}
+                      roundWinnerName={intermissionRoundWinnerName}
+                      nextRoundNumber={nextRoundNumber}
+                      secondsLeft={intermissionSecondsLeft}
                     />
                   ) : null}
 
@@ -2360,6 +2437,16 @@ export default function ArenaMatchPage() {
                     />
                   ) : null}
 
+                  {isIntermission ? (
+                    <IntermissionBanner
+                      phase={intermissionPhase}
+                      roundJustEnded={roundJustEnded}
+                      roundWinnerName={intermissionRoundWinnerName}
+                      nextRoundNumber={nextRoundNumber}
+                      secondsLeft={intermissionSecondsLeft}
+                    />
+                  ) : null}
+
                   <div className="flex w-full flex-col items-center justify-center">
                     <div className="grid w-full max-w-[380px] grid-cols-3 gap-4 rounded-3xl border border-emerald-300/15 bg-[#07100e] p-6 shadow-[inset_0_0_32px_rgba(0,255,200,0.04)] sm:gap-5 sm:p-8">
                       {tttBoard.map((cell, index) => (
@@ -2430,6 +2517,16 @@ export default function ArenaMatchPage() {
                       pausedByName={pausedByName}
                       canResume={canResumeCurrentUser}
                       onResume={handleResumeMatch}
+                    />
+                  ) : null}
+
+                  {isIntermission ? (
+                    <IntermissionBanner
+                      phase={intermissionPhase}
+                      roundJustEnded={roundJustEnded}
+                      roundWinnerName={intermissionRoundWinnerName}
+                      nextRoundNumber={nextRoundNumber}
+                      secondsLeft={intermissionSecondsLeft}
                     />
                   ) : null}
 

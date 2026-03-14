@@ -1,8 +1,24 @@
 /**
+ * Short, premium pre-game countdown lines. Rotate during the 30s wait so the countdown feels alive.
+ * Used in the main overlay; keep copy tasteful and product-quality.
+ */
+export const PREGAME_COUNTDOWN_LINES: readonly string[] = [
+  "Match locked in.",
+  "Arena syncing.",
+  "Players ready.",
+  "Bets closing.",
+  "Board loading.",
+  "Get set.",
+  "Almost there.",
+  "Stay with us.",
+  "Here we go.",
+  "Game begins in…",
+]
+
+/**
  * ~300 rotating pre-game countdown phrases. Playful, hype, competitive, witty.
  * Used during the 30-second wait so the countdown feels alive and entertaining.
  */
-
 export const COUNTDOWN_PHRASES: readonly string[] = [
   "Stretch those fingers.",
   "No excuses after this.",
