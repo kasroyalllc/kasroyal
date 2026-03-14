@@ -856,7 +856,7 @@ export default function ArenaMatchPage() {
     return () => clearInterval(t)
   }, [matchId, match?.id, match?.status, match?.roundIntermissionUntil])
 
-  // When countdown has reached 0 on the client, call start (and retry every 2s) until room goes Live. Only apply response when room is Live.
+  // When countdown has reached 0, call start and refetch every 2s until room goes Live. Refetch picks up transition from tick or other client.
   useEffect(() => {
     if (!matchId || !match) return
     if (match.status === "Live" || match.status === "Finished") {
@@ -894,10 +894,15 @@ export default function ArenaMatchPage() {
         .catch(() => {})
     }
 
-    runStart()
-    const interval = window.setInterval(runStart, 2000)
+    const run = () => {
+      runStart()
+      refreshRoom()
+    }
+
+    run()
+    const interval = window.setInterval(run, 2000)
     return () => window.clearInterval(interval)
-  }, [matchId, match?.status, match?.bettingClosesAt, match?.countdownStartedAt, match?.bettingWindowSeconds])
+  }, [matchId, match?.status, match?.bettingClosesAt, match?.countdownStartedAt, match?.bettingWindowSeconds, refreshRoom])
 
   useEffect(() => {
     if (!match) return
@@ -920,8 +925,10 @@ export default function ArenaMatchPage() {
     previousMatchRef.current = match
   }, [match])
 
+  // Rotate countdown line every 5s. Depend only on status so refetches (new match ref) don't clear the interval — fixes challenger seeing one stuck line.
   useEffect(() => {
-    if (!match || match.status !== "Ready to Start") return
+    if (!matchId || !match) return
+    if (match.status !== "Ready to Start") return
 
     const lineInterval = window.setInterval(() => {
       setCountdownLineIndex((value) => value + 1)
@@ -934,7 +941,7 @@ export default function ArenaMatchPage() {
       window.clearInterval(lineInterval)
       window.clearInterval(tickInterval)
     }
-  }, [match])
+  }, [matchId, match?.status])
 
   const connect4State = useMemo(() => getConnect4State(match), [match])
   const tttState = useMemo(() => getTttState(match), [match])
