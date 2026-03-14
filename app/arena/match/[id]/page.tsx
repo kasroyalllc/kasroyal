@@ -606,7 +606,7 @@ function getTttState(match: ArenaMatch | null) {
   }
 }
 
-/** RPS state from match. Tolerant: if game is RPS and board_state is missing/wrong shape, returns safe defaults so live selection UI still renders. */
+/** RPS state from match. hostChoice/challengerChoice are derived only from server board_state; no local cache. */
 function getRpsState(match: ArenaMatch | null) {
   const boardState = (match?.boardState ?? null) as MatchBoardState
   if (
@@ -971,6 +971,59 @@ export default function ArenaMatchPage() {
     }
   }, [match?.game, match?.status, match?.roundIntermissionUntil, refreshRoom])
 
+  // RPS: detect new round by round_number or board_state.roundExpiresAt; force refetch so both host and challenger get fresh board_state (hostChoice/challengerChoice null).
+  const prevRpsRoundRef = useRef<{ round: number; roundExpiresAt: number | null }>({ round: 0, roundExpiresAt: null })
+  useEffect(() => {
+    if (!match || match.game !== "Rock Paper Scissors" || match.status !== "Live") return
+    const board = match.boardState as PersistedRpsBoardState | undefined
+    const round = match.currentRound ?? 1
+    const roundExpiresAt =
+      board && typeof board === "object" && typeof (board as PersistedRpsBoardState).roundExpiresAt === "number"
+        ? (board as PersistedRpsBoardState).roundExpiresAt!
+        : null
+    const prev = prevRpsRoundRef.current
+    const roundChanged = prev.round !== round || prev.roundExpiresAt !== roundExpiresAt
+    prevRpsRoundRef.current = { round, roundExpiresAt }
+    if (roundChanged && (round > 1 || roundExpiresAt != null)) {
+      void refreshRoom()
+    }
+  }, [match?.game, match?.status, match?.currentRound, match?.boardState, refreshRoom])
+
+  // RPS: when intermission time has passed but we still have intermission in state, force refetch once (host may not have received cleared update).
+  const rpsStaleIntermissionRef = useRef(false)
+  useEffect(() => {
+    if (!match || match.game !== "Rock Paper Scissors" || match.status !== "Live") return
+    const until = typeof match.roundIntermissionUntil === "number" ? match.roundIntermissionUntil : null
+    if (until == null) {
+      rpsStaleIntermissionRef.current = false
+      return
+    }
+    if (Date.now() >= until && !rpsStaleIntermissionRef.current) {
+      rpsStaleIntermissionRef.current = true
+      void refreshRoom()
+    }
+  }, [match?.game, match?.status, match?.roundIntermissionUntil, rpsRoundTick])
+
+  // RPS: debug log board_state at round start (confirm server sends hostChoice/challengerChoice null).
+  const rpsBoardLogRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!match || match.game !== "Rock Paper Scissors" || match.status !== "Live") return
+    const board = match.boardState as PersistedRpsBoardState | undefined
+    if (!board || typeof board !== "object" || board.mode !== "rps-live") return
+    if (board.revealed === true) return
+    const exp = typeof board.roundExpiresAt === "number" ? board.roundExpiresAt : null
+    if (exp != null && rpsBoardLogRef.current !== exp) {
+      rpsBoardLogRef.current = exp
+      console.log("RPS board_state received (round start)", JSON.stringify({
+        hostChoice: board.hostChoice,
+        challengerChoice: board.challengerChoice,
+        revealed: board.revealed,
+        winner: board.winner,
+        roundExpiresAt: board.roundExpiresAt,
+      }))
+    }
+  }, [match?.game, match?.status, match?.boardState])
+
   matchStatusRef.current = match?.status ?? ""
   if (match?.status === "Ready to Start" && match) {
     const endMs =
@@ -1037,7 +1090,12 @@ export default function ArenaMatchPage() {
 
   const connect4State = useMemo(() => getConnect4State(match), [match])
   const tttState = useMemo(() => getTttState(match), [match])
-  const rpsState = useMemo(() => getRpsState(match), [match])
+  // RPS: derive only from server board_state; key by round so new round never reuses stale state.
+  const rpsRoundIdentity =
+    match?.game === "Rock Paper Scissors" && match?.boardState && typeof match.boardState === "object"
+      ? `${match.currentRound ?? 1}-${(match.boardState as PersistedRpsBoardState).roundExpiresAt ?? "x"}`
+      : ""
+  const rpsState = useMemo(() => getRpsState(match), [match, rpsRoundIdentity])
 
   const connect4Winner = useMemo(
     () => getConnect4Winner(connect4State.board),
@@ -2929,7 +2987,7 @@ export default function ArenaMatchPage() {
                           })()}
                     </p>
                     <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-                      <StatCard label="Turn" value={boardTurnLabel} accent="text-sky-300" />
+                      <StatCard label="Status" value={boardTurnLabel} accent="text-sky-300" />
                       <StatCard label="Clock" value={boardClockLabel} accent="text-amber-300" />
                       <StatCard
                         label={match.status === "Finished" ? "Result" : "State"}
