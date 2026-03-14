@@ -8,8 +8,8 @@ import type { GameDriver } from "@/lib/rooms/game-drivers"
 import type { RoundOutcome } from "@/lib/rooms/game-drivers"
 import { DB_STATUS } from "@/lib/rooms/db-status"
 
-/** Seconds to show round result before next round (BO3/BO5). Tick starts next round when expired. */
-export const INTERMISSION_SECONDS = 5
+/** Seconds to show round result before next round (BO3/BO5). Tick starts next round when expired. Longer so winning board is visible before countdown. */
+export const INTERMISSION_SECONDS = 8
 
 export type SeriesUpdate = {
   seriesOver: boolean

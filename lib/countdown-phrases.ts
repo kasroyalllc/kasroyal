@@ -1,6 +1,6 @@
 /**
  * Short, premium pre-game countdown lines. Rotate during the 30s wait so the countdown feels alive.
- * Used in the main overlay; keep copy tasteful and product-quality.
+ * Used in the main overlay; keep copy tasteful and product-quality. Multiple lines rotate so it never feels static.
  */
 export const PREGAME_COUNTDOWN_LINES: readonly string[] = [
   "Match locked in.",
@@ -13,6 +13,10 @@ export const PREGAME_COUNTDOWN_LINES: readonly string[] = [
   "Stay with us.",
   "Here we go.",
   "Game begins in…",
+  "Stand by for first move.",
+  "Final call.",
+  "Lock in.",
+  "Ready when you are.",
 ]
 
 /**

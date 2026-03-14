@@ -872,7 +872,7 @@ export default function ArenaMatchPage() {
 
     const lineInterval = window.setInterval(() => {
       setCountdownLineIndex((value) => value + 1)
-    }, 1200)
+    }, 1000)
     const tickInterval = window.setInterval(() => {
       setCountdownTick((t) => t + 1)
     }, 1000)
@@ -1168,9 +1168,9 @@ export default function ArenaMatchPage() {
   const intermissionSecondsLeft = isIntermission && intermissionUntilMs != null
     ? Math.max(0, Math.ceil((intermissionUntilMs - Date.now()) / 1000))
     : 0
-  /** First ~3s of intermission: show "Round over — X won!" (board fully visible). Then show "Round N starts in X". */
+  /** First 4s of intermission: show "Round over — X won!" so winning board is visible. Then 4s "Round N starts in X". */
   const intermissionPhase: "celebrate" | "countdown" =
-    isIntermission && intermissionSecondsLeft >= 3 ? "celebrate" : "countdown"
+    isIntermission && intermissionSecondsLeft >= 4 ? "celebrate" : "countdown"
   const roundJustEnded = isIntermission ? Math.max(1, (match.currentRound ?? 2) - 1) : 1
   const intermissionRoundWinnerName =
     isIntermission && match.lastRoundWinnerIdentityId != null
