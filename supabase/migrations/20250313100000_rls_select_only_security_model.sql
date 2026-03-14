@@ -1,14 +1,9 @@
--- KasRoyal RLS security model:
--- - All public tables have RLS enabled.
--- - Only SELECT policies for anon/authenticated (public read-only data).
--- - No INSERT, UPDATE, or DELETE policies for client roles.
--- - All writes go through server routes using the service role key.
---
--- Ensure tables match_messages, moves, bets exist before running (create them if your project uses them).
--- After this migration, client-side inserts/updates/deletes will be denied; use API routes with service role.
+-- Main schema/setup: RLS enable + read-only policies for all public tables.
+-- KasRoyal security: RLS on; only SELECT for anon/authenticated; writes via service role only.
+-- Ensure tables match_messages, moves, bets exist before running.
 
 -- =============================================================================
--- PROFILES (public: leaderboard, display names)
+-- USERS / LEADERBOARD (profiles) — single read-only RLS block; do not duplicate
 -- =============================================================================
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 

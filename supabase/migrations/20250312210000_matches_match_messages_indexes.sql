@@ -1,4 +1,4 @@
--- Indexes for matches and match_messages to support list active/history and room chat.
+-- Main schema: indexes for matches and match_messages to support list active/history and room chat.
 -- Improves listActiveRooms, listHistoryRooms, listSpectateRooms, getRoomById (id is PK), listRoomMessages.
 
 -- matches: filter by status and order by created_at (arena list, spectate list)

@@ -1,0 +1,19 @@
+---
+description: Keep Supabase SQL in four separate files; no DELETE or debug in schema.
+globs: supabase/**/*.sql
+alwaysApply: false
+---
+
+# Supabase SQL: four-file separation
+
+KasRoyal Supabase SQL is split into four files. Keep concerns separated.
+
+1. **kasroyal_schema.sql** — Main schema only: tables, add-column upgrades, indexes, RLS, users/leaderboard read-only RLS, updated_at trigger, realtime. Do **not** add DELETE statements or debug/inspection queries here.
+
+2. **kasroyal_match_integrity.sql** — Competitive integrity only: winner validation, terminal-state rules, distinct player, score/round sanity, cleanup + set_finished_at triggers. Do not add schema, RLS, realtime, DELETE, or verification queries here.
+
+3. **kasroyal_dev_reset.sql** — Dev-only row wipe (FK-safe DELETE order). Do not add schema, integrity, or verification queries here.
+
+4. **kasroyal_verify.sql** — Inspection/verification only (e.g. information_schema, pg_publication_tables, match inspection). Do not add schema changes or DELETE here.
+
+When editing or adding SQL, put it in the correct file and do not mix these concerns.

@@ -1,3 +1,4 @@
+-- Main schema: series columns on matches (if not present) and active_identity_matches table.
 -- Optional: if your matches table uses round_number/host_score/challenger_score (post-rebuild), add them.
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS host_score INTEGER NOT NULL DEFAULT 0;

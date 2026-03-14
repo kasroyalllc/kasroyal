@@ -1,4 +1,4 @@
--- Minimal matches table for KasRoyal room creation.
+-- Main schema: matches table (and optional add-columns). Minimal columns for create/join.
 -- Run this only if your matches table is missing required columns or you need a fresh schema.
 -- Adjust if you already have some columns (e.g. use ADD COLUMN only for missing ones).
 

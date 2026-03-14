@@ -1,4 +1,4 @@
--- Profiles table for display names. Enforces globally unique (case-insensitive) display names.
+-- Main schema: profiles table (users/leaderboard display names). Enforces globally unique (case-insensitive) display names.
 -- identity_id = wallet address or guest id; only wallet users should persist here for ranked.
 
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -11,8 +11,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_display_name_lower_key
   ON public.profiles (LOWER(TRIM(display_name)));
 
--- Optional: RLS so users can only update their own row (identity_id = auth.uid or app-level check).
--- For now we use service role in API; no RLS.
--- ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+-- RLS: enabled in 20250313100000 (single users/leaderboard read-only block); do not add RLS here.
 
 COMMENT ON TABLE public.profiles IS 'KasRoyal display names. identity_id = wallet; display_name globally unique (case-insensitive).';
