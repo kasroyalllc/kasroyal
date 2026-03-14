@@ -1124,6 +1124,7 @@ function createDefaultBoardState(game: GameType) {
 function dbGameTypeToGameType(game: string): GameType {
   if (game === "Connect 4") return "Connect 4"
   if (game === "Tic-Tac-Toe") return "Tic-Tac-Toe"
+  if (game === "Rock Paper Scissors") return "Rock Paper Scissors"
   return "Chess Duel"
 }
 

@@ -730,6 +730,7 @@ export default function ArenaPage() {
             host_identity_id: identity.id,
             host_display_name: identity.displayName,
             wager_amount: 0,
+            best_of: bestOf,
           }),
         })
         const data = await res.json()
@@ -781,6 +782,7 @@ export default function ArenaPage() {
           host_identity_id: identity.id,
           host_display_name: identity.displayName,
           wager_amount: safeWager,
+          best_of: bestOf,
         }),
       })
       const data = await res.json()

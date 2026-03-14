@@ -179,6 +179,11 @@ export type Room = {
   winnerIdentityId: string | null
   winReason: string | null
   boardState: unknown
+  /** Best-of series: 1 = one game, 3 = first to 2 wins, 5 = first to 3 wins. */
+  bestOf: 1 | 3 | 5
+  hostRoundWins: number
+  challengerRoundWins: number
+  currentRound: number
   roomHypeIndex: number
   createdAt: number
   updatedAt: number
@@ -299,6 +304,14 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
         : null,
     winReason: row.win_reason != null ? String(row.win_reason) : null,
     boardState: row.board_state ?? undefined,
+    bestOf: ((): 1 | 3 | 5 => {
+      const n = Number(row.best_of ?? 1)
+      if (n === 3 || n === 5) return n
+      return 1
+    })(),
+    hostRoundWins: Math.max(0, Number(row.host_round_wins ?? 0)),
+    challengerRoundWins: Math.max(0, Number(row.challenger_round_wins ?? 0)),
+    currentRound: Math.max(1, Number(row.current_round ?? 1)),
     roomHypeIndex: Number(row.room_hype_index ?? 0),
     createdAt,
     updatedAt,

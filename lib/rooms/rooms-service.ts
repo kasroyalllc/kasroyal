@@ -104,10 +104,12 @@ export async function createRoom(
     host_identity_id: string
     host_display_name: string
     wager_amount: number
+    best_of?: 1 | 3 | 5
   }
 ): Promise<Room> {
   const status = "Waiting for Opponent"
   const now = new Date().toISOString()
+  const bestOf = params.best_of === 3 || params.best_of === 5 ? params.best_of : 1
   const insert: Record<string, unknown> = {
     game_type: params.game_type,
     status,
@@ -117,6 +119,10 @@ export async function createRoom(
     wager_amount: params.wager_amount,
     mode: params.mode,
     host_display_name: params.host_display_name,
+    best_of: bestOf,
+    host_round_wins: 0,
+    challenger_round_wins: 0,
+    current_round: 1,
     updated_at: now,
   }
 

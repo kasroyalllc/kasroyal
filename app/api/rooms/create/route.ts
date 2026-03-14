@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
   const hostIdentityId = String(body.host_identity_id ?? "").trim()
   const hostDisplayName = String(body.host_display_name ?? "Host").trim()
   const wagerAmount = mode === "ranked" ? Math.max(0, Number(body.wager_amount) ?? 0) : 0
+  const bestOfRaw = Number(body.best_of ?? 1)
+  const bestOf: 1 | 3 | 5 = bestOfRaw === 3 || bestOfRaw === 5 ? bestOfRaw : 1
 
   if (!hostIdentityId) {
     return NextResponse.json(
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest) {
       host_identity_id: hostIdentityId,
       host_display_name: hostDisplayName,
       wager_amount: wagerAmount,
+      best_of: bestOf,
     })
 
     return NextResponse.json(

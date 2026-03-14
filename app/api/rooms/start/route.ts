@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
       ? null
       : new Date(nowMs + moveSeconds * 1000).toISOString()
 
+    const bestOf = room.bestOf === 3 || room.bestOf === 5 ? room.bestOf : 1
     const { data, error } = await supabase
       .from("matches")
       .update({
@@ -96,6 +97,9 @@ export async function POST(request: NextRequest) {
         move_turn_started_at: isRps ? null : nowIso,
         move_turn_seconds: isRps ? null : moveSeconds,
         turn_expires_at: turnExpiresAt,
+        host_round_wins: 0,
+        challenger_round_wins: 0,
+        current_round: 1,
         updated_at: nowIso,
       })
       .eq("id", roomId)

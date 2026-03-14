@@ -51,6 +51,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
   const finishedAt = room.finishedAt ?? undefined
   const boardState = enrichBoardStateWithMoveTimer(room)
 
+  const bestOf = room.bestOf === 3 || room.bestOf === 5 ? room.bestOf : 1
   return {
     id: room.id,
     game: room.game,
@@ -59,7 +60,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     bettingStatus,
     marketVisibility: "watch-only",
     isFeaturedMarket: false,
-    bestOf: 1,
+    bestOf,
     wager: room.wager,
     createdAt: room.createdAt,
     countdownStartedAt,
@@ -83,7 +84,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
           : room.status === "Finished"
             ? "Finished"
             : "Waiting",
-    roundScore: { host: 0, challenger: 0 },
+    roundScore: { host: room.hostRoundWins, challenger: room.challengerRoundWins },
     spectatorPool: { host: 0, challenger: 0 },
     bettingWindowSeconds: 30,
     result: room.winnerIdentityId
