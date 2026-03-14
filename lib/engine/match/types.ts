@@ -121,6 +121,8 @@ export type RpsBoardState = {
   challengerChoice: RpsChoice | null
   revealed: boolean
   winner: "host" | "challenger" | "draw" | null
+  /** Round deadline (ms). When passed, tick resolves: one chose → that side wins; neither → draw. */
+  roundExpiresAt?: number | null
 }
 
 export type GameBoardState = Connect4BoardState | TttBoardState | RpsBoardState

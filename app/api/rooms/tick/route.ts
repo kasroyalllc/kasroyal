@@ -5,6 +5,7 @@ import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { createInitialBoardState } from "@/lib/rooms/game-board"
 import {
   getMoveSecondsForGame,
+  RPS_ROUND_SECONDS,
   TIMEOUT_STRIKES_TO_LOSE,
 } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
@@ -17,7 +18,11 @@ import {
   getReadyToLivePayload,
   READY_LIKE_STATUSES,
 } from "@/lib/rooms/lifecycle"
-import { getGameDriver } from "@/lib/rooms/game-drivers"
+import { getGameDriver, resolveRpsRoundTimeout } from "@/lib/rooms/game-drivers"
+import {
+  resolveMoveToDbUpdate,
+  type MoveDbUpdate,
+} from "@/lib/rooms/move-pipeline"
 import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
 import { serializeApiError } from "@/lib/api-error"
 
@@ -178,9 +183,12 @@ export async function POST(request: NextRequest) {
           )
         }
         const driver = getGameDriver(gameTypeLive)
-        const nextBoardState = driver
+        let nextBoardState = driver
           ? driver.createInitialBoardState()
           : createInitialBoardState(gameTypeLive)
+        if (gameTypeLive === "Rock Paper Scissors" && typeof nextBoardState === "object" && nextBoardState !== null) {
+          nextBoardState = { ...(nextBoardState as Record<string, unknown>), roundExpiresAt: nowMs + RPS_ROUND_SECONDS * 1000 }
+        }
         const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
         const moveSeconds = getMoveSecondsForGame(gameTypeLive)
         const turnExpiresAt =
@@ -219,7 +227,87 @@ export async function POST(request: NextRequest) {
           )
         }
       }
+      // RPS round timer: if round expired, resolve (one chose → that side wins; neither → draw).
       if (gameTypeLive === "Rock Paper Scissors") {
+        const rpsOutcome = resolveRpsRoundTimeout(room, nowMs)
+        if (rpsOutcome) {
+          const driver = getGameDriver(gameTypeLive)
+          if (driver) {
+            const dbUpdate: MoveDbUpdate = resolveMoveToDbUpdate(
+              room,
+              rpsOutcome,
+              nowIso,
+              nowMs,
+              driver
+            )
+            const { data: updateData, error: updateError } = await supabase
+              .from("matches")
+              .update(dbUpdate.payload)
+              .eq("id", roomId)
+              .in("status", ["Live", "live"])
+              .select("*")
+              .maybeSingle()
+            if (!updateError && updateData) {
+              if (dbUpdate.updateType === "series_finished" && "releaseMatch" in dbUpdate && dbUpdate.releaseMatch) {
+                await releaseActiveMatchByMatch(supabase, roomId)
+              }
+              await insertMatchEvent(supabase, roomId, "move_applied", { game: gameTypeLive, round_number: room.currentRound ?? 1 })
+              if (dbUpdate.updateType === "intermission") {
+                await insertMatchEvent(supabase, roomId, dbUpdate.roundRecord.resultType === "draw" ? "round_draw" : "round_won", {
+                  round_number: dbUpdate.roundRecord.roundNumber,
+                  winner_identity_id: dbUpdate.roundRecord.winnerIdentityId,
+                  host_score: dbUpdate.roundRecord.hostScoreAfter,
+                  challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
+                })
+                await insertMatchRound(
+                  supabase,
+                  roomId,
+                  dbUpdate.roundRecord.roundNumber,
+                  dbUpdate.roundRecord.winnerIdentityId,
+                  dbUpdate.roundRecord.resultType,
+                  dbUpdate.roundRecord.hostScoreAfter,
+                  dbUpdate.roundRecord.challengerScoreAfter
+                )
+                await insertMatchEvent(supabase, roomId, "intermission_started", {
+                  round_number: dbUpdate.payload.round_number as number,
+                })
+              }
+              if (dbUpdate.updateType === "series_finished") {
+                await insertMatchEvent(supabase, roomId, dbUpdate.roundRecord.resultType === "draw" ? "round_draw" : "round_won", {
+                  round_number: dbUpdate.roundRecord.roundNumber,
+                  winner_identity_id: dbUpdate.roundRecord.winnerIdentityId,
+                  host_score: dbUpdate.roundRecord.hostScoreAfter,
+                  challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
+                })
+                await insertMatchRound(
+                  supabase,
+                  roomId,
+                  dbUpdate.roundRecord.roundNumber,
+                  dbUpdate.roundRecord.winnerIdentityId,
+                  dbUpdate.roundRecord.resultType,
+                  dbUpdate.roundRecord.hostScoreAfter,
+                  dbUpdate.roundRecord.challengerScoreAfter
+                )
+                await insertMatchEvent(supabase, roomId, "match_finished", {
+                  winner_identity_id: dbUpdate.payload.winner_identity_id as string | null | undefined,
+                  win_reason: dbUpdate.payload.win_reason as string | undefined,
+                  host_score: dbUpdate.roundRecord.hostScoreAfter,
+                  challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
+                })
+              }
+              logRoomAction("rps_round_timeout", roomId, { updateType: dbUpdate.updateType })
+              return NextResponse.json(
+                {
+                  ok: true,
+                  room: mapDbRowToRoom((updateData as Record<string, unknown>)),
+                  transition: "rps_round_timeout",
+                  server_time_ms: nowMs,
+                },
+                { headers: { "Cache-Control": "no-store" } }
+              )
+            }
+          }
+        }
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }

@@ -25,7 +25,7 @@ Defined in **lib/rooms/game-drivers.ts**. Each driver implements:
 
 - Returns the board state for a new round. Shape is game-specific (Connect4BoardState, TttBoardState, RpsBoardState in `lib/engine/match/types.ts`).
 - Used by: Ready→Live transition (lifecycle.getReadyToLivePayload) and intermission→next round (tick route).
-- For RPS: must return `{ mode: "rps-live", hostChoice: null, challengerChoice: null, revealed: false, winner: null }` so both players can choose again each round.
+- For RPS: must return `{ mode: "rps-live", hostChoice: null, challengerChoice: null, revealed: false, winner: null }`. The lifecycle/tick caller adds **roundExpiresAt** (now + 15s) when writing to DB so the round timer is enforced. Both players can choose again each round.
 
 ---
 
@@ -75,9 +75,10 @@ The move pipeline uses only this shape; it does not branch on game type. It call
 
 **Simultaneous (Rock Paper Scissors)**
 
-- hasTurnTimer false. No move_turn_identity_id; both players submit. Driver accepts payload with side and choice; when both hostChoice and challengerChoice are set, resolves winner and returns roundEnded true.
-- No turn_expires_at; tick does not apply turn timeout for RPS.
-- Ready→Live and intermission→next round payloads **omit** all turn fields. Board state is reset each round so both choices are null.
+- hasTurnTimer false. No move_turn_identity_id; both players can choose as soon as the round starts. Driver accepts payload with side and choice; **first click locks that player’s hand** (driver rejects “Already locked in” if that side already has a choice this round). When both hostChoice and challengerChoice are set, resolve immediately and return roundEnded true.
+- **15-second round timer**: RpsBoardState has optional **roundExpiresAt** (ms). Set by lifecycle (Ready→Live) and tick (intermission→next round) to now + 15s. Tick resolves the round when now >= roundExpiresAt: one chose → that side wins (“round timeout (opponent no choice)”); neither chose → draw (“round timeout (no choices)”). See resolveRpsRoundTimeout in game-drivers.
+- No turn_expires_at; tick does not apply turn timeout for RPS (only the RPS round timer).
+- Ready→Live and intermission→next round payloads **omit** all turn fields and set board_state with roundExpiresAt. Board state is reset each round so both choices are null.
 
 ---
 

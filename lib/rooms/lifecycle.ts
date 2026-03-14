@@ -8,6 +8,7 @@ import type { Room } from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
 import { DB_STATUS } from "@/lib/rooms/db-status"
+import { RPS_ROUND_SECONDS } from "@/lib/engine/game-constants"
 
 /** Top-level lifecycle phases. */
 export type LifecyclePhase =
@@ -78,7 +79,11 @@ export function getReadyToLivePayload(
   const gameKey = normalizeGameForDriver(room.game)
   const driver = getGameDriver(gameKey as GameType)
   if (!driver) return null
-  const boardState = driver.createInitialBoardState()
+  let boardState = driver.createInitialBoardState()
+  if (gameKey === "Rock Paper Scissors" && typeof boardState === "object" && boardState !== null) {
+    const nowMs = now.getTime()
+    boardState = { ...(boardState as Record<string, unknown>), roundExpiresAt: nowMs + RPS_ROUND_SECONDS * 1000 }
+  }
   const moveSeconds = driver.getMoveSeconds()
   const nowIso = now.toISOString()
   const nowMs = now.getTime()

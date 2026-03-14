@@ -78,6 +78,8 @@ type PersistedRpsBoardState = {
   challengerChoice: RpsChoice | null
   revealed: boolean
   winner: "host" | "challenger" | "draw" | null
+  /** Round deadline (ms). 15s per round. */
+  roundExpiresAt?: number | null
 }
 
 type PersistedChessPreviewState = {
@@ -619,6 +621,7 @@ function getRpsState(match: ArenaMatch | null) {
       challengerChoice: rps.challengerChoice ?? null,
       revealed: rps.revealed === true,
       winner: rps.winner ?? null,
+      roundExpiresAt: typeof rps.roundExpiresAt === "number" ? rps.roundExpiresAt : null,
       hasPersistedState: true,
     }
   }
@@ -627,6 +630,7 @@ function getRpsState(match: ArenaMatch | null) {
     challengerChoice: null,
     revealed: false,
     winner: null,
+    roundExpiresAt: null as number | null,
     hasPersistedState: false,
   }
 }
@@ -677,6 +681,8 @@ export default function ArenaMatchPage() {
   })
   /** Ticks every second during pre-game countdown so displayed seconds update smoothly. */
   const [countdownTick, setCountdownTick] = useState(0)
+  /** Ticks every second during RPS live round so round timer countdown updates. */
+  const [rpsRoundTick, setRpsRoundTick] = useState(0)
   /** Round-by-round record when match is finished (from timeline API). */
   const [timelineRounds, setTimelineRounds] = useState<MatchRoundRow[]>([])
 
@@ -994,9 +1000,13 @@ export default function ArenaMatchPage() {
         setCountdownTick((t) => t + 1)
       }
     }, 1000)
+    const rpsRoundInterval = window.setInterval(() => {
+      setRpsRoundTick((t) => t + 1)
+    }, 1000)
     return () => {
       window.clearInterval(lineInterval)
       window.clearInterval(tickInterval)
+      window.clearInterval(rpsRoundInterval)
     }
   }, [matchId])
 
@@ -1442,6 +1452,14 @@ export default function ArenaMatchPage() {
     match.status === "Live" && !isPaused && turnExpiresAtMs != null
       ? Math.max(0, Math.ceil((turnExpiresAtMs - syncedNowMs) / 1000))
       : 0
+
+  const rpsRoundSecondsLeft =
+    match.game === "Rock Paper Scissors" &&
+    match.status === "Live" &&
+    !rpsState.revealed &&
+    rpsState.roundExpiresAt != null
+      ? Math.max(0, Math.ceil((rpsState.roundExpiresAt - syncedNowMs) / 1000))
+      : null
 
   const intermissionUntilMs =
     typeof match.roundIntermissionUntil === "number" ? match.roundIntermissionUntil : null
@@ -2030,7 +2048,13 @@ export default function ArenaMatchPage() {
       : isPaused
         ? `${pauseSecondsLeft}s`
         : match.game === "Rock Paper Scissors"
-          ? rpsState.revealed ? "—" : "No timer"
+          ? rpsState.revealed
+            ? "—"
+            : rpsRoundSecondsLeft != null
+              ? rpsRoundSecondsLeft > 0
+                ? `Round ends in ${rpsRoundSecondsLeft}s`
+                : "Round ended"
+              : "—"
           : match.status === "Live"
             ? (currentTurnSide === currentUserSide ? `Your turn: ${moveSecondsLeft}s` : `Opponent turn: ${moveSecondsLeft}s`)
             : "—"
@@ -2884,11 +2908,23 @@ export default function ArenaMatchPage() {
                     <p className="mt-6 text-center text-sm text-white/60">
                       {rpsState.revealed
                         ? "Result is final."
-                        : (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
-                          ? "Waiting for opponent…"
-                          : isHostUser || isChallengerUser
-                            ? "Choose Rock, Paper, or Scissors. Your choice is hidden until both lock in."
-                            : "Spectating. Choices will be revealed when both players have locked in."}
+                        : (() => {
+                            const myLocked = (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
+                            const opponentLocked = (isHostUser && rpsState.challengerChoice !== null) || (isChallengerUser && rpsState.hostChoice !== null)
+                            if (myLocked && opponentLocked) return "Both locked in — resolving."
+                            if (myLocked) return "Locked in — waiting for opponent."
+                            if (!myLocked && opponentLocked) {
+                              return rpsRoundSecondsLeft != null && rpsRoundSecondsLeft > 0
+                                ? `Opponent locked in. Choose your hand — round ends in ${rpsRoundSecondsLeft}s.`
+                                : "Opponent locked in. Choose your hand."
+                            }
+                            if (isHostUser || isChallengerUser) {
+                              return rpsRoundSecondsLeft != null && rpsRoundSecondsLeft > 0
+                                ? `Choose your hand. Round ends in ${rpsRoundSecondsLeft}s.`
+                                : "Choose your hand. Your choice is hidden until both lock in."
+                            }
+                            return "Spectating. Choices will be revealed when both players have locked in."
+                          })()}
                     </p>
                     <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                       <StatCard label="Turn" value={boardTurnLabel} accent="text-sky-300" />

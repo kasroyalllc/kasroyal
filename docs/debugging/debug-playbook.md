@@ -13,6 +13,15 @@ Lessons learned while building the system. Each entry includes symptom, root cau
 
 ---
 
+## RPS challenger stuck: same hand across rounds
+
+- **Symptom**: After an RPS round ends and intermission runs, the challenger (joiner) still sees their previous round’s choice or “Locked in” instead of a fresh “Choose your hand” for the new round.
+- **Root cause**: (1) Server correctly resets board_state (createInitialBoardState with hostChoice/challengerChoice null) when tick clears intermission, but the client never receives that update—e.g. sync policy rejects the tick response, or the client doesn’t refetch when intermission ends. (2) Client derives RPS state only from match.boardState; if the client keeps an older match (e.g. from a stale refetch with older updated_at), board_state stays old.
+- **Fix**: (1) Ensure tick returns the updated room with refreshed board_state and updated_at set to now so sync policy accepts it (incoming.updated_at >= current.updated_at). (2) On the match page, when roundIntermissionUntil transitions from set to cleared (intermission just ended), call refreshRoom() so both host and challenger get the new round’s board. (3) Do not derive “my choice” from local state that outlives the round; always derive from match.boardState (hostChoice/challengerChoice). (4) For RPS, move pipeline must not write turn fields on in-round updates (driver.hasTurnTimer false) so DB and room shape stay consistent.
+- **Prevention**: Sync policy: accept tick only if incoming.updated_at >= current.updated_at. Match page: effect that refetches when game is RPS, status is Live, and roundIntermissionUntil goes from non-null to null. Driver: reject “Already locked in” if the same side submits again in the same round so server state stays consistent.
+
+---
+
 ## DB NOT NULL constraint (move_turn_seconds)
 
 - **Symptom**: Tick or start route returns 500; Supabase error about null value in column move_turn_seconds (or similar turn column).

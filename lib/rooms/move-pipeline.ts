@@ -105,18 +105,17 @@ export function resolveMoveToDbUpdate(
   driver: GameDriver
 ): MoveDbUpdate {
   if (!outcome.roundEnded) {
-    const moveSeconds = driver.getMoveSeconds()
-    const turnExpiresAt =
-      outcome.nextTurnIdentityId != null && moveSeconds > 0
-        ? new Date(nowMs + moveSeconds * 1000).toISOString()
-        : null
     const payload: Record<string, unknown> = {
       board_state: outcome.newBoardState,
-      move_turn_identity_id: outcome.nextTurnIdentityId,
-      move_turn_started_at: outcome.nextTurnIdentityId != null ? nowIso : null,
-      move_turn_seconds: outcome.nextTurnIdentityId != null ? moveSeconds : null,
-      turn_expires_at: turnExpiresAt,
       updated_at: nowIso,
+    }
+    if (driver.hasTurnTimer && outcome.nextTurnIdentityId != null) {
+      const moveSeconds = driver.getMoveSeconds()
+      payload.move_turn_identity_id = outcome.nextTurnIdentityId
+      payload.move_turn_started_at = nowIso
+      payload.move_turn_seconds = moveSeconds
+      payload.turn_expires_at =
+        moveSeconds > 0 ? new Date(nowMs + moveSeconds * 1000).toISOString() : null
     }
     return { updateType: "in_round", payload, logEvent: "move_applied" }
   }

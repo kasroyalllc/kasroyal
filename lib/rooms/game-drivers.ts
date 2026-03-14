@@ -184,13 +184,19 @@ function rpsDriver(): GameDriver {
       if (!boardState || boardState.mode !== "rps-live") {
         return { error: "Invalid board state" }
       }
+      const isHost = payload.side === "host"
+      if (isHost && boardState.hostChoice != null) {
+        return { error: "Already locked in" }
+      }
+      if (!isHost && boardState.challengerChoice != null) {
+        return { error: "Already locked in" }
+      }
       const rawChoice = payload.choice ?? payload.move
       const choice = (typeof rawChoice === "string" ? rawChoice.toLowerCase() : "") as RpsChoice
       const validChoices: RpsChoice[] = ["rock", "paper", "scissors"]
       if (!choice || !validChoices.includes(choice)) {
         return { error: "Invalid choice" }
       }
-      const isHost = payload.side === "host"
       const hostChoice = isHost ? choice : (boardState.hostChoice ?? null)
       const challengerChoice = isHost ? (boardState.challengerChoice ?? null) : choice
       if (hostChoice === null || challengerChoice === null) {
@@ -200,6 +206,7 @@ function rpsDriver(): GameDriver {
           challengerChoice: isHost ? boardState.challengerChoice : choice,
           revealed: false,
           winner: null,
+          roundExpiresAt: boardState.roundExpiresAt ?? undefined,
         }
         return {
           newBoardState,
@@ -219,6 +226,7 @@ function rpsDriver(): GameDriver {
         challengerChoice,
         revealed: true,
         winner: roundWinner,
+        roundExpiresAt: boardState.roundExpiresAt ?? undefined,
       }
       return {
         newBoardState,
@@ -237,6 +245,57 @@ const DRIVERS: Record<CanonicalGameKey, GameDriver> = {
   "Tic-Tac-Toe": tttDriver(),
   "Connect 4": connect4Driver(),
   "Rock Paper Scissors": rpsDriver(),
+}
+
+/**
+ * Resolve RPS round when round timer has expired (tick only).
+ * Returns a RoundOutcome for: one chose → that side wins; neither chose → draw.
+ * Returns null if not RPS, not expired, or both already chose (move should have resolved).
+ */
+export function resolveRpsRoundTimeout(
+  room: Room,
+  nowMs: number
+): RoundOutcome | null {
+  if (room.game !== "Rock Paper Scissors") return null
+  const boardState = room.boardState as RpsBoardState | undefined
+  if (!boardState || boardState.mode !== "rps-live") return null
+  const expiresAt = boardState.roundExpiresAt ?? 0
+  if (expiresAt <= 0 || nowMs < expiresAt) return null
+  if (boardState.revealed) return null
+  const hostChoice = boardState.hostChoice ?? null
+  const challengerChoice = boardState.challengerChoice ?? null
+  if (hostChoice !== null && challengerChoice !== null) return null
+
+  let roundWinner: "host" | "challenger" | null = null
+  let isDraw = false
+  let winReason: string | undefined
+  if (hostChoice !== null && challengerChoice === null) {
+    roundWinner = "host"
+    winReason = "round timeout (opponent no choice)"
+  } else if (hostChoice === null && challengerChoice !== null) {
+    roundWinner = "challenger"
+    winReason = "round timeout (opponent no choice)"
+  } else {
+    isDraw = true
+    winReason = "round timeout (no choices)"
+  }
+  const newBoardState: RpsBoardState = {
+    mode: "rps-live",
+    hostChoice: hostChoice ?? null,
+    challengerChoice: challengerChoice ?? null,
+    revealed: true,
+    winner: roundWinner ?? "draw",
+    roundExpiresAt: boardState.roundExpiresAt ?? undefined,
+  }
+  return {
+    newBoardState,
+    roundWinner,
+    isDraw,
+    isBoardFull: true,
+    roundEnded: true,
+    nextTurnIdentityId: null,
+    winReason,
+  }
 }
 
 /**

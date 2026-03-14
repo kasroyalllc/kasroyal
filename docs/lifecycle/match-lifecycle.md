@@ -86,10 +86,11 @@ See also: [../MATCH_LIFECYCLE.md](../MATCH_LIFECYCLE.md) (flat reference), [../a
 
 ### Simultaneous games (Rock Paper Scissors)
 
-- **hasTurnTimer** false. No move_turn_identity_id; both players can submit.
-- Driver accepts payload with side and choice; when both hostChoice and challengerChoice are set, resolves winner and returns roundEnded true.
-- Ready→Live payload must **omit** move_turn_identity_id, move_turn_started_at, move_turn_seconds, turn_expires_at (DB move_turn_seconds can be NOT NULL).
-- Between rounds, board_state is reset to hostChoice: null, challengerChoice: null so both can pick again. Client must receive the updated room (sync policy and intermission-end refresh ensure this).
+- **hasTurnTimer** false. No move_turn_identity_id; both players can choose as soon as the round starts. First click locks that player’s hand (server rejects “Already locked in” if that side already chose this round).
+- Driver accepts payload with side and choice; when both hostChoice and challengerChoice are set, resolves immediately and returns roundEnded true.
+- **15-second round timer**: board_state includes **roundExpiresAt** (ms), set at round start (Ready→Live and intermission→next round). When **tick** runs and now >= roundExpiresAt, it resolves the round: one chose → that side wins; neither chose → draw. Same intermission/series flow as a normal move.
+- Ready→Live and intermission→next round payloads **omit** turn fields and set board_state with hostChoice/challengerChoice null and roundExpiresAt = now + 15s.
+- Between rounds, board_state is reset so both can pick again. Client must receive the updated room (sync policy and intermission-end refetch ensure this).
 
 ---
 
