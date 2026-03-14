@@ -30,16 +30,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const isParticipant =
-      room.hostIdentityId === senderIdentityId ||
-      room.challengerIdentityId === senderIdentityId
-    if (!isParticipant) {
-      return NextResponse.json(
-        { ok: false, error: "Only participants can send chat" },
-        { status: 403 }
-      )
-    }
-
+    // Room chat is shared by everyone in the match room: host, challenger, and spectators.
     const msg = await sendRoomMessage(supabase, {
       match_id: matchId,
       sender_identity_id: senderIdentityId,

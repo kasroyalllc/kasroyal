@@ -635,6 +635,8 @@ export default function ArenaMatchPage() {
     serverMs: 0,
     receivedAtMs: 0,
   })
+  /** Ticks every second during pre-game countdown so displayed seconds update smoothly. */
+  const [countdownTick, setCountdownTick] = useState(0)
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
@@ -718,9 +720,13 @@ export default function ArenaMatchPage() {
     return () => window.clearInterval(timer)
   }, [])
 
-  // Sync to server time as soon as we have a Live match so the turn timer never effectively ends early (clock skew). Don't wait for first tick.
+  // Sync to server time for both pre-game countdown and Live turn timer so displayed timers match server transitions (no early end from clock skew).
   useEffect(() => {
-    if (!match || match.status !== "Live" || match.turnExpiresAt == null) return
+    if (!match) return
+    const needSync =
+      (match.status === "Ready to Start") ||
+      (match.status === "Live" && match.turnExpiresAt != null)
+    if (!needSync) return
     if (serverTimeSync.receivedAtMs > 0) return
     let cancelled = false
     fetch("/api/rooms/servertime")
@@ -782,11 +788,17 @@ export default function ArenaMatchPage() {
   useEffect(() => {
     if (!match || match.status !== "Ready to Start") return
 
-    const interval = window.setInterval(() => {
+    const lineInterval = window.setInterval(() => {
       setCountdownLineIndex((value) => value + 1)
     }, 1200)
+    const tickInterval = window.setInterval(() => {
+      setCountdownTick((t) => t + 1)
+    }, 1000)
 
-    return () => window.clearInterval(interval)
+    return () => {
+      window.clearInterval(lineInterval)
+      window.clearInterval(tickInterval)
+    }
   }, [match])
 
   const connect4State = useMemo(() => getConnect4State(match), [match])
@@ -988,7 +1000,20 @@ export default function ArenaMatchPage() {
   const totalPlayerPot = match.playerPot
   const totalSpectatorPool = spectatorPool.host + spectatorPool.challenger
   const netSpectatorPool = totalSpectatorPool * (1 - HOUSE_RAKE)
-  const bettingSecondsLeft = getArenaBettingSecondsLeft(match)
+  // Pre-game countdown: use server-synced "now" so display matches server transition (countdown runs to 0 for both players).
+  const countdownEndMs =
+    match.bettingClosesAt ??
+    (match.countdownStartedAt != null
+      ? match.countdownStartedAt + (match.bettingWindowSeconds ?? 30) * 1000
+      : 0)
+  const nowForCountdownMs =
+    serverTimeSync.receivedAtMs > 0
+      ? serverTimeSync.serverMs + (Date.now() - serverTimeSync.receivedAtMs)
+      : Date.now()
+  const bettingSecondsLeft =
+    match.status === "Ready to Start" && countdownEndMs > 0
+      ? Math.max(0, Math.ceil((countdownEndMs - nowForCountdownMs) / 1000))
+      : getArenaBettingSecondsLeft(match)
   const marketOpen = isArenaBettable(match)
 
   const currentTurnPlayerName = isFinished

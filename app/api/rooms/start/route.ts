@@ -49,8 +49,14 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const nowMs = now.getTime()
-    const countdownEndMs =
-      (room.countdownStartedAt ?? 0) + room.countdownSeconds * 1000
+    const countdownStartedAt = room.countdownStartedAt ?? null
+    if (!countdownStartedAt) {
+      return NextResponse.json(
+        { ok: true, room, countdownNotExpired: true },
+        { headers: { "Cache-Control": "no-store" } }
+      )
+    }
+    const countdownEndMs = countdownStartedAt + room.countdownSeconds * 1000
     if (nowMs < countdownEndMs) {
       return NextResponse.json(
         { ok: true, room, countdownNotExpired: true },

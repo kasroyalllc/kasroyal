@@ -45,9 +45,16 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString()
 
     if (room.status === "Ready to Start") {
-      const countdownEndMs =
-        (room.countdownStartedAt ?? 0) + room.countdownSeconds * 1000
-      if (countdownEndMs > nowMs || !room.challengerIdentityId) {
+      // Only transition when the real countdown deadline has been reached. No buffer, no early transition.
+      const countdownStartedAt = room.countdownStartedAt ?? null
+      if (!countdownStartedAt || !room.challengerIdentityId) {
+        return NextResponse.json(
+          { ok: true, room, transition: null, server_time_ms: nowMs },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      const countdownEndMs = countdownStartedAt + room.countdownSeconds * 1000
+      if (nowMs < countdownEndMs) {
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
