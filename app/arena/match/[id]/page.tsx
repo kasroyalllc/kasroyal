@@ -684,6 +684,8 @@ export default function ArenaMatchPage() {
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
   const refreshSpectateChatRef = useRef<(() => Promise<void>) | null>(null)
   const startedTransitionRef = useRef(false)
+  const matchStatusRef = useRef<string>("")
+  const countdownEndMsRef = useRef<number>(0)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
@@ -856,23 +858,18 @@ export default function ArenaMatchPage() {
     return () => clearInterval(t)
   }, [matchId, match?.id, match?.status, match?.roundIntermissionUntil])
 
-  // When countdown has reached 0, call start and refetch every 2s until room goes Live. Refetch picks up transition from tick or other client.
+  // When in Ready to Start, every 2s check if countdown has ended (via ref) and call start + refetch until Live. Refs avoid tearing down interval on match refetch.
   useEffect(() => {
-    if (!matchId || !match) return
-    if (match.status === "Live" || match.status === "Finished") {
+    if (!matchId) return
+    if (match?.status === "Live" || match?.status === "Finished") {
       startedTransitionRef.current = false
       return
     }
-    if (match.status !== "Ready to Start") return
-    const countdownEndMs =
-      match.bettingClosesAt ??
-      (match.countdownStartedAt != null
-        ? (match.countdownStartedAt as number) + (match.bettingWindowSeconds ?? 30) * 1000
-        : 0)
-    if (countdownEndMs <= 0) return
-    if (Date.now() < countdownEndMs) return
+    if (match?.status !== "Ready to Start") return
 
-    const runStart = () => {
+    const run = () => {
+      if (countdownEndMsRef.current <= 0) return
+      if (Date.now() < countdownEndMsRef.current) return
       fetch("/api/rooms/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -892,17 +889,13 @@ export default function ArenaMatchPage() {
           }
         })
         .catch(() => {})
-    }
-
-    const run = () => {
-      runStart()
       refreshRoom()
     }
 
     run()
     const interval = window.setInterval(run, 2000)
     return () => window.clearInterval(interval)
-  }, [matchId, match?.status, match?.bettingClosesAt, match?.countdownStartedAt, match?.bettingWindowSeconds, refreshRoom])
+  }, [matchId, match?.status, refreshRoom])
 
   useEffect(() => {
     if (!match) return
@@ -925,23 +918,37 @@ export default function ArenaMatchPage() {
     previousMatchRef.current = match
   }, [match])
 
-  // Rotate countdown line every 5s. Depend only on status so refetches (new match ref) don't clear the interval — fixes challenger seeing one stuck line.
-  useEffect(() => {
-    if (!matchId || !match) return
-    if (match.status !== "Ready to Start") return
+  matchStatusRef.current = match?.status ?? ""
+  if (match?.status === "Ready to Start" && match) {
+    const endMs =
+      match.bettingClosesAt ??
+      (match.countdownStartedAt != null
+        ? (match.countdownStartedAt as number) + (match.bettingWindowSeconds ?? 30) * 1000
+        : 0)
+    countdownEndMsRef.current = endMs
+  }
 
+  // Single interval for countdown line rotation: never torn down by match refetch, so challenger sees rotating lines like host.
+  useEffect(() => {
+    if (!matchId) return
     const lineInterval = window.setInterval(() => {
-      setCountdownLineIndex((value) => value + 1)
+      if (matchStatusRef.current === "Ready to Start") {
+        setCountdownLineIndex((value) => value + 1)
+      }
     }, 5000)
     const tickInterval = window.setInterval(() => {
-      setCountdownTick((t) => t + 1)
+      if (matchStatusRef.current === "Ready to Start") {
+        setCountdownTick((t) => t + 1)
+      }
     }, 1000)
-
     return () => {
       window.clearInterval(lineInterval)
       window.clearInterval(tickInterval)
     }
-  }, [matchId, match?.status])
+  }, [matchId])
+
+  // When we leave Ready to Start, stop advancing (ref is updated above every render).
+  // No extra effect needed — interval just no-ops when status isn't Ready.
 
   const connect4State = useMemo(() => getConnect4State(match), [match])
   const tttState = useMemo(() => getTttState(match), [match])
