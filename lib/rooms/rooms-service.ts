@@ -1,7 +1,7 @@
 /**
  * Backend-first room service. Uses Supabase as source of truth.
  * Supports both legacy status strings and canonical DB status (waiting, ready, countdown, live, finished, forfeited, canceled).
- * Series: supports round_number, host_score, challenger_score with fallback to current_round, host_round_wins, challenger_round_wins.
+ * Series: canonical DB columns are round_number, host_score, challenger_score, best_of. Legacy names (current_round, host_round_wins, challenger_round_wins) are read-only fallbacks in mapDbRowToRoom.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -148,7 +148,7 @@ export async function releaseActiveMatchByMatch(
 }
 
 /**
- * Create room. Writes canonical DB status (waiting). Series columns: round_number, host_score, challenger_score (with legacy fallbacks).
+ * Create room. Writes canonical DB status (waiting). Series: best_of, round_number, host_score, challenger_score only.
  */
 export async function createRoom(
   supabase: SupabaseClient,
@@ -173,9 +173,6 @@ export async function createRoom(
     mode: params.mode,
     host_display_name: params.host_display_name,
     best_of: bestOf,
-    host_round_wins: 0,
-    challenger_round_wins: 0,
-    current_round: 1,
     round_number: 1,
     host_score: 0,
     challenger_score: 0,

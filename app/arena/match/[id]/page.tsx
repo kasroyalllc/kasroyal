@@ -600,10 +600,10 @@ function makeLiveFeed(match: ArenaMatch | null) {
   }
 
   return [
-    `${match.host.name} entered the ${match.game} room.`,
+    `${match.host?.name ?? "Host"} entered the ${match.game ?? "Match"} room.`,
     `${match.challenger ? match.challenger.name : "The challenger"} is drawing spectator attention.`,
-    `Live move update: ${match.moveText}.`,
-    `${match.spectators} spectators are currently tracking this arena.`,
+    `Live move update: ${match.moveText ?? "—"}.`,
+    `${match.spectators ?? 0} spectators are currently tracking this arena.`,
   ]
 }
 
@@ -662,11 +662,16 @@ export default function ArenaMatchPage() {
 
   const refreshRoom = useCallback(async () => {
     if (!matchId || typeof window === "undefined") return
-    const supabase = createClient()
-    const room = await getRoomById(supabase, matchId)
-    if (room) {
-      setMatch(roomToArenaMatch(room))
-    } else {
+    try {
+      const supabase = createClient()
+      const room = await getRoomById(supabase, matchId)
+      if (room) {
+        setMatch(roomToArenaMatch(room))
+      } else {
+        setMatch(null)
+      }
+    } catch (e) {
+      console.warn("[ArenaMatchPage] refreshRoom failed:", e)
       setMatch(null)
     }
   }, [matchId])
@@ -924,6 +929,12 @@ export default function ArenaMatchPage() {
     isChatNearBottomRef.current = scrollTop + clientHeight >= scrollHeight - threshold
   }, [])
 
+  /** Must be called unconditionally (before any early return). getMatchRole(null, id) returns spectator. */
+  const roleInfo = useMemo(
+    () => getMatchRole(match, getCurrentIdentity().id),
+    [match, getCurrentIdentity().id]
+  )
+
   // Ready -> Live transition is handled by the DB-authoritative /api/rooms/tick endpoint.
 
   if (!matchId) {
@@ -1005,10 +1016,6 @@ export default function ArenaMatchPage() {
   const isPaused = match.status === "Live" && pauseState.isPaused
   const isQuickMatch = match.matchMode === "quick"
   const currentUserProfile = getCurrentUser()
-  const roleInfo = useMemo(
-    () => getMatchRole(match, getCurrentIdentity().id),
-    [match, getCurrentIdentity().id]
-  )
   const { isHost: isHostUser, isChallenger: isChallengerUser, isPlayer, isSpectatorOnly } = roleInfo
   const spectatorBetLockedForPlayers = isPlayer
 
@@ -1019,12 +1026,12 @@ export default function ArenaMatchPage() {
 
   const pausedByName =
     pauseState.pausedBy === "host"
-      ? match.host.name
+      ? match.host?.name ?? "Host"
       : pauseState.pausedBy === "challenger"
         ? challenger?.name ?? "Challenger"
         : "A player"
 
-  const totalPlayerPot = match.playerPot
+  const totalPlayerPot = Number(match.playerPot ?? 0)
   const totalSpectatorPool = spectatorPool.host + spectatorPool.challenger
   const netSpectatorPool = totalSpectatorPool * (1 - HOUSE_RAKE)
   // Pre-game countdown: use server-synced "now" so display matches server transition (countdown runs to 0 for both players).
@@ -1047,11 +1054,11 @@ export default function ArenaMatchPage() {
     ? "—"
     : match.game === "Connect 4"
       ? connect4Turn === "host"
-        ? match.host.name
+        ? match.host?.name ?? "Host"
         : challenger?.name ?? "Challenger"
       : match.game === "Tic-Tac-Toe"
         ? tttTurn === "X"
-          ? match.host.name
+          ? match.host?.name ?? "Host"
           : challenger?.name ?? "Challenger"
         : "—"
 
@@ -1144,18 +1151,20 @@ export default function ArenaMatchPage() {
     !!currentUserSide && !!challenger && match.status === "Live" && isPaused
 
   const playerRoleLabel = isHostUser
-    ? `Player • ${match.hostSideLabel}`
+    ? `Player • ${match.hostSideLabel ?? "Host"}`
     : isChallengerUser
-      ? `Player • ${match.challengerSideLabel}`
+      ? `Player • ${match.challengerSideLabel ?? "Challenger"}`
       : roleInfo.playerRoleLabel
 
-  const hostProbability = challenger ? getWinProbability(match.host.rating, challenger.rating) : 0.5
+  const hostRating = Number(match.host?.rating ?? 1000)
+  const challengerRating = Number(challenger?.rating ?? 1000)
+  const hostProbability = challenger ? getWinProbability(hostRating, challengerRating) : 0.5
   const challengerProbability = challenger
-    ? getWinProbability(challenger.rating, match.host.rating)
+    ? getWinProbability(challengerRating, hostRating)
     : 0.5
 
   const favoriteData = challenger
-    ? getFavoriteData(match.host.rating, challenger.rating)
+    ? getFavoriteData(hostRating, challengerRating)
     : { leftLabel: "Waiting", rightLabel: "Waiting" }
 
   const hostCurrentMultiplier = getMultiplier(
@@ -1202,7 +1211,7 @@ export default function ArenaMatchPage() {
   const selectedProjection = selectedSide === "host" ? hostProjection : challengerProjection
   const selectedPlayerName =
     selectedSide === "host"
-      ? match.host.name
+      ? match.host?.name ?? "Host"
       : selectedSide === "challenger"
         ? challenger?.name ?? "Opponent"
         : "None"
@@ -1243,7 +1252,7 @@ export default function ArenaMatchPage() {
 
     if (myExistingSide && myExistingSide !== side) {
       const lockedSideName =
-        myExistingSide === "host" ? match.host.name : challenger?.name ?? "Opponent"
+        myExistingSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Opponent"
       setMessage(
         `You already hold a position on ${lockedSideName}. KasRoyal v1 allows one side per match.`
       )
@@ -1252,7 +1261,7 @@ export default function ArenaMatchPage() {
 
     setSelectedSide(side)
 
-    const sideName = side === "host" ? match.host.name : challenger?.name ?? "Opponent"
+    const sideName = side === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Opponent"
     const oppositePool = side === "host" ? spectatorPool.challenger : spectatorPool.host
 
     if (oppositePool <= 0) {
@@ -1291,7 +1300,7 @@ export default function ArenaMatchPage() {
     }
 
     if (myExistingSide && myExistingSide !== selectedSide) {
-      const lockedSideName = myExistingSide === "host" ? match.host.name : challenger.name
+      const lockedSideName = myExistingSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Challenger"
       setMessage(
         `You already hold a position on ${lockedSideName}. You can add to that side before lock, but you cannot bet both sides in the same match.`
       )
@@ -1315,7 +1324,7 @@ export default function ArenaMatchPage() {
       setPoolFlash(selectedSide)
       window.setTimeout(() => setPoolFlash(null), 700)
 
-      const selectedPlayer = selectedSide === "host" ? match.host.name : challenger.name
+      const selectedPlayer = selectedSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Challenger"
       const projection = selectedSide === "host" ? hostProjection : challengerProjection
       const oppositePool =
         selectedSide === "host" ? spectatorPool.challenger : spectatorPool.host
@@ -1359,7 +1368,7 @@ export default function ArenaMatchPage() {
       const updated = pauseArenaMatch(match.id, currentUserSide)
       if (updated) {
         setMatch(updated)
-        const actor = currentUserSide === "host" ? match.host.name : challenger?.name ?? "Challenger"
+        const actor = currentUserSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Challenger"
         setFeed((prev) => [`⏸ ${actor} used a pause`, ...prev].slice(0, 12))
         setMessage(
           `Pause started. ${actor} used one of their ${MAX_PAUSES_PER_SIDE} pauses. Match will auto-resume in ${PAUSE_DURATION_SECONDS}s or can be resumed early.`
@@ -1381,7 +1390,7 @@ export default function ArenaMatchPage() {
         setMatch(updated)
         const actor =
           currentUserSide === "host"
-            ? match.host.name
+            ? match.host?.name ?? "Host"
             : currentUserSide === "challenger"
               ? challenger?.name ?? "Challenger"
               : "System"
@@ -1434,7 +1443,7 @@ export default function ArenaMatchPage() {
       if (data.ok && data.room) {
         const updated = roomToArenaMatch(data.room)
         setMatch(updated)
-        const winnerName = currentUserSide === "host" ? challenger.name : match.host.name
+        const winnerName = currentUserSide === "host" ? challenger?.name ?? "Challenger" : match.host?.name ?? "Host"
         setFeed((prev) => [`🏳️ You forfeited. ${winnerName} wins.`, ...prev].slice(0, 12))
         setMessage(`You forfeited. ${winnerName} wins the match.`)
       } else {
@@ -1485,7 +1494,7 @@ export default function ArenaMatchPage() {
         if (typeof data.server_time_ms === "number") {
           setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
         }
-        const playerLabel = connect4Turn === "host" ? match.host.name : challenger?.name ?? "Challenger"
+        const playerLabel = connect4Turn === "host" ? (match.host?.name ?? "Host") : (challenger?.name ?? "Challenger")
         setFeed((prev) => [`🎮 ${playerLabel} dropped in column ${col + 1}`, ...prev].slice(0, 12))
       } else {
         setMessage(data.error ?? "Move failed.")
@@ -1535,7 +1544,7 @@ export default function ArenaMatchPage() {
         if (typeof data.server_time_ms === "number") {
           setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
         }
-        const playerLabel = tttTurn === "X" ? match.host.name : challenger?.name ?? "Challenger"
+        const playerLabel = tttTurn === "X" ? (match.host?.name ?? "Host") : (challenger?.name ?? "Challenger")
         setFeed((prev) => [`🎮 ${playerLabel} marked ${index + 1}`, ...prev].slice(0, 12))
       } else {
         setMessage(data.error ?? "Move failed.")
@@ -1630,11 +1639,11 @@ export default function ArenaMatchPage() {
         ? "Paused"
         : match.game === "Connect 4"
           ? connect4Turn === "host"
-            ? match.host.name
+            ? match.host?.name ?? "Host"
             : challenger?.name ?? "Challenger"
           : match.game === "Tic-Tac-Toe"
             ? tttTurn === "X"
-              ? match.host.name
+              ? match.host?.name ?? "Host"
               : challenger?.name ?? "Challenger"
             : match.game === "Rock Paper Scissors"
               ? rpsState.revealed
@@ -1774,7 +1783,7 @@ export default function ArenaMatchPage() {
             <h2 className="text-2xl font-black text-amber-200">Match Over</h2>
             {match.bestOf > 1 && (match.roundScore?.host != null || match.roundScore?.challenger != null) ? (
               <p className="mt-2 text-base font-bold text-amber-100">
-                Series: {match.host.name} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
+                Series: {match.host?.name ?? "Host"} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
               </p>
             ) : null}
             {(() => {
@@ -1891,7 +1900,7 @@ export default function ArenaMatchPage() {
           isHostUser={isHostUser}
           isChallengerUser={isChallengerUser}
           bettingSecondsLeft={bettingSecondsLeft}
-          hostName={match.host.name}
+          hostName={match.host?.name ?? "Host"}
           challengerName={challenger?.name ?? "Opponent"}
           isPaused={isPaused}
           pauseSecondsLeft={pauseSecondsLeft}
@@ -1904,7 +1913,7 @@ export default function ArenaMatchPage() {
             <div className={`rounded-[28px] border p-5 shadow-2xl ${isHostUser ? "border-emerald-400/25 bg-emerald-400/5" : "border-white/8 bg-white/[0.04]"}`}>
               <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Player One (Host)</p>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-3xl font-black">{match.host.name}</span>
+                <span className="text-3xl font-black">{match.host?.name ?? "Host"}</span>
                 {isHostUser && (
                   <span className="rounded-full border border-emerald-400/30 bg-emerald-400/20 px-2.5 py-0.5 text-xs font-bold text-emerald-200">You</span>
                 )}
@@ -1993,7 +2002,7 @@ export default function ArenaMatchPage() {
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <StatCard
-                    label={`${match.host.name}`}
+                    label={`${match.host?.name ?? "Host"}`}
                     value={`${match.timeoutStrikesHost ?? 0}/${TIMEOUT_STRIKES_TO_LOSE}`}
                     accent={(match.timeoutStrikesHost ?? 0) >= 2 ? "text-red-300" : "text-amber-300"}
                   />
@@ -2057,13 +2066,13 @@ export default function ArenaMatchPage() {
                 <div>
                   <p className="text-sm uppercase tracking-[0.2em] text-emerald-300/80">Live Arena Board</p>
                   <h2 className="mt-2 text-3xl font-black">
-                    {match.host.name}
+                    {match.host?.name ?? "Host"}
                     {challenger ? ` vs ${challenger.name}` : " vs Waiting Opponent"}
                   </h2>
                   {match.bestOf > 1 && (match.status === "Live" || match.status === "Finished") && (
                     <p className="mt-2 flex flex-wrap items-center gap-2 text-base font-bold text-white/90">
                       <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-amber-200">
-                        {match.host.name} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
+                        {match.host?.name ?? "Host"} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
                       </span>
                       <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/80">
                         BO{match.bestOf}
@@ -2151,7 +2160,7 @@ export default function ArenaMatchPage() {
                   {isCountdown && challenger ? (
                     <CountdownOverlay
                       seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
+                      hostName={match.host?.name ?? "Host"}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
                       isQuickMatch={isQuickMatch}
@@ -2244,7 +2253,7 @@ export default function ArenaMatchPage() {
                   {isCountdown && challenger ? (
                     <CountdownOverlay
                       seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
+                      hostName={match.host?.name ?? "Host"}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
                       isQuickMatch={isQuickMatch}
@@ -2317,7 +2326,7 @@ export default function ArenaMatchPage() {
                   {isCountdown && challenger ? (
                     <CountdownOverlay
                       seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
+                      hostName={match.host?.name ?? "Host"}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
                       isQuickMatch={isQuickMatch}
@@ -2339,7 +2348,7 @@ export default function ArenaMatchPage() {
                         <p className="text-center text-lg font-bold uppercase tracking-wider text-amber-200/90">Reveal</p>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="rounded-2xl border border-amber-300/15 bg-black/30 px-4 py-3 text-center">
-                            <p className="text-xs font-bold uppercase text-white/60">{match.host.name}</p>
+                            <p className="text-xs font-bold uppercase text-white/60">{match.host?.name ?? "Host"}</p>
                             <p className="mt-1 text-2xl font-black capitalize text-amber-200">
                               {rpsState.hostChoice ?? "—"}
                             </p>
@@ -2355,7 +2364,7 @@ export default function ArenaMatchPage() {
                           {rpsState.winner === "draw" ? (
                             <p className="text-xl font-bold text-white/90">Draw</p>
                           ) : rpsState.winner === "host" ? (
-                            <p className="text-xl font-bold text-amber-300">{match.host.name} wins</p>
+                            <p className="text-xl font-bold text-amber-300">{match.host?.name ?? "Host"} wins</p>
                           ) : rpsState.winner === "challenger" ? (
                             <p className="text-xl font-bold text-emerald-300">{challenger?.name ?? "Challenger"} wins</p>
                           ) : (
@@ -2427,7 +2436,7 @@ export default function ArenaMatchPage() {
                   {isCountdown && challenger ? (
                     <CountdownOverlay
                       seconds={bettingSecondsLeft}
-                      hostName={match.host.name}
+                      hostName={match.host?.name ?? "Host"}
                       challengerName={challenger.name}
                       hypeLine={countdownLine}
                       isQuickMatch={isQuickMatch}
@@ -2649,7 +2658,7 @@ export default function ArenaMatchPage() {
                     {spectatorBetLockedForPlayers
                       ? "Player In Match"
                       : myExistingSide === "host"
-                        ? match.host.name
+                        ? match.host?.name ?? "Host"
                         : myExistingSide === "challenger"
                           ? challenger?.name ?? "Opponent"
                           : "No Position Yet"}
@@ -2686,7 +2695,7 @@ export default function ArenaMatchPage() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-xs font-bold uppercase tracking-[0.16em] text-white/45">Back Host</div>
-                      <div className="mt-2 text-3xl font-black">{match.host.name}</div>
+                      <div className="mt-2 text-3xl font-black">{match.host?.name ?? "Host"}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <RankBadge rank={match.host.rank} />
                       </div>
@@ -2710,7 +2719,7 @@ export default function ArenaMatchPage() {
                           : "border border-white/10 bg-white/5 text-white"
                       } disabled:cursor-not-allowed disabled:opacity-50`}
                     >
-                      Back {match.host.name}
+                      Back {match.host?.name ?? "Host"}
                     </button>
                   </div>
 
@@ -2852,7 +2861,7 @@ export default function ArenaMatchPage() {
                     {spectatorBetLockedForPlayers
                       ? "Players Cannot Bet"
                       : selectedSide === "host"
-                        ? match.host.name
+                        ? match.host?.name ?? "Host"
                         : selectedSide === "challenger"
                           ? challenger
                             ? challenger.name
@@ -2908,7 +2917,7 @@ export default function ArenaMatchPage() {
 
                   <div className="mt-3 space-y-2 text-sm text-white/75">
                     <div className="flex justify-between gap-3">
-                      <span>{match.host.name}</span>
+                      <span>{match.host?.name ?? "Host"}</span>
                       <span className="font-bold text-amber-300">{myHostExposure.toFixed(2)} KAS</span>
                     </div>
 
@@ -2982,7 +2991,7 @@ export default function ArenaMatchPage() {
                     ) : (
                       recentTickets.map((ticket) => {
                         const sideName =
-                          ticket.side === "host" ? match.host.name : challenger ? challenger.name : "Opponent"
+                          ticket.side === "host" ? match.host?.name ?? "Host" : challenger ? challenger.name : "Opponent"
 
                         return (
                           <div key={ticket.id} className="rounded-xl bg-white/[0.03] px-3 py-3">

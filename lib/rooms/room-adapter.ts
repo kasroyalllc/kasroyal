@@ -26,10 +26,10 @@ function enrichBoardStateWithMoveTimer(room: Room): unknown {
   return withDeadline
 }
 
-/** Convert a Room from Supabase to ArenaMatch for the arena UI (presentation only). */
+/** Convert a Room from Supabase to ArenaMatch for the arena UI (presentation only). Defensive: all fields have safe defaults. */
 export function roomToArenaMatch(room: Room): ArenaMatch {
-  const host: PlayerProfile = defaultPlayer(room.hostDisplayName)
-  const challenger: PlayerProfile | null = room.challengerDisplayName
+  const host: PlayerProfile = defaultPlayer(room.hostDisplayName ?? "Host")
+  const challenger: PlayerProfile | null = room.challengerDisplayName != null && String(room.challengerDisplayName).trim() !== ""
     ? defaultPlayer(room.challengerDisplayName)
     : null
 
@@ -52,6 +52,9 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
   const boardState = enrichBoardStateWithMoveTimer(room)
 
   const bestOf = room.bestOf === 3 || room.bestOf === 5 ? room.bestOf : 1
+  const hostRoundWins = Math.max(0, Number(room.hostRoundWins ?? 0))
+  const challengerRoundWins = Math.max(0, Number(room.challengerRoundWins ?? 0))
+  const currentRound = Math.max(1, Number(room.currentRound ?? 1))
   return {
     id: room.id,
     game: room.game,
@@ -61,17 +64,17 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     marketVisibility: "watch-only",
     isFeaturedMarket: false,
     bestOf,
-    wager: room.wager,
-    createdAt: room.createdAt,
+    wager: Number(room.wager ?? 0),
+    createdAt: Number(room.createdAt ?? 0),
     countdownStartedAt,
     bettingClosesAt,
     startedAt,
     finishedAt,
     spectators: 0,
-    playerPot: room.wager * (room.challengerIdentityId ? 2 : 1),
+    playerPot: Number(room.wager ?? 0) * (room.challengerIdentityId ? 2 : 1),
     host,
     challenger,
-    hostIdentityId: room.hostIdentityId,
+    hostIdentityId: room.hostIdentityId ?? "",
     challengerIdentityId: room.challengerIdentityId ?? undefined,
     hostSideLabel: "Host",
     challengerSideLabel: "Challenger",
@@ -84,11 +87,11 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
           : room.status === "Finished"
             ? "Finished"
             : "Waiting",
-    roundScore: { host: room.hostRoundWins, challenger: room.challengerRoundWins },
-    currentRound: room.currentRound,
+    roundScore: { host: hostRoundWins, challenger: challengerRoundWins },
+    currentRound,
     spectatorPool: { host: 0, challenger: 0 },
     bettingWindowSeconds: countdownSeconds,
-    result: room.winnerIdentityId
+    result: room.winnerIdentityId != null && String(room.winnerIdentityId).trim() !== ""
       ? room.winnerIdentityId === room.hostIdentityId
         ? ("host" as const)
         : room.winnerIdentityId === room.challengerIdentityId
@@ -99,7 +102,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     turnExpiresAt: room.turnExpiresAt ?? undefined,
     moveHistory: [],
     boardState: boardState ?? room.boardState,
-    timeoutStrikesHost: room.hostTimeoutStrikes,
-    timeoutStrikesChallenger: room.challengerTimeoutStrikes,
+    timeoutStrikesHost: Math.max(0, Number(room.hostTimeoutStrikes ?? 0)),
+    timeoutStrikesChallenger: Math.max(0, Number(room.challengerTimeoutStrikes ?? 0)),
   }
 }

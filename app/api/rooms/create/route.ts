@@ -94,6 +94,14 @@ export async function POST(request: NextRequest) {
       best_of: bestOf,
     })
 
+    if (!room?.id || typeof room.id !== "string" || room.id.trim() === "") {
+      console.error("[api/rooms/create] Room created but missing id:", { roomId: room?.id })
+      return NextResponse.json(
+        { ok: false, error: "Room created but invalid response" },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json(
       { ok: true, room },
       { headers: { "Cache-Control": "no-store" } }

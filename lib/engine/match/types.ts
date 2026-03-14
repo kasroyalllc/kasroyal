@@ -312,7 +312,7 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
     })(),
     hostRoundWins: Math.max(0, Number(row.host_score ?? row.host_round_wins ?? 0)),
     challengerRoundWins: Math.max(0, Number(row.challenger_score ?? row.challenger_round_wins ?? 0)),
-    currentRound: Math.max(1, Number(row.round_number ?? row.current_round ?? 1)),
+    currentRound: Math.max(1, Math.min(Number(row.round_number ?? row.current_round ?? 1), 5)),
     roomHypeIndex: Number(row.room_hype_index ?? 0),
     createdAt,
     updatedAt,

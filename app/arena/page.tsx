@@ -119,9 +119,9 @@ function ResumeMatchBanner({
   const opponent =
     (match.hostIdentityId &&
       match.hostIdentityId.toLowerCase() === getCurrentIdentity().id.toLowerCase()) ||
-    match.host.name === getCurrentUser().name
+    match.host?.name === getCurrentUser().name
       ? match.challenger?.name ?? "Opponent"
-      : match.host.name
+      : match.host?.name ?? "Host"
 
   return (
     <div
@@ -145,15 +145,15 @@ function ResumeMatchBanner({
             </span>
             <StatusPill status={match.status} />
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
-              {match.game}
+              {match.game ?? "Tic-Tac-Toe"}
             </span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
-              BO{match.bestOf}
+              BO{match.bestOf ?? 1}
             </span>
           </div>
 
           <h2 className="mt-4 text-3xl font-black">
-            {match.host.name} vs {match.challenger?.name ?? "Waiting Opponent"}
+            {match.host?.name ?? "Host"} vs {match.challenger?.name ?? "Waiting Opponent"}
           </h2>
 
           <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65">
@@ -272,7 +272,8 @@ function MatchCard({
   activeMatchId: string | null
   isGuest: boolean
 }) {
-  const meta = gameMeta[match.game]
+  const gameKey = match.game ?? "Tic-Tac-Toe"
+  const meta = gameMeta[gameKey]
   const isOpen = match.status === "Waiting for Opponent"
   const isReady = match.status === "Ready to Start"
   const isLive = match.status === "Live"
@@ -280,12 +281,16 @@ function MatchCard({
   const id = getCurrentIdentity().id.toLowerCase()
   const name = getCurrentUser().name
   const isHost =
-    (match.hostIdentityId && match.hostIdentityId.toLowerCase() === id) || match.host.name === name
+    (match.hostIdentityId && match.hostIdentityId.toLowerCase() === id) || match.host?.name === name
   const isChallenger =
     (match.challengerIdentityId && match.challengerIdentityId.toLowerCase() === id) ||
     (!!match.challenger && match.challenger.name === name)
   const isMine = isHost || isChallenger
   const countdownLabel = getPhaseLabel(match)
+  const safeWager = Number(match.wager ?? 0)
+  const safePlayerPot = Number(match.playerPot ?? 0)
+  const safeMoveText = match.moveText ?? "Waiting"
+  const safeStatusText = match.statusText ?? ""
 
   const joinBlockedByWalletLock =
     walletLocked && activeMatchId !== null && activeMatchId !== match.id && isOpen && !isHost
@@ -310,13 +315,13 @@ function MatchCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${meta.glow}`}
+              className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${meta?.glow ?? ""}`}
             >
-              {match.game}
+              {gameKey}
             </span>
-            <StatusPill status={match.status} />
+            <StatusPill status={match.status ?? "Waiting for Opponent"} />
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
-              BO{match.bestOf}
+              BO{match.bestOf ?? 1}
             </span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white/70">
               {formatAge(match.createdAt)}
@@ -358,14 +363,14 @@ function MatchCard({
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Host</div>
-              <div className="mt-2 text-2xl font-black">{match.host.name}</div>
+              <div className="mt-2 text-2xl font-black">{match.host?.name ?? "Host"}</div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <RankBadge rank={match.host.rank} />
+                <RankBadge rank={match.host?.rank ?? "Bronze III"} />
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/75">
-                  {match.host.rating} MMR
+                  {match.host?.rating ?? 0} MMR
                 </span>
               </div>
-              <div className="mt-3 text-sm text-white/55">Side: {match.hostSideLabel}</div>
+              <div className="mt-3 text-sm text-white/55">Side: {match.hostSideLabel ?? "Host"}</div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -374,15 +379,15 @@ function MatchCard({
               </div>
               {match.challenger ? (
                 <>
-                  <div className="mt-2 text-2xl font-black">{match.challenger.name}</div>
+                  <div className="mt-2 text-2xl font-black">{match.challenger.name ?? "Challenger"}</div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <RankBadge rank={match.challenger.rank} />
+                    <RankBadge rank={match.challenger.rank ?? "Bronze III"} />
                     <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/75">
-                      {match.challenger.rating} MMR
+                      {match.challenger.rating ?? 0} MMR
                     </span>
                   </div>
                   <div className="mt-3 text-sm text-white/55">
-                    Side: {match.challengerSideLabel}
+                    Side: {match.challengerSideLabel ?? "Challenger"}
                   </div>
                 </>
               ) : (
@@ -392,18 +397,18 @@ function MatchCard({
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
-            <MetricCard label="Entry" value={`${match.wager} KAS`} accent="text-amber-300" />
+            <MetricCard label="Entry" value={`${safeWager} KAS`} accent="text-amber-300" />
             <MetricCard
               label="Player Pot"
-              value={`${match.playerPot.toFixed(0)} KAS`}
+              value={`${safePlayerPot.toFixed(0)} KAS`}
               accent="text-emerald-300"
             />
             <MetricCard
               label="Spectators"
-              value={`${match.spectators}`}
+              value={`${match.spectators ?? 0}`}
               accent="text-sky-300"
             />
-            <MetricCard label="State" value={match.moveText} helper={match.statusText} />
+            <MetricCard label="State" value={safeMoveText} helper={safeStatusText} />
           </div>
         </div>
 
@@ -440,7 +445,7 @@ function MatchCard({
                     ? "Connect wallet to join"
                     : match.matchMode === "quick"
                       ? "Join (Free)"
-                      : `Join for ${match.wager} KAS`}
+                      : `Join for ${safeWager} KAS`}
               </button>
             )
           ) : (
@@ -733,16 +738,23 @@ export default function ArenaPage() {
             best_of: bestOf,
           }),
         })
-        const data = await res.json()
+        const data = await res.json().catch(() => ({}))
         if (!data.ok) {
           setMessage(data.error ?? "Failed to create quick match.")
+          return
+        }
+        const room = data.room
+        const roomId = room?.id != null && typeof room.id === "string" ? room.id.trim() : ""
+        if (!roomId) {
+          setMessage("Match was created but the response was invalid. Check My Matches or try again.")
+          await refreshRooms()
           return
         }
         await refreshRooms()
         setOwnershipFilter("Mine")
         setGameFilter(selectedGame)
         setMessage(`Quick Match created: ${selectedGame}. Share the room or wait for someone to join.`)
-        router.push(`/arena/match/${data.room.id}`)
+        router.push(`/arena/match/${roomId}`)
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Failed to create quick match.")
       }
@@ -785,9 +797,16 @@ export default function ArenaPage() {
           best_of: bestOf,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!data.ok) {
         setMessage(data.error ?? "Failed to create ranked match.")
+        return
+      }
+      const room = data.room
+      const roomId = room?.id != null && typeof room.id === "string" ? room.id.trim() : ""
+      if (!roomId) {
+        setMessage("Match was created but the response was invalid. Check My Matches or try again.")
+        await refreshRooms()
         return
       }
       await refreshRooms()
@@ -797,7 +816,7 @@ export default function ArenaPage() {
       setWagerInput("5")
       setBestOf(1)
       setCustomMode(false)
-      router.push(`/arena/match/${data.room.id}`)
+      router.push(`/arena/match/${roomId}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to create arena.")
     }
@@ -820,14 +839,14 @@ export default function ArenaPage() {
           challenger_display_name: identity.displayName,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!data.ok) {
         setMessage(data.error ?? "Failed to join match.")
         return
       }
       await refreshRooms()
       setOwnershipFilter("Mine")
-      setMessage(`Joined ${data.room.game}. Countdown should now begin automatically.`)
+      setMessage(`Joined ${data.room?.game ?? "match"}. Countdown should now begin automatically.`)
       router.push(`/arena/match/${matchId}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to join arena.")
