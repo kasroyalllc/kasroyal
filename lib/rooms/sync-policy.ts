@@ -15,6 +15,7 @@ export type RoomUpdateSource = "mutation" | "refetch" | "realtime" | "tick"
  * Decide whether to accept an incoming room over current match state.
  * Prefer mutation response when we have a clear transition; otherwise prefer newer updated_at.
  * Never regress from Live to Ready to Start (fixes RPS/stale refetch overwriting tick transition).
+ * Never accept a tick with older updated_at than current (fixes RPS challenger stuck: stale tick must not overwrite new-round state).
  */
 export function shouldAcceptRoomUpdate(
   current: ArenaMatch | null,
@@ -27,8 +28,10 @@ export function shouldAcceptRoomUpdate(
   const currentStatus = current?.status
 
   let decision: boolean
-  if (source === "mutation" || source === "tick") {
+  if (source === "mutation") {
     decision = true
+  } else if (source === "tick") {
+    decision = incomingUpdatedAt >= currentUpdatedAt
   } else if (source === "refetch" || source === "realtime") {
     if (!current) {
       decision = true

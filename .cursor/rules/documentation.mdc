@@ -1,0 +1,16 @@
+---
+description: Documentation is required for architectural fixes, new games, lifecycle changes, and debugging discoveries. Doc updates are part of the PR.
+alwaysApply: true
+---
+
+# Documentation policy
+
+Documentation is a **required part of development** in this repository. When making changes, follow the policy in **docs/DOCUMENTATION_POLICY.md**.
+
+1. **Architectural fixes** — Document root cause and solution in the appropriate docs (debug playbook, schema-notes, driver-contract, or architecture) before considering the task complete.
+2. **New game drivers** — Update docs/game-drivers: board state shape, turn-based vs simultaneous, hasTurnTimer, round resolution, lifecycle differences.
+3. **Lifecycle changes** — Update docs/lifecycle/match-lifecycle.md when changing ready→live, round resolution, intermission, series, pause, or timeout.
+4. **Debugging discoveries** — Add entries to docs/debugging/debug-playbook.md: symptom, root cause, fix, prevention rule.
+5. **PRs** — Architecture-impacting changes are not complete until documentation is updated; include doc updates in the PR.
+
+Do not merge or close architecture-impacting work without the corresponding documentation updates.

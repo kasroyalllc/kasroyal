@@ -70,6 +70,12 @@ This document explains how we typically work: Cursor + GitHub + Vercel flow, Sup
 
 ---
 
+## Documentation is required
+
+Documentation is a **required part of development**. See **[docs/DOCUMENTATION_POLICY.md](DOCUMENTATION_POLICY.md)** for the full policy. In short: (1) architectural fixes must be documented before the task is complete; (2) new games must update docs/game-drivers; (3) lifecycle changes must update docs/lifecycle; (4) debugging discoveries go into docs/debugging/debug-playbook.md; (5) doc updates are part of the PR for architecture-impacting changes. Do not merge such changes without updating the relevant docs.
+
+---
+
 ## How to do handoffs cleanly
 
 - **Update docs**: After a significant change (new feature, refactor, new table), update CURRENT_STATUS.md and, if there are open issues, KNOWN_ISSUES.md. Update HANDOFF.md if the “key files” or “what not to regress” list changes.

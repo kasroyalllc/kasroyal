@@ -948,6 +948,21 @@ export default function ArenaMatchPage() {
     previousMatchRef.current = match
   }, [match])
 
+  // RPS: when intermission ends (roundIntermissionUntil cleared), refresh so both host and challenger get the new round board (both choices null).
+  const prevIntermissionUntilRef = useRef<number | null | undefined>(undefined)
+  useEffect(() => {
+    if (!match || match.game !== "Rock Paper Scissors" || match.status !== "Live") {
+      prevIntermissionUntilRef.current = match?.roundIntermissionUntil ?? undefined
+      return
+    }
+    const now = typeof match.roundIntermissionUntil === "number" ? match.roundIntermissionUntil : null
+    const prev = prevIntermissionUntilRef.current
+    prevIntermissionUntilRef.current = now
+    if (prev != null && prev > 0 && (now == null || now === 0)) {
+      void refreshRoom()
+    }
+  }, [match?.game, match?.status, match?.roundIntermissionUntil, refreshRoom])
+
   matchStatusRef.current = match?.status ?? ""
   if (match?.status === "Ready to Start" && match) {
     const endMs =

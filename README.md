@@ -37,13 +37,16 @@
 
 ## Architecture overview
 
-- **Next.js app**: Pages for Arena, match room, history, spectate. API routes under `app/api/` drive create, join, start, move, tick, pause, resume, forfeit, cancel.
-- **Supabase**: Holds `matches`, `match_events`, `match_rounds`, `match_messages`, `profiles`, `bets`, `active_identity_matches`, etc. Realtime is used for room and message updates.
-- **Game runtime**: Each supported game has a **driver** (`lib/rooms/game-drivers.ts`) that implements board init, move application, and round outcome. The **move pipeline** (`lib/rooms/move-pipeline.ts`) turns round outcomes into series scoring, intermission, or match finish.
-- **Lifecycle**: Waiting → Ready to Start (countdown) → Live → (optional) intermission → next round or Finished. Pause is server-authoritative; tick route handles countdown expiry, intermission expiry, and turn timeout.
-- **Sync policy**: Client accepts room updates by source (mutation/tick vs refetch/realtime) and `updated_at` to avoid stale overwrites. DB rows are normalized to a `Room` type and then to UI `ArenaMatch` via `room-adapter`.
+- **Match lifecycle flow**: Waiting → Ready to Start (countdown) → Live → [moves / tick] → intermission or series finish → Finished. Ready→Live and intermission→next round are driven by start or **tick**; move route applies moves and produces in-round, intermission, or series_finished. See [docs/lifecycle/match-lifecycle.md](docs/lifecycle/match-lifecycle.md) and [docs/architecture/system-architecture.md](docs/architecture/system-architecture.md).
+- **Supported game categories**: **Turn-based** (Tic-Tac-Toe, Connect 4): one move_turn_identity_id, turn timer, timeout strikes. **Simultaneous** (Rock Paper Scissors): both players submit; no turn timer; round ends when both choices are in. See [docs/game-drivers/driver-contract.md](docs/game-drivers/driver-contract.md).
+- **Server authority model**: All match state changes go through API routes using the Supabase **service role** client. Clients never write directly to `matches`; they read via refetch or realtime. DB is the source of truth.
+- **Tick loop responsibilities**: (1) Ready→Live when countdown expired, (2) intermission→next round when round_intermission_until passed, (3) turn timeout (strikes then match loss) for turn-based games, (4) pause expiry. Tick does not compute series outcome. See [docs/architecture/system-architecture.md](docs/architecture/system-architecture.md).
+- **Move pipeline overview**: Move route calls driver.applyMove(room, payload); driver returns RoundOutcome (or error). Move pipeline (getSeriesUpdate, resolveMoveToDbUpdate) produces a single DB payload: in_round, intermission, or series_finished. One pipeline for all games. See [docs/architecture/system-architecture.md](docs/architecture/system-architecture.md) and [docs/game-drivers/driver-contract.md](docs/game-drivers/driver-contract.md).
+- **Where game drivers live**: `lib/rooms/game-drivers.ts` — createInitialBoardState, getMoveSeconds, hasTurnTimer, applyMove. Drivers are registered and looked up by game key (getGameDriver).
+- **Where lifecycle logic lives**: `lib/rooms/lifecycle.ts` — phase derivation, getReadyToLivePayload (used by start and tick). Intermission and timeout logic are in the tick route and move pipeline.
+- **Where database adapters exist**: Match state is read/written in API routes and services; `lib/engine/match/types.ts` maps DB row → Room (mapDbRowToRoom); `lib/rooms/room-adapter.ts` maps Room → ArenaMatch. Schema and constraints: [docs/database/schema-notes.md](docs/database/schema-notes.md).
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail.
+Deeper docs: [docs/architecture/](docs/architecture/), [docs/lifecycle/](docs/lifecycle/), [docs/game-drivers/](docs/game-drivers/), [docs/database/](docs/database/), [docs/debugging/](docs/debugging/), [docs/deployment/](docs/deployment/). Legacy flat reference: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
@@ -119,6 +122,20 @@ See [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) and [docs/KNOWN_ISSUES.md](
 
 These docs are the canonical handoff and reference layer. **Suggested order when joining or resuming:** README → HANDOFF → ARCHITECTURE → CURRENT_STATUS.
 
+**Structured docs (architecture, lifecycle, debugging, games, DB, deployment):**
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/DOCUMENTATION_POLICY.md](docs/DOCUMENTATION_POLICY.md) | **Required**: When to update docs; architectural fixes, new games, lifecycle, debug playbook, PR checklist. |
+| [docs/architecture/system-architecture.md](docs/architecture/system-architecture.md) | Match states, tick flow, room sync, realtime, driver architecture, integrating new games. |
+| [docs/lifecycle/match-lifecycle.md](docs/lifecycle/match-lifecycle.md) | Ready→live, round lifecycle, intermission, series (BO3/BO5), timeout, pause/resume, forfeit, turn-based vs simultaneous. |
+| [docs/game-drivers/driver-contract.md](docs/game-drivers/driver-contract.md) | Driver interface, createInitialBoardState, applyMove, hasTurnTimer, turn-based vs simultaneous. |
+| [docs/debugging/debug-playbook.md](docs/debugging/debug-playbook.md) | Lessons learned: RPS/turn fields, DB NOT NULL, tick failures, Supabase keys, localStorage, realtime sync. |
+| [docs/database/schema-notes.md](docs/database/schema-notes.md) | Constraints, NOT NULL and turn-based-only fields, lifecycle fields, how match state is persisted. |
+| [docs/deployment/README.md](docs/deployment/README.md) | Links to deploy, verify, and development workflow. |
+
+**Legacy flat docs:**
+
 | Doc | Purpose |
 |-----|---------|
 | [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) | What KasRoyal is, roadmap, priorities, why off-chain now. |
@@ -135,6 +152,18 @@ These docs are the canonical handoff and reference layer. **Suggested order when
 | [docs/MATCH_HISTORY_SPRINT.md](docs/MATCH_HISTORY_SPRINT.md) | Event timeline and round record design and implementation. |
 
 Other references: [ROADMAP.md](ROADMAP.md), [docs/MOVE_ROUTE_REFACTOR.md](docs/MOVE_ROUTE_REFACTOR.md), [docs/SUPABASE_SECURITY_MODEL.md](docs/SUPABASE_SECURITY_MODEL.md), [VERIFICATION-RPS-AND-FEATURES.md](VERIFICATION-RPS-AND-FEATURES.md) (RPS/phrase verification).
+
+---
+
+## Documentation policy (required)
+
+**Documentation is a required part of development.** The docs structure is a permanent rule of the repository. See **[docs/DOCUMENTATION_POLICY.md](docs/DOCUMENTATION_POLICY.md)** for the full policy.
+
+1. **Architectural fixes must be documented** — Lifecycle bugs, driver issues, DB constraint conflicts, or runtime assumptions: root cause and solution go into the appropriate docs (debug playbook, schema-notes, driver-contract, or architecture) before the task is complete.
+2. **New games must update driver documentation** — Document board state shape, turn-based vs simultaneous, hasTurnTimer, round resolution, and any lifecycle differences in [docs/game-drivers/](docs/game-drivers/).
+3. **Lifecycle changes must update lifecycle documentation** — Any change to ready→live, round resolution, intermission, series, pause, or timeout must be reflected in [docs/lifecycle/match-lifecycle.md](docs/lifecycle/match-lifecycle.md).
+4. **Debugging discoveries go into the debug playbook** — Record symptom, root cause, fix, and prevention in [docs/debugging/debug-playbook.md](docs/debugging/debug-playbook.md).
+5. **Documentation is part of the pull request** — Architecture-impacting changes are not complete until the relevant docs are updated; include doc updates in the PR.
 
 ---
 
