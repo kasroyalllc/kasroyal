@@ -683,6 +683,7 @@ export default function ArenaMatchPage() {
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
   const refreshSpectateChatRef = useRef<(() => Promise<void>) | null>(null)
+  const startedTransitionRef = useRef(false)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
@@ -855,6 +856,49 @@ export default function ArenaMatchPage() {
     return () => clearInterval(t)
   }, [matchId, match?.id, match?.status, match?.roundIntermissionUntil])
 
+  // When countdown has reached 0 on the client, call start (and retry every 2s) until room goes Live. Only apply response when room is Live.
+  useEffect(() => {
+    if (!matchId || !match) return
+    if (match.status === "Live" || match.status === "Finished") {
+      startedTransitionRef.current = false
+      return
+    }
+    if (match.status !== "Ready to Start") return
+    const countdownEndMs =
+      match.bettingClosesAt ??
+      (match.countdownStartedAt != null
+        ? (match.countdownStartedAt as number) + (match.bettingWindowSeconds ?? 30) * 1000
+        : 0)
+    if (countdownEndMs <= 0) return
+    if (Date.now() < countdownEndMs) return
+
+    const runStart = () => {
+      fetch("/api/rooms/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room_id: matchId }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data.ok || !data.room) return
+          if (data.countdownNotExpired) return
+          const room = data.room as Room
+          if (room.status !== "Live" && !data.alreadyLive) return
+          startedTransitionRef.current = true
+          const reconciled = reconcileRoom(room)
+          setMatch((prev) => acceptAndReconcile(reconciled, prev, "tick"))
+          if (typeof data.server_time_ms === "number") {
+            setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+          }
+        })
+        .catch(() => {})
+    }
+
+    runStart()
+    const interval = window.setInterval(runStart, 2000)
+    return () => window.clearInterval(interval)
+  }, [matchId, match?.status, match?.bettingClosesAt, match?.countdownStartedAt, match?.bettingWindowSeconds])
+
   useEffect(() => {
     if (!match) return
 
@@ -881,7 +925,7 @@ export default function ArenaMatchPage() {
 
     const lineInterval = window.setInterval(() => {
       setCountdownLineIndex((value) => value + 1)
-    }, 1000)
+    }, 5000)
     const tickInterval = window.setInterval(() => {
       setCountdownTick((t) => t + 1)
     }, 1000)
@@ -902,9 +946,9 @@ export default function ArenaMatchPage() {
   )
   const tttWinner = useMemo(() => getTttWinner(tttState.board), [tttState.board])
 
-  /** Premium short lines for pregame overlay; rotate every ~1.2s so countdown feels alive. */
+  /** Rotating pregame lines: funny/witty phrases every 5s; short premium lines as fallback. */
   const countdownLines = useMemo(() => {
-    const base = [...PREGAME_COUNTDOWN_LINES]
+    const base = COUNTDOWN_PHRASES.length > 0 ? [...COUNTDOWN_PHRASES] : [...PREGAME_COUNTDOWN_LINES]
     let seed = 0
     for (let i = 0; i < matchId.length; i++) seed += matchId.charCodeAt(i)
     const rng = () => (seed = (seed * 9301 + 49297) % 233280) / 233280
