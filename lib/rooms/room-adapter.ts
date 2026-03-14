@@ -123,5 +123,6 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     pauseState,
     roundIntermissionUntil: room.roundIntermissionUntil ?? undefined,
     lastRoundWinnerIdentityId: room.lastRoundWinnerIdentityId ?? undefined,
+    updatedAt: Number(room.updatedAt ?? 0) || undefined,
   }
 }

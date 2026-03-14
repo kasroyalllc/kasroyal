@@ -127,6 +127,8 @@ export type ArenaMatch = {
   roundIntermissionUntil?: number | null
   /** During intermission: identity of round winner for "X won Round N" (null = draw). */
   lastRoundWinnerIdentityId?: string | null
+  /** Room updated_at (ms) for sync comparison; set when built from Room. */
+  updatedAt?: number
 }
 
 export type SpectatorTicket = {

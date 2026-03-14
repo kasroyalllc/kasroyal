@@ -12,6 +12,12 @@ import type { GameType } from "@/lib/engine/match/types"
 import { logRoomAction } from "@/lib/log"
 import { DB_STATUS } from "@/lib/rooms/db-status"
 import { releaseActiveMatchByMatch } from "@/lib/rooms/rooms-service"
+import {
+  canTransitionReadyToLive,
+  getReadyToLivePayload,
+  READY_LIKE_STATUSES,
+} from "@/lib/rooms/lifecycle"
+import { getGameDriver } from "@/lib/rooms/game-drivers"
 
 export const dynamic = "force-dynamic"
 
@@ -48,62 +54,27 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString()
 
     if (room.status === "Ready to Start") {
-      // Only transition when the real countdown deadline has been reached. No buffer, no early transition.
-      const countdownStartedAt = room.countdownStartedAt ?? null
-      if (!countdownStartedAt || !room.challengerIdentityId) {
-        return NextResponse.json(
-          { ok: true, room, transition: null, server_time_ms: nowMs },
-          { headers: { "Cache-Control": "no-store" } }
-        )
-      }
-      const countdownEndMs = countdownStartedAt + room.countdownSeconds * 1000
-      if (nowMs < countdownEndMs) {
+      if (!canTransitionReadyToLive(room, nowMs)) {
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
       const gameType = room.game as GameType
-      if (
-        gameType !== "Connect 4" &&
-        gameType !== "Tic-Tac-Toe" &&
-        gameType !== "Rock Paper Scissors"
-      ) {
+      const payload = getReadyToLivePayload(room, now)
+      if (!payload) {
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
-      const moveSeconds = getMoveSecondsForGame(gameType)
-      const boardState = createInitialBoardState(gameType)
-      const isRps = gameType === "Rock Paper Scissors"
-      const turnExpiresAt = isRps
-        ? null
-        : new Date(nowMs + moveSeconds * 1000).toISOString()
-
       assertTransition(room.status, "Live", "tick_ready_to_live")
 
-      // DB may store: ready | countdown | "Ready to Start" (legacy). Match all so update never misses.
-      const readyLikeStatuses = ["ready", "countdown", "Ready to Start", "Ready To Start"]
       const { data, error } = await supabase
         .from("matches")
-        .update({
-          status: DB_STATUS.LIVE,
-          live_started_at: nowIso,
-          started_at: nowIso,
-          betting_open: false,
-          board_state: boardState,
-          move_turn_identity_id: isRps ? null : room.hostIdentityId,
-          move_turn_started_at: isRps ? null : nowIso,
-          move_turn_seconds: isRps ? null : moveSeconds,
-          turn_expires_at: turnExpiresAt,
-          round_number: 1,
-          host_score: 0,
-          challenger_score: 0,
-          updated_at: nowIso,
-        })
+        .update(payload)
         .eq("id", roomId)
-        .in("status", readyLikeStatuses)
+        .in("status", READY_LIKE_STATUSES)
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -147,13 +118,16 @@ export async function POST(request: NextRequest) {
             { headers: { "Cache-Control": "no-store" } }
           )
         }
+        const driver = getGameDriver(gameTypeLive)
+        const nextBoardState = driver
+          ? driver.createInitialBoardState()
+          : createInitialBoardState(gameTypeLive)
+        const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
         const moveSeconds = getMoveSecondsForGame(gameTypeLive)
-        const nextBoardState = createInitialBoardState(gameTypeLive)
-        const isRps = gameTypeLive === "Rock Paper Scissors"
-        const nextTurnId = isRps ? null : room.hostIdentityId
-        const turnExpiresAt = isRps
-          ? null
-          : new Date(nowMs + moveSeconds * 1000).toISOString()
+        const turnExpiresAt =
+          nextTurnId != null
+            ? new Date(nowMs + moveSeconds * 1000).toISOString()
+            : null
         const { data: intermissionData, error: intermissionError } = await supabase
           .from("matches")
           .update({
@@ -161,8 +135,8 @@ export async function POST(request: NextRequest) {
             last_round_winner_identity_id: null,
             board_state: nextBoardState,
             move_turn_identity_id: nextTurnId,
-            move_turn_started_at: isRps ? null : nowIso,
-            move_turn_seconds: isRps ? null : moveSeconds,
+            move_turn_started_at: nextTurnId != null ? nowIso : null,
+            move_turn_seconds: nextTurnId != null ? moveSeconds : null,
             turn_expires_at: turnExpiresAt,
             updated_at: nowIso,
           })
