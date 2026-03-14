@@ -48,7 +48,13 @@ export async function POST(request: NextRequest) {
 
     assertTransition(room.status, "Finished", "forfeit")
 
-    const winnerIdentityId = isHost ? room.challengerIdentityId! : room.hostIdentityId
+    const winnerIdentityId = isHost ? room.challengerIdentityId : room.hostIdentityId
+    if (!winnerIdentityId) {
+      return NextResponse.json(
+        { ok: false, error: "Cannot determine winner (missing challenger)" },
+        { status: 409 }
+      )
+    }
 
     const updated = await forfeitRoom(
       supabase,

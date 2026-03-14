@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { getRoomById } from "@/lib/rooms/rooms-service"
+import { getRoomById, releaseActiveMatchByMatch } from "@/lib/rooms/rooms-service"
+import { DB_STATUS } from "@/lib/rooms/db-status"
 import { logRoomAction } from "@/lib/log"
 import {
   applyConnect4Move,
@@ -66,7 +67,8 @@ function getSeriesUpdate(
       : roundWinner === "challenger"
         ? "win"
         : "draw"
-  const currentRound = room.currentRound + (seriesOver ? 0 : 1)
+  const nextRound = room.currentRound + (seriesOver ? 0 : 1)
+  const currentRound = Math.min(nextRound, bestOf)
   return {
     seriesOver,
     winnerIdentityId,
@@ -186,22 +188,26 @@ export async function POST(request: NextRequest) {
           const { data, error } = await supabase
             .from("matches")
             .update({
-              status: "Finished",
+              status: DB_STATUS.FINISHED,
               board_state: nextState,
               winner_identity_id: series.winnerIdentityId,
               win_reason: series.winReason,
               host_round_wins: series.hostRoundWins,
               challenger_round_wins: series.challengerRoundWins,
               current_round: series.currentRound,
+              round_number: series.currentRound,
+              host_score: series.hostRoundWins,
+              challenger_score: series.challengerRoundWins,
               updated_at: now,
               finished_at: now,
               ended_at: now,
             })
             .eq("id", roomId)
-            .eq("status", "Live")
+            .in("status", ["Live", "live"])
             .select("*")
             .maybeSingle()
           if (error) throw error
+          await releaseActiveMatchByMatch(supabase, roomId)
           const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
           logRoomAction(
             nextState.winner === "draw" ? "move_draw" : "move_win",
@@ -217,15 +223,18 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Live",
+            status: DB_STATUS.LIVE,
             board_state: nextBoardState,
             host_round_wins: series.hostRoundWins,
             challenger_round_wins: series.challengerRoundWins,
             current_round: series.currentRound,
+            round_number: series.currentRound,
+            host_score: series.hostRoundWins,
+            challenger_score: series.challengerRoundWins,
             updated_at: now,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
@@ -249,7 +258,7 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         })
         .eq("id", roomId)
-        .eq("status", "Live")
+        .in("status", ["Live", "live"])
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -316,22 +325,26 @@ export async function POST(request: NextRequest) {
           const { data, error } = await supabase
             .from("matches")
             .update({
-              status: "Finished",
+              status: DB_STATUS.FINISHED,
               board_state: finalBoard,
               winner_identity_id: series.winnerIdentityId,
               win_reason: series.winReason,
               host_round_wins: series.hostRoundWins,
               challenger_round_wins: series.challengerRoundWins,
               current_round: series.currentRound,
+              round_number: series.currentRound,
+              host_score: series.hostRoundWins,
+              challenger_score: series.challengerRoundWins,
               updated_at: now,
               finished_at: now,
               ended_at: now,
             })
             .eq("id", roomId)
-            .eq("status", "Live")
+            .in("status", ["Live", "live"])
             .select("*")
             .maybeSingle()
           if (error) throw error
+          await releaseActiveMatchByMatch(supabase, roomId)
           const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
           logRoomAction("move_win", roomId, { game: "Connect 4", reason: series.winReason })
           return NextResponse.json(
@@ -345,7 +358,7 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Live",
+            status: DB_STATUS.LIVE,
             board_state: nextBoardState,
             host_round_wins: series.hostRoundWins,
             challenger_round_wins: series.challengerRoundWins,
@@ -357,7 +370,7 @@ export async function POST(request: NextRequest) {
             updated_at: now,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
@@ -380,22 +393,26 @@ export async function POST(request: NextRequest) {
           const { data, error } = await supabase
             .from("matches")
             .update({
-              status: "Finished",
+              status: DB_STATUS.FINISHED,
               board_state: finalBoard,
               winner_identity_id: null,
               win_reason: series.winReason,
               host_round_wins: series.hostRoundWins,
               challenger_round_wins: series.challengerRoundWins,
               current_round: series.currentRound,
+              round_number: series.currentRound,
+              host_score: series.hostRoundWins,
+              challenger_score: series.challengerRoundWins,
               updated_at: now,
               finished_at: now,
               ended_at: now,
             })
             .eq("id", roomId)
-            .eq("status", "Live")
+            .in("status", ["Live", "live"])
             .select("*")
             .maybeSingle()
           if (error) throw error
+          await releaseActiveMatchByMatch(supabase, roomId)
           const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
           return NextResponse.json(
             { ok: true, room: updatedRoom, server_time_ms: nowMs },
@@ -408,11 +425,14 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Live",
+            status: DB_STATUS.LIVE,
             board_state: nextBoardState,
             host_round_wins: series.hostRoundWins,
             challenger_round_wins: series.challengerRoundWins,
             current_round: series.currentRound,
+            round_number: series.currentRound,
+            host_score: series.hostRoundWins,
+            challenger_score: series.challengerRoundWins,
             move_turn_identity_id: nextTurnId,
             move_turn_started_at: now,
             move_turn_seconds: moveSeconds,
@@ -420,7 +440,7 @@ export async function POST(request: NextRequest) {
             updated_at: now,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
@@ -449,7 +469,7 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         })
         .eq("id", roomId)
-        .eq("status", "Live")
+        .in("status", ["Live", "live"])
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -502,7 +522,7 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
+            status: DB_STATUS.FINISHED,
             board_state: finalBoard,
             winner_identity_id: series.winnerIdentityId,
             win_reason: series.winReason,
@@ -514,10 +534,11 @@ export async function POST(request: NextRequest) {
             ended_at: now,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
+        await releaseActiveMatchByMatch(supabase, roomId)
         const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
         logRoomAction("move_win", roomId, { game: "Tic-Tac-Toe", reason: series.winReason })
         return NextResponse.json(
@@ -531,11 +552,14 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase
         .from("matches")
         .update({
-          status: "Live",
+          status: DB_STATUS.LIVE,
           board_state: nextBoardState,
           host_round_wins: series.hostRoundWins,
           challenger_round_wins: series.challengerRoundWins,
           current_round: series.currentRound,
+          round_number: series.currentRound,
+          host_score: series.hostRoundWins,
+          challenger_score: series.challengerRoundWins,
           move_turn_identity_id: nextTurnId,
           move_turn_started_at: now,
           move_turn_seconds: moveSeconds,
@@ -543,7 +567,7 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         })
         .eq("id", roomId)
-        .eq("status", "Live")
+        .in("status", ["Live", "live"])
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -566,22 +590,26 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
+            status: DB_STATUS.FINISHED,
             board_state: finalBoard,
             winner_identity_id: null,
             win_reason: series.winReason,
             host_round_wins: series.hostRoundWins,
             challenger_round_wins: series.challengerRoundWins,
             current_round: series.currentRound,
+            round_number: series.currentRound,
+            host_score: series.hostRoundWins,
+            challenger_score: series.challengerRoundWins,
             updated_at: now,
             finished_at: now,
             ended_at: now,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
+        await releaseActiveMatchByMatch(supabase, roomId)
         const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
         return NextResponse.json(
           { ok: true, room: updatedRoom, server_time_ms: nowMs },
@@ -594,11 +622,14 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase
         .from("matches")
         .update({
-          status: "Live",
+          status: DB_STATUS.LIVE,
           board_state: nextBoardState,
           host_round_wins: series.hostRoundWins,
           challenger_round_wins: series.challengerRoundWins,
           current_round: series.currentRound,
+          round_number: series.currentRound,
+          host_score: series.hostRoundWins,
+          challenger_score: series.challengerRoundWins,
           move_turn_identity_id: nextTurnId,
           move_turn_started_at: now,
           move_turn_seconds: moveSeconds,
@@ -606,7 +637,7 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         })
         .eq("id", roomId)
-        .eq("status", "Live")
+        .in("status", ["Live", "live"])
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -635,7 +666,7 @@ export async function POST(request: NextRequest) {
         updated_at: now,
       })
       .eq("id", roomId)
-      .eq("status", "Live")
+      .in("status", ["Live", "live"])
       .select("*")
       .maybeSingle()
     if (error) throw error

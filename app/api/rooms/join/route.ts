@@ -42,7 +42,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (room.hostIdentityId === challengerIdentityId) {
+    const hostId = (room.hostIdentityId ?? "").trim().toLowerCase()
+    const challengerId = challengerIdentityId.trim().toLowerCase()
+    if (hostId && challengerId && hostId === challengerId) {
       return NextResponse.json(
         { ok: false, error: "Cannot join your own room" },
         { status: 400 }

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { getRoomById } from "@/lib/rooms/rooms-service"
+import { getRoomById, cancelRoom } from "@/lib/rooms/rooms-service"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
 
-/** Cancel open room. Host only; only if no challenger; releases active lock. */
+/** Cancel open room. Host only; only if no challenger; releases active_identity_matches. */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -53,21 +53,7 @@ export async function POST(request: NextRequest) {
 
     assertTransition(room.status, "Finished", "cancel")
 
-    const now = new Date().toISOString()
-    const { error } = await supabase
-      .from("matches")
-      .update({
-        status: "Finished",
-        winner_identity_id: null,
-        win_reason: "canceled",
-        ended_at: now,
-        finished_at: now,
-      })
-      .eq("id", roomId)
-      .eq("status", "Waiting for Opponent")
-      .eq("host_wallet", hostIdentityId)
-
-    if (error) throw error
+    await cancelRoom(supabase, roomId, hostIdentityId)
     logRoomAction("cancel", roomId)
 
     return NextResponse.json(

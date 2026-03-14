@@ -2173,6 +2173,7 @@ export default function ArenaMatchPage() {
                       const disabled =
                         isCountdown ||
                         isPaused ||
+                        isSpectatorOnly ||
                         match.status !== "Live" ||
                         connect4Winner !== null ||
                         !canCurrentUserMove

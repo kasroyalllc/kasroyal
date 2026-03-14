@@ -205,8 +205,9 @@ const ROOM_STATUS_TO_UI: Record<string, Room["status"]> = {
   "Waiting for Opponent": "Waiting for Opponent",
   ready: "Ready to Start",
   "Ready to Start": "Ready to Start",
-  live: "Live",
+  countdown: "Ready to Start",
   Live: "Live",
+  live: "Live",
   finished: "Finished",
   forfeited: "Finished",
   canceled: "Finished",
@@ -309,9 +310,9 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
       if (n === 3 || n === 5) return n
       return 1
     })(),
-    hostRoundWins: Math.max(0, Number(row.host_round_wins ?? 0)),
-    challengerRoundWins: Math.max(0, Number(row.challenger_round_wins ?? 0)),
-    currentRound: Math.max(1, Number(row.current_round ?? 1)),
+    hostRoundWins: Math.max(0, Number(row.host_score ?? row.host_round_wins ?? 0)),
+    challengerRoundWins: Math.max(0, Number(row.challenger_score ?? row.challenger_round_wins ?? 0)),
+    currentRound: Math.max(1, Number(row.round_number ?? row.current_round ?? 1)),
     roomHypeIndex: Number(row.room_hype_index ?? 0),
     createdAt,
     updatedAt,

@@ -1,9 +1,7 @@
 /**
  * Backend-first room service. Uses Supabase as source of truth.
- * Transitional schema: we write both new and legacy columns where present.
- *
- * Active = Waiting for Opponent | Ready to Start | Live only.
- * Recently finished = prefer finished_at desc, fallback ended_at.
+ * Supports both legacy status strings and canonical DB status (waiting, ready, countdown, live, finished, forfeited, canceled).
+ * Series: supports round_number, host_score, challenger_score with fallback to current_round, host_round_wins, challenger_round_wins.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -13,39 +11,61 @@ import {
   type Room,
   type RoomMessage,
 } from "@/lib/engine/match/types"
+import {
+  DB_ACTIVE_STATUSES,
+  DB_FINISHED_STATUSES,
+  DB_SPECTATE_STATUSES,
+  DB_STATUS,
+} from "@/lib/rooms/db-status"
 
-const ACTIVE_STATUSES = ["Waiting for Opponent", "Ready to Start", "Live"]
+/** Query statuses that mean "active" — support both canonical and legacy. */
+const ACTIVE_STATUS_VALUES = [
+  ...DB_ACTIVE_STATUSES,
+  "Waiting for Opponent",
+  "Ready to Start",
+  "Live",
+]
+/** Query statuses that mean "finished" for history. */
+const FINISHED_STATUS_VALUES = [
+  ...DB_FINISHED_STATUSES,
+  "Finished",
+]
+/** Query statuses that allow spectating. */
+const SPECTATE_STATUS_VALUES = [
+  ...DB_SPECTATE_STATUSES,
+  "Ready to Start",
+  "Live",
+]
 
-/** Active = waiting, ready, or live only (not finished/canceled). */
+/** Active = waiting, ready, countdown, or live only (not finished/forfeited/canceled). */
 export async function listActiveRooms(
   supabase: SupabaseClient
 ): Promise<Room[]> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
-    .in("status", ACTIVE_STATUSES)
+    .in("status", ACTIVE_STATUS_VALUES)
     .order("created_at", { ascending: false })
 
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
-/** History = Finished only. Order by finished_at desc, then ended_at desc. */
+/** History = finished/forfeited/canceled. Order by finished_at desc. */
 export async function listHistoryRooms(
   supabase: SupabaseClient
 ): Promise<Room[]> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
-    .eq("status", "Finished")
+    .in("status", FINISHED_STATUS_VALUES)
     .order("finished_at", { ascending: false })
-    .order("ended_at", { ascending: false })
 
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
-/** Recently resolved = Finished, prefer finished_at desc, fallback ended_at; limited. */
+/** Recently resolved = finished/forfeited/canceled; limited. */
 export async function listRecentResolvedRooms(
   supabase: SupabaseClient,
   limit = 6
@@ -53,23 +73,22 @@ export async function listRecentResolvedRooms(
   const { data, error } = await supabase
     .from("matches")
     .select("*")
-    .eq("status", "Finished")
+    .in("status", FINISHED_STATUS_VALUES)
     .order("finished_at", { ascending: false })
-    .order("ended_at", { ascending: false })
     .limit(limit)
 
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
-/** Spectate = Ready to Start or Live with a challenger (new or legacy column). */
+/** Spectate = ready/countdown/live with a challenger. */
 export async function listSpectateRooms(
   supabase: SupabaseClient
 ): Promise<Room[]> {
   const { data, error } = await supabase
     .from("matches")
     .select("*")
-    .in("status", ["Ready to Start", "Live"])
+    .in("status", SPECTATE_STATUS_VALUES)
     .or("challenger_identity_id.not.is.null,challenger_wallet.not.is.null")
     .order("created_at", { ascending: false })
 
@@ -93,8 +112,43 @@ export async function getRoomById(
 }
 
 /**
- * Create room. Inserts new + legacy columns for transitional schema.
- * Requires admin (service role) client for RLS bypass.
+ * Claim an active match slot for an identity (one active match per identity).
+ * Call after create/join; release on cancel/forfeit/finish.
+ */
+export async function claimActiveMatch(
+  supabase: SupabaseClient,
+  identityId: string,
+  matchId: string
+): Promise<void> {
+  const { error } = await supabase.from("active_identity_matches").upsert(
+    { identity_id: identityId, match_id: matchId },
+    { onConflict: "identity_id" }
+  )
+  if (error) {
+    console.warn("[rooms-service claimActiveMatch]", error.message)
+  }
+}
+
+/**
+ * Release active match slot(s) for a match (both host and challenger).
+ * Call when match is canceled, forfeited, or finished.
+ * Non-throwing: logs and continues if table is missing or RLS blocks.
+ */
+export async function releaseActiveMatchByMatch(
+  supabase: SupabaseClient,
+  matchId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("active_identity_matches")
+    .delete()
+    .eq("match_id", matchId)
+  if (error) {
+    console.warn("[rooms-service releaseActiveMatchByMatch]", error.message)
+  }
+}
+
+/**
+ * Create room. Writes canonical DB status (waiting). Series columns: round_number, host_score, challenger_score (with legacy fallbacks).
  */
 export async function createRoom(
   supabase: SupabaseClient,
@@ -107,12 +161,11 @@ export async function createRoom(
     best_of?: 1 | 3 | 5
   }
 ): Promise<Room> {
-  const status = "Waiting for Opponent"
   const now = new Date().toISOString()
   const bestOf = params.best_of === 3 || params.best_of === 5 ? params.best_of : 1
   const insert: Record<string, unknown> = {
     game_type: params.game_type,
-    status,
+    status: DB_STATUS.WAITING,
     host_wallet: params.host_identity_id,
     wager: params.wager_amount,
     host_identity_id: params.host_identity_id,
@@ -123,6 +176,9 @@ export async function createRoom(
     host_round_wins: 0,
     challenger_round_wins: 0,
     current_round: 1,
+    round_number: 1,
+    host_score: 0,
+    challenger_score: 0,
     updated_at: now,
   }
 
@@ -141,11 +197,17 @@ export async function createRoom(
     throw error
   }
   if (!data) throw new Error("Insert succeeded but no row returned")
-  return mapDbRowToRoom(data as Record<string, unknown>)
+  const room = mapDbRowToRoom(data as Record<string, unknown>)
+  try {
+    await claimActiveMatch(supabase, params.host_identity_id, room.id)
+  } catch (e) {
+    console.warn("[rooms-service createRoom] claimActiveMatch failed:", e)
+  }
+  return room
 }
 
 /**
- * Join room. Sets both new and legacy challenger columns for compatibility.
+ * Join room. Sets challenger, canonical status (ready), and countdown. Claims active match for challenger.
  */
 export async function joinRoom(
   supabase: SupabaseClient,
@@ -165,7 +227,7 @@ export async function joinRoom(
     challenger_wallet: params.challenger_identity_id,
     challenger_identity_id: params.challenger_identity_id,
     challenger_display_name: params.challenger_display_name,
-    status: "Ready to Start",
+    status: DB_STATUS.READY,
     countdown_started_at: now,
     countdown_seconds: countdownSeconds,
     betting_open: true,
@@ -177,16 +239,23 @@ export async function joinRoom(
     .from("matches")
     .update(updates)
     .eq("id", roomId)
+    .in("status", [DB_STATUS.WAITING, "Waiting for Opponent"])
     .select("*")
     .maybeSingle()
 
   if (error) throw error
   if (!data) throw new Error("Room not found or already joined")
-  return mapDbRowToRoom(data as Record<string, unknown>)
+  const room = mapDbRowToRoom(data as Record<string, unknown>)
+  try {
+    await claimActiveMatch(supabase, params.challenger_identity_id, roomId)
+  } catch (e) {
+    console.warn("[rooms-service joinRoom] claimActiveMatch failed:", e)
+  }
+  return room
 }
 
 /**
- * Cancel room. Host only; no challenger. Sets finished_at and ended_at (transitional).
+ * Cancel room. Host only; no challenger. Sets status canceled and releases active match slots.
  */
 export async function cancelRoom(
   supabase: SupabaseClient,
@@ -197,20 +266,24 @@ export async function cancelRoom(
   const { error } = await supabase
     .from("matches")
     .update({
-      status: "Finished",
+      status: DB_STATUS.CANCELED,
+      winner_identity_id: null,
+      win_reason: "canceled",
       updated_at: now,
       ended_at: now,
       finished_at: now,
     })
     .eq("id", roomId)
+    .in("status", [DB_STATUS.WAITING, "Waiting for Opponent"])
     .eq("host_wallet", hostIdentityId)
     .is("challenger_wallet", null)
 
   if (error) throw error
+  await releaseActiveMatchByMatch(supabase, roomId)
 }
 
 /**
- * Forfeit. Sets winner, win_reason, finished_at, ended_at (new + legacy).
+ * Forfeit. Sets status forfeited, winner, win_reason, finished_at. Releases active match slots.
  */
 export async function forfeitRoom(
   supabase: SupabaseClient,
@@ -222,7 +295,7 @@ export async function forfeitRoom(
   const { data, error } = await supabase
     .from("matches")
     .update({
-      status: "Finished",
+      status: DB_STATUS.FORFEITED,
       winner_identity_id: winnerIdentityId,
       win_reason: "forfeit",
       updated_at: now,
@@ -230,12 +303,13 @@ export async function forfeitRoom(
       finished_at: now,
     })
     .eq("id", roomId)
-    .in("status", ["Ready to Start", "Live"])
+    .in("status", ["ready", "countdown", "live", "Ready to Start", "Live"])
     .select("*")
     .maybeSingle()
 
   if (error) throw error
   if (!data) throw new Error("Room not found or already finished")
+  await releaseActiveMatchByMatch(supabase, roomId)
   return mapDbRowToRoom(data as Record<string, unknown>)
 }
 

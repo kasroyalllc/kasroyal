@@ -40,12 +40,12 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
         ? ("open" as const)
         : ("locked" as const)
 
-  const COUNTDOWN_MS = 30 * 1000
+  const countdownSeconds = Math.max(1, room.countdownSeconds ?? 30)
   const countdownStartedAt = room.countdownStartedAt ?? (room.status === "Ready to Start" ? room.updatedAt : undefined) ?? undefined
   const bettingClosesAt =
     room.bettingClosesAt ??
     (room.status === "Ready to Start" && countdownStartedAt != null
-      ? countdownStartedAt + COUNTDOWN_MS
+      ? countdownStartedAt + countdownSeconds * 1000
       : undefined)
   const startedAt = room.liveStartedAt ?? undefined
   const finishedAt = room.finishedAt ?? undefined
@@ -87,7 +87,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     roundScore: { host: room.hostRoundWins, challenger: room.challengerRoundWins },
     currentRound: room.currentRound,
     spectatorPool: { host: 0, challenger: 0 },
-    bettingWindowSeconds: 30,
+    bettingWindowSeconds: countdownSeconds,
     result: room.winnerIdentityId
       ? room.winnerIdentityId === room.hostIdentityId
         ? ("host" as const)

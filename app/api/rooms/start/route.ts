@@ -5,6 +5,7 @@ import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { createInitialBoardState } from "@/lib/rooms/game-board"
 import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom, type GameType } from "@/lib/engine/match/types"
+import { DB_STATUS } from "@/lib/rooms/db-status"
 
 export const dynamic = "force-dynamic"
 
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from("matches")
       .update({
-        status: "Live",
+        status: DB_STATUS.LIVE,
         live_started_at: nowIso,
         started_at: nowIso,
         betting_open: false,
@@ -103,10 +104,13 @@ export async function POST(request: NextRequest) {
         host_round_wins: 0,
         challenger_round_wins: 0,
         current_round: 1,
+        round_number: 1,
+        host_score: 0,
+        challenger_score: 0,
         updated_at: nowIso,
       })
       .eq("id", roomId)
-      .eq("status", "Ready to Start")
+      .in("status", ["ready", "countdown", "Ready to Start"])
       .select("*")
       .maybeSingle()
 

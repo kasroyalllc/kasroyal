@@ -10,6 +10,8 @@ import {
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
 import { logRoomAction } from "@/lib/log"
+import { DB_STATUS } from "@/lib/rooms/db-status"
+import { releaseActiveMatchByMatch } from "@/lib/rooms/rooms-service"
 
 export const dynamic = "force-dynamic"
 
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase
         .from("matches")
         .update({
-          status: "Live",
+          status: DB_STATUS.LIVE,
           live_started_at: nowIso,
           started_at: nowIso,
           betting_open: false,
@@ -93,10 +95,16 @@ export async function POST(request: NextRequest) {
           move_turn_started_at: isRps ? null : nowIso,
           move_turn_seconds: isRps ? null : moveSeconds,
           turn_expires_at: turnExpiresAt,
+          host_round_wins: 0,
+          challenger_round_wins: 0,
+          current_round: 1,
+          round_number: 1,
+          host_score: 0,
+          challenger_score: 0,
           updated_at: nowIso,
         })
         .eq("id", roomId)
-        .eq("status", "Ready to Start")
+        .in("status", ["ready", "countdown", "Ready to Start"])
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -156,7 +164,7 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
+            status: DB_STATUS.FINISHED,
             host_timeout_strikes: newHostStrikes,
             winner_identity_id: room.challengerIdentityId,
             win_reason: "timeout",
@@ -165,10 +173,11 @@ export async function POST(request: NextRequest) {
             ended_at: nowIso,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
+        await releaseActiveMatchByMatch(supabase, roomId)
         logRoomAction("timeout_finish", roomId, { winner: "challenger", reason: "timeout" })
         return NextResponse.json(
           {
@@ -186,7 +195,7 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
+            status: DB_STATUS.FINISHED,
             challenger_timeout_strikes: newChallengerStrikes,
             winner_identity_id: room.hostIdentityId,
             win_reason: "timeout",
@@ -195,10 +204,11 @@ export async function POST(request: NextRequest) {
             ended_at: nowIso,
           })
           .eq("id", roomId)
-          .eq("status", "Live")
+          .in("status", ["Live", "live"])
           .select("*")
           .maybeSingle()
         if (error) throw error
+        await releaseActiveMatchByMatch(supabase, roomId)
         logRoomAction("timeout_finish", roomId, { winner: "host", reason: "timeout" })
         return NextResponse.json(
           {
@@ -231,7 +241,7 @@ export async function POST(request: NextRequest) {
           updated_at: nowIso,
         })
         .eq("id", roomId)
-        .eq("status", "Live")
+        .in("status", ["Live", "live"])
         .select("*")
         .maybeSingle()
       if (error) throw error
