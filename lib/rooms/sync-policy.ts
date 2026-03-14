@@ -41,7 +41,7 @@ export function shouldAcceptRoomUpdate(
     decision = true
   }
 
-  if (process.env.NODE_ENV !== "production" && (incomingStatus === "Ready to Start" || incomingStatus === "Live" || currentStatus === "Live")) {
+  if (process.env.NODE_ENV !== "production" && (incomingStatus === "Ready to Start" || incomingStatus === "Live" || currentStatus === "Live" || currentStatus === "Ready to Start")) {
     console.info("[sync-policy]", {
       source,
       current_updatedAt: currentUpdatedAt,

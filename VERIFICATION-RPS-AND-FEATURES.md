@@ -12,10 +12,10 @@ Temporary diagnostics are in place to capture the **exact failing condition** in
 
 | File | What was added |
 |------|----------------|
-| `lib/rooms/sync-policy.ts` | Log on every accept/reject when status is Ready or Live: `[sync-policy]` with source, current_updatedAt/status, incoming_updatedAt/status, decision. |
+| `lib/rooms/sync-policy.ts` | Log on every accept/reject when status is Ready to Start or Live (current or incoming): `[sync-policy]` with source, current_updatedAt/status, incoming_updatedAt/status, decision. Surfaces Ready→Waiting overwrites on joiner. |
 | `app/api/rooms/start/route.ts` | One log per Ready→Live attempt: `[start Ready->Live]` with room_id, previous_status, countdown_end_ms, server_now_ms, client_time_ms, transition_allowed, db_rows_affected, final_returned_room_status. |
 | `app/api/rooms/tick/route.ts` | Same for tick: `[tick Ready->Live]` with the same fields. |
-| `app/arena/match/[id]/page.tsx` | `[start response]` payload (ok, room_status, room_updatedAt, countdownNotExpired, alreadyLive, willApply); `[tick response]` when tick returns Ready or ready_to_live; one throttled `[RPS render]` (shell_visible, controls_visible, match_status, updatedAt, board_state_mode, runtime flags). |
+| `app/arena/match/[id]/page.tsx` | `[start response]` payload; `[tick response]` when tick returns Ready or ready_to_live; throttled `[RPS render]`; **pregame:** `[pregame phrase] interval` (ref_status, advanced) every 5s; throttled `[pregame phrase] state` (role, phrase_index, match_status, shell_visible, etc.) when status is Ready to Start. |
 
 ### How to run one RPS test and what to paste back
 
@@ -48,7 +48,9 @@ Temporary diagnostics are in place to capture the **exact failing condition** in
 - `[RPS render]` — shell_visible, controls_visible, match_status, updatedAt, board_state_mode, runtime (isCountdown, bettingSecondsLeft, countdownEndMs, etc.). Tells you which branch is rendering and current state.
 - `[start response]` — after each /api/rooms/start call: room_status, room_updatedAt, countdownNotExpired, alreadyLive, willApply.
 - `[tick response]` — when tick returns room in Ready or transition ready_to_live: room_status, transition, server_time_ms, room_updatedAt.
-- `[sync-policy]` — source, current_updatedAt, current_status, incoming_updatedAt, incoming_status, decision (accept/reject). Shows whether a refetch or realtime update was accepted or rejected (e.g. Live overwritten by Ready).
+- `[sync-policy]` — source, current_updatedAt, current_status, incoming_updatedAt, incoming_status, decision (accept/reject). Shows whether a refetch or realtime update was accepted or rejected (e.g. Live overwritten by Ready, or Ready overwritten by Waiting on joiner).
+- `[pregame phrase] interval` — every 5s: ref_status (matchStatusRef when timer fired), advanced (true if phrase index incremented). On joiner, ref_status often not "Ready to Start" explains static phrase.
+- `[pregame phrase] state` — throttled when Ready to Start: role, phrase_index, phrase_rotation_active, match_status, runtime_phase, bettingSecondsLeft, countdown_started_at, updated_at, shell_visible.
 - `[RPS stuck diagnostic]` — (existing) once when countdown has ended but status still Ready: full client state.
 
 **Server logs (terminal where `npm run dev` runs):**
@@ -60,10 +62,75 @@ Temporary diagnostics are in place to capture the **exact failing condition** in
 
 After one run (whether the shell disappeared or stayed stuck), paste:
 
-1. **Every line containing** `[RPS render]`, `[start response]`, `[tick response]`, `[sync-policy]`, and if present `[RPS stuck diagnostic]` from the **browser console** (from the moment the second player joins until ~10 seconds after countdown hits 0).
+1. **Every line containing** `[RPS render]`, `[start response]`, `[tick response]`, `[sync-policy]`, `[pregame phrase]`, and if present `[RPS stuck diagnostic]` from the **browser console** on **both host and joiner** (from the moment the second player joins until ~10 seconds after countdown hits 0).
 2. **Every line containing** `[start Ready->Live]` and `[tick Ready->Live]` from the **server terminal**.
 
 That will show: which branch the page is rendering, what start/tick returned, whether sync-policy rejected an update, and what the server did (transition_allowed, db_rows_affected, final_returned_room_status). No further speculative fixes until this run is reviewed.
+
+---
+
+## Pregame phrase mismatch (host vs challenger) — diagnosis
+
+**Observed:** Host sees rotating pregame phrases during the 30s countdown; the joiner (challenger) does not. This is treated as a **debugging signal** for the same client-state/render divergence that may cause RPS to stay stuck.
+
+### Exact reason the joiner does not get rotating phrases (hypothesis)
+
+The phrase rotation interval advances `countdownLineIndex` **only when** `matchStatusRef.current === "Ready to Start"`. The ref is updated in the render body (`matchStatusRef.current = match?.status ?? ""`), so it always holds the **last rendered** `match.status`.
+
+- **Host:** After the challenger joins, the host’s `match` is updated (realtime or refetch) to "Ready to Start" and stays that way. So `matchStatusRef.current` is "Ready to Start" whenever the 5s interval fires → phrase advances.
+- **Joiner:** The joiner’s first load calls `refreshRoom()`; that first read can return the room **before** the join is visible (e.g. replication lag), so `match` is "Waiting for Opponent". Later refetches may return "Ready to Start", but if refetch or realtime **overwrites** "Ready to Start" with "Waiting for Opponent" (e.g. stale read with newer `updated_at`, or no sync rule protecting Ready→Waiting), then the joiner’s `match.status` (and thus `matchStatusRef.current`) is often "Waiting for Opponent". When the 5s interval runs, it sees `ref_status !== "Ready to Start"` and **does not advance** → joiner sees a single static phrase.
+
+So the **exact reason** is: **on the joiner, `matchStatusRef.current` is not "Ready to Start" when the phrase interval fires**, either because (1) the joiner’s `match` is often "Waiting for Opponent" due to refetch/realtime overwriting "Ready to Start", or (2) the joiner never stably receives "Ready to Start" (e.g. first refetch is always stale). Diagnostics will confirm which.
+
+### Does this share the same root cause as the stuck RPS shell?
+
+**Yes, likely.** Both depend on the client holding **stable "Ready to Start"** (and then "Live") state:
+
+- **Phrase rotation:** Needs `match.status === "Ready to Start"` so the ref is "Ready to Start" when the interval fires.
+- **RPS transition:** Needs `match.status` to become "Live" and stay Live (not overwritten by refetch/realtime with "Ready to Start" or "Waiting for Opponent").
+
+If the joiner’s state is often overwritten by stale refetch/realtime (e.g. "Ready to Start" → "Waiting for Opponent", or Live → Ready), then (1) the phrase never rotates, and (2) the RPS shell can stay "Ready to Start" or flip back. So fixing one (e.g. sync policy or initial hydration for joiner) may fix both.
+
+### Files changed for pregame phrase diagnostics
+
+| File | What was added |
+|------|----------------|
+| `app/arena/match/[id]/page.tsx` | **Interval callback:** Every 5s the phrase timer logs `[pregame phrase] interval` with `ref_status` (value of `matchStatusRef.current`) and `advanced` (true if index was incremented). **State log:** When `match.status === "Ready to Start"`, throttled `[pregame phrase] state` with role, phrase_index, phrase_rotation_active, match_status, runtime_phase, bettingSecondsLeft, countdown_started_at, updated_at, shell_visible. |
+| `lib/rooms/sync-policy.ts` | Sync-policy log now also runs when **current** status is "Ready to Start" (so we see when incoming "Waiting for Opponent" is accepted/rejected and could overwrite the joiner’s Ready state). |
+
+### Live-debug instructions for phrase mismatch
+
+1. **Host:** Open match page, create RPS, wait for joiner. In DevTools console, note `[pregame phrase] interval` (should show `ref_status: "Ready to Start"`, `advanced: true` every 5s) and `[pregame phrase] state` (role: host, phrase_index increasing).
+2. **Joiner:** In a second browser/incognito, join the same match. In DevTools console, note:
+   - `[pregame phrase] interval` — if you see `ref_status: "Waiting for Opponent"` and `advanced: false` every 5s, that confirms the ref is never "Ready to Start" when the interval fires.
+   - `[pregame phrase] state` — role: challenger, match_status (Ready to Start vs Waiting for Opponent), phrase_index (likely stuck at 0).
+   - `[sync-policy]` — if you see `current_status: "Ready to Start"`, `incoming_status: "Waiting for Opponent"`, `decision: "accept"`, then refetch/realtime is overwriting Ready with Waiting on the joiner.
+3. **Paste back:** From **both** host and joiner consoles (from join until ~30s after): every line containing `[pregame phrase]`, and every `[sync-policy]` line where current_status or incoming_status is "Ready to Start" or "Waiting for Opponent".
+
+### Exact strings to search for (pregame phrase)
+
+**Browser console (both host and joiner):**
+
+- `[pregame phrase] interval` — ref_status, advanced. On joiner, if ref_status is never "Ready to Start", rotation is blocked.
+- `[pregame phrase] state` — role, phrase_index, phrase_rotation_active, match_status, runtime_phase, bettingSecondsLeft, countdown_started_at, updated_at, shell_visible.
+- `[sync-policy]` — when current_status is "Ready to Start" and incoming_status is "Waiting for Opponent", decision shows whether we allowed the overwrite.
+
+### After logs: logic pass checklist
+
+When logs are back, use them to:
+
+1. **Confirm the joiner’s phrase rotation path**  
+   Compare host vs joiner: same status/effect conditions or different gating?
+   - Does the joiner ever log `[pregame phrase] state` with `match_status: "Ready to Start"` and `role: "challenger"`?
+   - On the joiner, does `[pregame phrase] interval` show `ref_status: "Ready to Start"` at any time, or always something else (e.g. `"Waiting for Opponent"`)?
+   - If the joiner’s `ref_status` is never "Ready to Start", then the **effect/interval is the same** for both; the difference is **state** (joiner’s `match.status` / ref not staying "Ready to Start"). If the joiner sometimes has `match_status: "Ready to Start"` in state but `ref_status` is still not "Ready to Start" when the interval fires, that suggests timing (ref updated after interval read) or a different render path.
+
+2. **Check for different gating**  
+   - Is phrase rotation (or the CountdownOverlay that shows the phrase) gated by host-only or challenger-only logic (e.g. `isHostUser` / `isChallengerUser`, or `challenger` presence) in `app/arena/match/[id]/page.tsx`?
+   - Today the phrase interval is keyed only by `[matchId]` and uses `matchStatusRef.current === "Ready to Start"` with no role check. The CountdownOverlay is shown when `match.status === "Ready to Start" && challenger` — same condition for both. So if logs show the joiner’s `match_status` often "Waiting for Opponent", the divergence is state/sync, not a different code gate. If logs show the joiner often "Ready to Start" but phrase still doesn’t rotate, re-check for any other branch (e.g. different overlay or effect dependency) that could apply only to the joiner.
+
+3. **RPS**  
+   Use the same logs to see why the shell stays "Ready to Start" and controls never show (start/tick response, sync-policy, RPS render branch).
 
 ---
 

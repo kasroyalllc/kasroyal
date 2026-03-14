@@ -689,6 +689,8 @@ export default function ArenaMatchPage() {
   const rpsStuckLoggedRef = useRef(false)
   /** RPS live-debug: throttle render log to avoid spam (dev only). */
   const rpsDebugLastLogRef = useRef<{ at: number; status: string; shell: boolean; controls: boolean; boardMode: string } | null>(null)
+  /** Pregame phrase debug: throttle state log (dev only). */
+  const pregamePhraseLogRef = useRef<{ at: number; fingerprint: string } | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
@@ -963,7 +965,12 @@ export default function ArenaMatchPage() {
   useEffect(() => {
     if (!matchId) return
     const lineInterval = window.setInterval(() => {
-      if (matchStatusRef.current === "Ready to Start") {
+      const refStatus = matchStatusRef.current
+      const shouldAdvance = refStatus === "Ready to Start"
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[pregame phrase] interval", { ref_status: refStatus, advanced: shouldAdvance })
+      }
+      if (shouldAdvance) {
         setCountdownLineIndex((value) => value + 1)
       }
     }, 5000)
@@ -1381,6 +1388,31 @@ export default function ArenaMatchPage() {
       })
     }
   }, [match?.game, match?.status, match?.updatedAt, match?.boardState, challenger, rpsState.revealed, isCountdown, isIntermission, bettingSecondsLeft, countdownEndMs])
+
+  // Pregame phrase live-debug: role, phrase_index, phrase_rotation_active, match.status, runtime, shell_visible (dev only, throttled).
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !match || match.status !== "Ready to Start") return
+    const role = isHostUser ? "host" : isChallengerUser ? "challenger" : "spectator"
+    const phrase_rotation_active = match.status === "Ready to Start"
+    const shell_visible = !!challenger
+    const fingerprint = `${role}|${match.status}|${countdownLineIndex}|${bettingSecondsLeft}|${shell_visible}`
+    const now = Date.now()
+    const last = pregamePhraseLogRef.current
+    const throttleMs = 3000
+    if (last && last.fingerprint === fingerprint && now - last.at < throttleMs) return
+    pregamePhraseLogRef.current = { at: now, fingerprint }
+    console.info("[pregame phrase] state", {
+      role,
+      phrase_index: countdownLineIndex,
+      phrase_rotation_active,
+      match_status: match.status,
+      runtime_phase: isCountdown ? "countdown" : "other",
+      bettingSecondsLeft,
+      countdown_started_at: match.countdownStartedAt ?? null,
+      updated_at: match.updatedAt ?? null,
+      shell_visible,
+    })
+  }, [match?.status, match?.countdownStartedAt, match?.updatedAt, isHostUser, isChallengerUser, countdownLineIndex, isCountdown, bettingSecondsLeft, challenger])
 
   const canHostMove =
     !isFinished &&
