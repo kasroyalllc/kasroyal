@@ -566,6 +566,7 @@ function getTttState(match: ArenaMatch | null) {
   }
 }
 
+/** RPS state from match. Tolerant: if game is RPS and board_state is missing/wrong shape, returns safe defaults so live selection UI still renders. */
 function getRpsState(match: ArenaMatch | null) {
   const boardState = (match?.boardState ?? null) as MatchBoardState
   if (
@@ -783,11 +784,15 @@ export default function ArenaMatchPage() {
         .then((r) => r.json())
         .then((data) => {
           if (data.ok && data.room) {
-            setMatch(roomToArenaMatch(data.room))
+            let room = data.room as Record<string, unknown>
+            if (data.transition === "ready_to_live") {
+              room = { ...room, status: "Live" }
+            }
+            setMatch(roomToArenaMatch(room as Parameters<typeof roomToArenaMatch>[0]))
             if (typeof data.server_time_ms === "number") {
               setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
             }
-            if (data.transition === "ready_to_live" || data.transition === "intermission_next_round") {
+            if (data.transition === "intermission_next_round") {
               void refreshRoom()
             }
           }
@@ -2354,7 +2359,7 @@ export default function ArenaMatchPage() {
                 </GameBoardShell>
               ) : match.game === "Rock Paper Scissors" ? (
                 <GameBoardShell title="Rock Paper Scissors" subtitle={match.statusText}>
-                  {isCountdown && challenger ? (
+                  {match.status === "Ready to Start" && challenger ? (
                     <CountdownOverlay
                       seconds={bettingSecondsLeft}
                       hostName={match.host?.name ?? "Host"}
@@ -2413,9 +2418,9 @@ export default function ArenaMatchPage() {
                           const myChoice = isHostUser ? rpsState.hostChoice : isChallengerUser ? rpsState.challengerChoice : null
                           const isSelected = myChoice === choice
                           const disabled =
-                            isCountdown ||
-                            isPaused ||
                             match.status !== "Live" ||
+                            isPaused ||
+                            isIntermission ||
                             !(isHostUser || isChallengerUser) ||
                             isLocked
                           return (

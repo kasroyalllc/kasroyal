@@ -83,6 +83,8 @@ export async function POST(request: NextRequest) {
 
       assertTransition(room.status, "Live", "tick_ready_to_live")
 
+      // DB may store: ready | countdown | "Ready to Start" (legacy). Match all so update never misses.
+      const readyLikeStatuses = ["ready", "countdown", "Ready to Start", "Ready To Start"]
       const { data, error } = await supabase
         .from("matches")
         .update({
@@ -101,7 +103,7 @@ export async function POST(request: NextRequest) {
           updated_at: nowIso,
         })
         .eq("id", roomId)
-        .in("status", ["ready", "countdown", "Ready to Start"])
+        .in("status", readyLikeStatuses)
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -119,8 +121,10 @@ export async function POST(request: NextRequest) {
       }
       // Update matched 0 rows (e.g. another request already transitioned). Re-fetch and return latest so client gets Live.
       const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
+      const refetchedStatus = refetched != null ? String((refetched as Record<string, unknown>).status) : "null"
+      logRoomAction("tick_ready_to_live_0_rows", roomId, { game: gameType, refetched_status: refetchedStatus })
       const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
-      const isNowLive = refetched && String((refetched as Record<string, unknown>).status) === DB_STATUS.LIVE
+      const isNowLive = refetched && refetchedStatus === DB_STATUS.LIVE
       return NextResponse.json(
         {
           ok: true,
