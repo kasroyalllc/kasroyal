@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
+import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 import {
   canTransitionReadyToLive,
   getReadyToLivePayload,
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
 
     if (!data) {
       const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
-      const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
+      const latestRoom = refetched ? ensureFullRoom(mapDbRowToRoom(refetched as Record<string, unknown>), room) : room
       const isLive = latestRoom.status === "Live"
       const finalStatus = latestRoom.status ?? "unknown"
       if (process.env.NODE_ENV !== "production") {
@@ -160,9 +161,14 @@ export async function POST(request: NextRequest) {
     }
     await insertMatchEvent(supabase, roomId, "match_live", {})
     const updatedRoom = mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
+    const payloadBoardState = (payload as { board_state?: unknown }).board_state
+    if (updatedRoom.boardState == null && payloadBoardState != null) {
+      updatedRoom.boardState = payloadBoardState
+    }
+    const fullRoom = ensureFullRoom(updatedRoom, room)
 
     return NextResponse.json(
-      { ok: true, room: updatedRoom, server_time_ms: nowMs },
+      { ok: true, room: fullRoom, server_time_ms: nowMs },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

@@ -8,8 +8,8 @@ import {
   RPS_ROUND_SECONDS,
   TIMEOUT_STRIKES_TO_LOSE,
 } from "@/lib/engine/game-constants"
-import { mapDbRowToRoom } from "@/lib/engine/match/types"
-import type { GameType } from "@/lib/engine/match/types"
+import { mapDbRowToRoom, type GameType, type Room } from "@/lib/engine/match/types"
+import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 import { logRoomAction } from "@/lib/log"
 import { DB_STATUS } from "@/lib/rooms/db-status"
 import { releaseActiveMatchByMatch } from "@/lib/rooms/rooms-service"
@@ -124,10 +124,11 @@ export async function POST(request: NextRequest) {
           }
           await insertMatchEvent(supabase, roomId, "match_live", {})
           logRoomAction("ready_to_live", roomId, { game: gameType })
+          const readyRoom = mapDbRowToRoom((data as Record<string, unknown>))
           return NextResponse.json(
             {
               ok: true,
-              room: mapDbRowToRoom((data as Record<string, unknown>)),
+              room: ensureFullRoom(readyRoom, room),
               transition: "ready_to_live",
               server_time_ms: Date.now(),
             },
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
           })
         }
         logRoomAction("tick_ready_to_live_0_rows", roomId, { game: gameType, refetched_status: refetchedStatus })
-        const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
+        const latestRoom = refetched ? ensureFullRoom(mapDbRowToRoom(refetched as Record<string, unknown>), room) : room
         const isNowLive = refetched && refetchedStatus === DB_STATUS.LIVE
         return NextResponse.json(
           {
@@ -240,10 +241,15 @@ export async function POST(request: NextRequest) {
             round_number: (room.currentRound ?? 1) + 1,
           })
           logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
+          const returnedRoom = mapDbRowToRoom((intermissionData as Record<string, unknown>))
+          // Ensure response always includes boardState so client never keeps stale RPS hands (tick response may omit it if row shape differs).
+          if (returnedRoom.boardState == null && nextBoardState != null) {
+            returnedRoom.boardState = nextBoardState
+          }
           return NextResponse.json(
             {
               ok: true,
-              room: mapDbRowToRoom((intermissionData as Record<string, unknown>)),
+              room: returnedRoom,
               transition: "intermission_next_round",
               server_time_ms: nowMs,
             },
@@ -320,10 +326,11 @@ export async function POST(request: NextRequest) {
                 })
               }
               logRoomAction("rps_round_timeout", roomId, { updateType: dbUpdate.updateType })
+              const rpsTimeoutRoom = mapDbRowToRoom((updateData as Record<string, unknown>))
               return NextResponse.json(
                 {
                   ok: true,
-                  room: mapDbRowToRoom((updateData as Record<string, unknown>)),
+                  room: ensureFullRoom(rpsTimeoutRoom, room),
                   transition: "rps_round_timeout",
                   server_time_ms: nowMs,
                 },
@@ -359,10 +366,11 @@ export async function POST(request: NextRequest) {
             .select("*")
             .maybeSingle()
           if (!resumeError && resumeData) {
+            const resumeRoom = mapDbRowToRoom((resumeData as Record<string, unknown>))
             return NextResponse.json(
               {
                 ok: true,
-                room: mapDbRowToRoom((resumeData as Record<string, unknown>)),
+                room: ensureFullRoom(resumeRoom, room),
                 transition: "pause_expired_resume",
                 server_time_ms: nowMs,
               },
@@ -433,10 +441,11 @@ export async function POST(request: NextRequest) {
         )
         await releaseActiveMatchByMatch(supabase, roomId)
         logRoomAction("timeout_finish", roomId, { winner: "challenger", reason: "timeout" })
+        const timeoutFinishRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : room
         return NextResponse.json(
           {
             ok: true,
-            room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
+            room: ensureFullRoom(timeoutFinishRoom, room),
             transition: "timeout_finish",
             server_time_ms: nowMs,
           },
@@ -477,10 +486,11 @@ export async function POST(request: NextRequest) {
         )
         await releaseActiveMatchByMatch(supabase, roomId)
         logRoomAction("timeout_finish", roomId, { winner: "host", reason: "timeout" })
+        const timeoutFinishRoomHost = data ? mapDbRowToRoom((data as Record<string, unknown>)) : room
         return NextResponse.json(
           {
             ok: true,
-            room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
+            room: ensureFullRoom(timeoutFinishRoomHost, room),
             transition: "timeout_finish",
             server_time_ms: nowMs,
           },
@@ -512,10 +522,11 @@ export async function POST(request: NextRequest) {
         .select("*")
         .maybeSingle()
       if (error) throw error
+      const strikeRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : room
       return NextResponse.json(
         {
           ok: true,
-          room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
+          room: ensureFullRoom(strikeRoom, room),
           transition: "timeout_strike",
           server_time_ms: nowMs,
         },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById, forfeitRoom } from "@/lib/rooms/rooms-service"
+import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { logRoomAction } from "@/lib/log"
 import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
     logRoomAction("forfeit", roomId, { winner: isHost ? "challenger" : "host" })
 
     return NextResponse.json(
-      { ok: true, room: updated },
+      { ok: true, room: ensureFullRoom(updated, room) },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

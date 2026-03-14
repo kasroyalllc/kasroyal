@@ -5,6 +5,7 @@ import {
   joinRoom,
   listActiveRooms,
 } from "@/lib/rooms/rooms-service"
+import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 
 export const dynamic = "force-dynamic"
 
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json(
-      { ok: true, room: updated },
+      { ok: true, room: ensureFullRoom(updated, room) },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

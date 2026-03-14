@@ -95,14 +95,29 @@ The move route calls the driver, then resolveMoveToDbUpdate; writes one update t
 
 ---
 
+## Canonical room shape (architecture rule)
+
+**All room-mutating API routes must return the full canonical `Room` object. Partial room responses are not allowed** because they cause the client to retain stale game-specific state (e.g. RPS `hostChoice`/`challengerChoice`, intermission boards, move-turn fields).
+
+- **Canonical mapper**: `mapDbRowToRoom(row)` in `lib/engine/match/types.ts` is the single DB row → `Room` mapper. The `Room` type there defines the full shape (id, game, status, host/challenger, betting/countdown/live timestamps, move turn fields, **boardState**, bestOf, currentRound, hostRoundWins, challengerRoundWins, roundIntermissionUntil, lastRoundWinnerIdentityId, winnerIdentityId, winReason, pause fields, updatedAt, finishedAt).
+- **Full-room guarantee**: After any `.update().select("*")`, Supabase may omit columns (e.g. `board_state`) in the returned row. Routes must not return that row mapped as-is. Use **`ensureFullRoom(mapped, fallback)`** from `lib/rooms/canonical-room.ts`: it fills missing `boardState` (and other core fields) from the `fallback` room (the one from `getRoomById` at request start) so the response is always complete.
+- **Routes covered**: tick, start, move, pause, resume, join, forfeit all call `ensureFullRoom` on the room they return. Create returns a room from insert+select (full row). Cancel does not return a room.
+- **Client**: The client assumes every route response is a full room. `acceptAndReconcile` / `reconcileRoom` operate on full rooms; they do not merge partial updates onto existing state. If a route ever returned a partial room, the client would keep previous values for omitted fields (e.g. stale RPS hands).
+- **Dev assertion**: In development, `ensureFullRoom` logs a warning if the room is still missing core fields after filling from fallback, to catch regressions.
+
+See `lib/rooms/canonical-room.ts` and [debug-playbook.md](debugging/debug-playbook.md) (partial room responses).
+
+---
+
 ## Where DB rows become UI state
 
 1. **Read**: Supabase (direct or via API) returns match row(s).
 2. **Normalize**: `mapDbRowToRoom(row)` in `lib/engine/match/types.ts` produces a `Room` (camelCase, ms timestamps, canonical status strings). Legacy columns (host_wallet, wager, started_at, ended_at) are used as fallbacks where needed.
-3. **Reconcile** (optional): `reconcileRoom(room)` in sync-policy fixes invalid/edge state.
-4. **Accept** (client): `shouldAcceptRoomUpdate(current, incomingRoom, source)` decides whether to replace current state.
-5. **UI shape**: `roomToArenaMatch(room)` in room-adapter produces `ArenaMatch` (roundScore, status, boardState, pauseState, etc.) for components.
-6. **Canonical view** (optional): `getMatchRuntime(room)` in match-runtime gives series, pause, intermission, permissions, and flags for UI logic.
+3. **Full-room guarantee** (routes): Before returning, routes use `ensureFullRoom(mapped, fallback)` so the response is never partial.
+4. **Reconcile** (optional): `reconcileRoom(room)` in sync-policy fixes invalid/edge state.
+5. **Accept** (client): `shouldAcceptRoomUpdate(current, incomingRoom, source)` decides whether to replace current state.
+6. **UI shape**: `roomToArenaMatch(room)` in room-adapter produces `ArenaMatch` (roundScore, status, boardState, pauseState, etc.) for components.
+7. **Canonical view** (optional): `getMatchRuntime(room)` in match-runtime gives series, pause, intermission, permissions, and flags for UI logic.
 
 ---
 

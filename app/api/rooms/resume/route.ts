@@ -4,6 +4,7 @@ import { getRoomById } from "@/lib/rooms/rooms-service"
 import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
+import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 import { logRoomAction } from "@/lib/log"
 import { insertMatchEvent } from "@/lib/rooms/match-events"
 export const dynamic = "force-dynamic"
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
     await insertMatchEvent(supabase, roomId, "resumed", {})
     logRoomAction("resume", roomId)
     return NextResponse.json(
-      { ok: true, room: updatedRoom },
+      { ok: true, room: ensureFullRoom(updatedRoom, room) },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

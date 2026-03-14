@@ -883,6 +883,18 @@ export default function ArenaMatchPage() {
           }
           if (data.ok && data.room) {
             let room = data.room as Room
+            // Never apply a tick room that lacks boardState for RPS intermission→next round (would leave stale hostChoice/challengerChoice).
+            if (
+              data.transition === "intermission_next_round" &&
+              room.game === "Rock Paper Scissors" &&
+              (room.boardState == null || typeof room.boardState !== "object")
+            ) {
+              if (typeof data.server_time_ms === "number") {
+                setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+              }
+              void refreshRoom()
+              return
+            }
             if (data.transition === "intermission_next_round" && room.game === "Rock Paper Scissors") {
               const board = room.boardState as PersistedRpsBoardState | undefined
               console.log("[client] FIRST room state AFTER intermission (from tick response)", {

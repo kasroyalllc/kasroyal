@@ -316,7 +316,7 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
         ? String(row.winner_identity_id)
         : null,
     winReason: row.win_reason != null ? String(row.win_reason) : null,
-    boardState: row.board_state ?? undefined,
+    boardState: (row.board_state ?? row.boardState) ?? undefined,
     bestOf: ((): 1 | 3 | 5 => {
       const n = Number(row.best_of ?? 1)
       if (n === 3 || n === 5) return n

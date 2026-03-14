@@ -9,6 +9,7 @@ import { getRoomById, releaseActiveMatchByMatch } from "@/lib/rooms/rooms-servic
 import { logRoomAction } from "@/lib/log"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type { Room } from "@/lib/engine/match/types"
+import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 import type { GameType } from "@/lib/engine/match/types"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
 import type { RoundOutcome } from "@/lib/rooms/game-drivers"
@@ -222,9 +223,10 @@ export async function POST(request: NextRequest) {
     const updatedRoom = data
       ? mapDbRowToRoom((data as Record<string, unknown>))
       : (await getRoomById(supabase, roomId)) ?? room
+    const fullRoom = ensureFullRoom(updatedRoom, room)
 
     return NextResponse.json(
-      { ok: true, room: updatedRoom, server_time_ms: nowMs },
+      { ok: true, room: fullRoom, server_time_ms: nowMs },
       { headers: { "Cache-Control": "no-store" } }
     )
   } catch (e) {

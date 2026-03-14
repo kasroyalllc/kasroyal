@@ -76,6 +76,15 @@ Lessons learned while building the system. Each entry includes symptom, root cau
 
 ---
 
+## Partial room responses (stale boardState / RPS hands)
+
+- **Symptom**: RPS still shows a previous round’s hand for one or both sides after intermission or round reset; or other game-specific state (e.g. board, scores) does not update after a route response.
+- **Root cause**: A room-mutating route (tick, start, move, pause, resume, join, forfeit) returned a **partial** room object—e.g. the payload from the API had `status`, `currentRound`, `countdownStartedAt`, etc., but **no `boardState`**. The client then applied that response as the new match state; because the response omitted `boardState`, the previous `boardState` in memory was never replaced, so the UI kept showing stale `hostChoice`/`challengerChoice`.
+- **Fix**: (1) **Single canonical shape**: Every route that returns a room must return the **full** `Room` object. The canonical mapper is `mapDbRowToRoom` in `lib/engine/match/types.ts`. (2) After `mapDbRowToRoom(updateResult)`, the row may lack `board_state` (Supabase `.update().select("*")` can omit it). Use **`ensureFullRoom(mapped, fallback)`** from `lib/rooms/canonical-room.ts` with `fallback` = the room from `getRoomById` at the start of the request, so the response always includes `boardState` and other core fields. (3) All such routes (tick, start, move, pause, resume, join, forfeit) now call `ensureFullRoom`. (4) In development, `ensureFullRoom` logs a warning if the room is still missing core fields.
+- **Prevention**: **Architecture rule**: All room-mutating routes must return the full canonical room shape. Do not hand-build partial room payloads. Do not return `mapDbRowToRoom(updateResult)` without `ensureFullRoom` when the update result might omit columns. See [ARCHITECTURE.md](../ARCHITECTURE.md) § Canonical room shape.
+
+---
+
 ## Realtime sync mismatches
 
 - **Symptom**: UI shows stale state after a move or tick; challenger sees old round or “waiting” after match is live; duplicate or out-of-order updates.
