@@ -686,6 +686,7 @@ export default function ArenaMatchPage() {
   const startedTransitionRef = useRef(false)
   const matchStatusRef = useRef<string>("")
   const countdownEndMsRef = useRef<number>(0)
+  const rpsStuckLoggedRef = useRef(false)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
@@ -829,10 +830,12 @@ export default function ArenaMatchPage() {
     const inIntermission = match.status === "Live" && intermissionUntil != null && Date.now() < intermissionUntil
     const intervalMs = match.status === "Ready to Start" || inIntermission ? 1000 : 2000
     const runTick = () => {
+      const body: { room_id: string; client_time_ms?: number } = { room_id: matchId }
+      if (match?.status === "Ready to Start") body.client_time_ms = Date.now()
       fetch("/api/rooms/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room_id: matchId }),
+        body: JSON.stringify(body),
       })
         .then((r) => r.json())
         .then((data) => {
@@ -869,17 +872,28 @@ export default function ArenaMatchPage() {
 
     const run = () => {
       if (countdownEndMsRef.current <= 0) return
-      if (Date.now() < countdownEndMsRef.current) return
+      const now = Date.now()
+      if (now < countdownEndMsRef.current) return
+      const body = { room_id: matchId, client_time_ms: now }
       fetch("/api/rooms/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room_id: matchId }),
+        body: JSON.stringify(body),
       })
         .then((r) => r.json())
         .then((data) => {
           if (!data.ok || !data.room) return
-          if (data.countdownNotExpired) return
           const room = data.room as Room
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[start response]", {
+              ok: data.ok,
+              roomStatus: room?.status,
+              countdownNotExpired: data.countdownNotExpired,
+              alreadyLive: data.alreadyLive,
+              willApply: !data.countdownNotExpired && (room?.status === "Live" || data.alreadyLive),
+            })
+          }
+          if (data.countdownNotExpired) return
           if (room.status !== "Live" && !data.alreadyLive) return
           startedTransitionRef.current = true
           const reconciled = reconcileRoom(room)
@@ -927,6 +941,9 @@ export default function ArenaMatchPage() {
         : 0)
     countdownEndMsRef.current = endMs
   }
+  if (match?.status === "Live" || match?.status === "Finished") {
+    rpsStuckLoggedRef.current = false
+  }
 
   // Single interval for countdown line rotation: never torn down by match refetch, so challenger sees rotating lines like host.
   useEffect(() => {
@@ -946,6 +963,27 @@ export default function ArenaMatchPage() {
       window.clearInterval(tickInterval)
     }
   }, [matchId])
+
+  // Diagnostic: log once when RPS is stuck (Ready to Start, countdown ended) so we can see exact client state.
+  useEffect(() => {
+    if (!match || match.game !== "Rock Paper Scissors" || match.status !== "Ready to Start") return
+    if (countdownEndMsRef.current <= 0) return
+    if (Date.now() < countdownEndMsRef.current) return
+    if (rpsStuckLoggedRef.current) return
+    rpsStuckLoggedRef.current = true
+    const board = match.boardState as Record<string, unknown> | undefined
+    console.info("[RPS stuck diagnostic] client state after countdown ended:", {
+      status: match.status,
+      game: match.game,
+      updatedAt: match.updatedAt,
+      countdownStartedAt: match.countdownStartedAt,
+      bettingClosesAt: match.bettingClosesAt,
+      bettingWindowSeconds: match.bettingWindowSeconds,
+      moveTurnIdentityId: match.moveTurnIdentityId,
+      board_state_mode: board?.mode,
+      rps_hasPersistedState: board && typeof board === "object" && "mode" in board && (board as { mode?: string }).mode === "rps-live",
+    })
+  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, match?.countdownStartedAt, match?.bettingClosesAt, match?.bettingWindowSeconds, match?.moveTurnIdentityId])
 
   // When we leave Ready to Start, stop advancing (ref is updated above every render).
   // No extra effect needed — interval just no-ops when status isn't Ready.

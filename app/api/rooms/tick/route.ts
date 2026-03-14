@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
     const roomId = String(body?.room_id ?? "").trim()
+    const clientTimeMs = typeof body?.client_time_ms === "number" ? body.client_time_ms : null
 
     if (!roomId) {
       return NextResponse.json(
@@ -55,7 +56,17 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString()
 
     if (room.status === "Ready to Start") {
-      if (!canTransitionReadyToLive(room, nowMs)) {
+      const countdownStartedAt = room.countdownStartedAt ?? null
+      const countdownSeconds = (room.countdownSeconds ?? 30) * 1000
+      const countdownEndMs = countdownStartedAt != null ? countdownStartedAt + countdownSeconds : 0
+      const roomUpdatedAtMs = Number(room.updatedAt ?? 0)
+      const serverSaysGo = canTransitionReadyToLive(room, nowMs)
+      const clientSaysGo =
+        clientTimeMs != null &&
+        (countdownEndMs > 0
+          ? clientTimeMs >= countdownEndMs
+          : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
+      if (!serverSaysGo && !clientSaysGo) {
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }

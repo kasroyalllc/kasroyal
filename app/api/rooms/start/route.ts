@@ -18,8 +18,9 @@ export const dynamic = "force-dynamic"
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const roomId = String(body.room_id ?? "").trim()
+    const body = await request.json().catch(() => ({}))
+    const roomId = String(body?.room_id ?? "").trim()
+    const clientTimeMs = typeof body?.client_time_ms === "number" ? body.client_time_ms : null
 
     if (!roomId) {
       return NextResponse.json(
@@ -56,11 +57,38 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const nowMs = now.getTime()
-    if (!canTransitionReadyToLive(room, nowMs)) {
+    const countdownStartedAt = room.countdownStartedAt ?? null
+    const countdownSeconds = (room.countdownSeconds ?? 30) * 1000
+    const countdownEndMs = countdownStartedAt != null ? countdownStartedAt + countdownSeconds : 0
+    const roomUpdatedAtMs = Number(room.updatedAt ?? 0)
+    const serverSaysGo = canTransitionReadyToLive(room, nowMs)
+    const clientSaysGo =
+      clientTimeMs != null &&
+      (countdownEndMs > 0
+        ? clientTimeMs >= countdownEndMs
+        : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
+
+    if (!serverSaysGo && !clientSaysGo) {
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[start] countdown not expired", {
+          roomId,
+          status: room.status,
+          countdownStartedAt,
+          countdownEndMs,
+          nowMs,
+          clientTimeMs,
+          serverSaysGo,
+          clientSaysGo,
+        })
+      }
       return NextResponse.json(
         { ok: true, room, countdownNotExpired: true },
         { headers: { "Cache-Control": "no-store" } }
       )
+    }
+
+    if (!serverSaysGo && clientSaysGo && process.env.NODE_ENV !== "production") {
+      console.info("[start] using client time; server clock may be behind", { roomId, nowMs, clientTimeMs, countdownEndMs })
     }
 
     const payload = getReadyToLivePayload(room, now)
@@ -82,8 +110,11 @@ export async function POST(request: NextRequest) {
     if (error) throw error
 
     if (!data) {
+      const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
+      const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
+      const isLive = latestRoom.status === "Live"
       return NextResponse.json(
-        { ok: true, room, alreadyLive: true },
+        { ok: true, room: latestRoom, alreadyLive: isLive },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
