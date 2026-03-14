@@ -49,14 +49,14 @@ export async function POST(request: NextRequest) {
         (room.countdownStartedAt ?? 0) + room.countdownSeconds * 1000
       if (countdownEndMs > nowMs || !room.challengerIdentityId) {
         return NextResponse.json(
-          { ok: true, room, transition: null },
+          { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
       const gameType = room.game as GameType
       if (gameType !== "Connect 4" && gameType !== "Tic-Tac-Toe") {
         return NextResponse.json(
-          { ok: true, room, transition: null },
+          { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
       const currentTurnId = room.moveTurnIdentityId
       if (!currentTurnId) {
         return NextResponse.json(
-          { ok: true, room, transition: null },
+          { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
         )
       }

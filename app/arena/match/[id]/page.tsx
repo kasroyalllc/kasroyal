@@ -46,84 +46,13 @@ import { getCurrentIdentity } from "@/lib/identity"
 import { createClient } from "@/lib/supabase/client"
 import { getRoomById, listRoomMessages } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
+import { COUNTDOWN_PHRASES } from "@/lib/countdown-phrases"
 
 type Connect4Cell = "host" | "challenger" | null
 type TttCell = "X" | "O" | null
 
 const CONNECT4_MOVE_SECONDS = 20
 const TTT_MOVE_SECONDS = 10
-
-const COUNTDOWN_HYPE_LINES_POOL = [
-  "Crowd is pretending they knew the winner all along…",
-  "Somebody just bet like they saw the future.",
-  "The arena announcer is losing his voice already.",
-  "Last call before chaos begins.",
-  "Smart money and dumb luck are now both in the room.",
-  "♞ Knights are stretching before battle...",
-  "🔥 Crowd money is starting to heat up...",
-  "💰 Last-minute action hitting the market...",
-  "🎯 Smart money is circling the underdog...",
-  "⚡ Bets are flying before lock...",
-  "👑 Crowns up. Match ignition incoming...",
-  "🧠 The house always wins. Just kidding. Maybe.",
-  "🎲 Place your bets. No refunds after zero.",
-  "⏱️ T-minus something. Get ready.",
-  "🐴 Dark horse energy in the room.",
-  "💎 Diamond hands only past this point.",
-  "🚀 To the moon or to the lobby. Your call.",
-  "🎪 Pre-match circus. You're in it.",
-  "🍿 Best seat in the house. Don't leave.",
-  "🃏 Cards on the table in 30 seconds.",
-  "🏆 Someone's about to win. Might be you.",
-  "📢 Final call. Actually we have a timer.",
-  "🌶️ Spice level: about to go live.",
-  "🦁 Only the bold stay past zero.",
-  "⚔️ Swords up. Match is loading.",
-  "🎰 Odds are odds. Bet with your head.",
-  "🦅 Eagle eye on the board. Get set.",
-  "🐉 Dragon energy. Match incoming.",
-  "🛡️ Shields up. Countdown active.",
-  "🎺 Fanfare in 3… 2… 1…",
-  "🧲 Magnetic pull to the arena.",
-  "🌈 Fortune favors the ready.",
-  "🔮 Crystal ball says: place your side.",
-  "🪙 Coins in. No take-backs at zero.",
-  "🎭 Drama in 30. Stay tuned.",
-  "🦊 Smart foxes lock in now.",
-  "🐺 Wolves are circling. Join or watch.",
-  "🌙 Midnight energy. Match at dawn.",
-  "☕ Last sips before the board drops.",
-  "🪨 Rock solid? Lock your side.",
-  "✂️ Paper beats… actually we do board games.",
-  "🃏 Joker's wild. Timer's not.",
-  "🎪 Step right up. Timer's running.",
-  "🔔 Bell's about to ring. Get set.",
-  "📣 Hype train. All aboard.",
-  "🛒 Last chance aisle. Betting closes at zero.",
-  "🧩 Pieces moving soon. Stay put.",
-  "🎨 Masterpiece in progress. You're in it.",
-  "🏅 Medals not handed out yet. Compete.",
-  "🪵 Logs on the fire. Match is heating up.",
-  "🌊 Wave of action incoming.",
-  "🦋 Butterfly effect. Your bet matters.",
-  "🔬 Lab conditions. Fair play only.",
-  "📐 Angles and edges. Lock the side.",
-  "🎯 Bullseye in 30. Aim now.",
-  "🪁 Kites up. Match winds are blowing.",
-  "🧨 Fuse lit. Stand clear at zero.",
-  "🎬 Director says action in 30.",
-  "🦉 Wise owls have already locked in.",
-  "🍀 Luck is a factor. So is the timer.",
-  "⛵ Sails set. Match harbor in sight.",
-  "🔑 Key moment. Don't close the tab.",
-  "🎸 Guitar solo in 30. Metaphorically.",
-  "🪶 Light as a feather. Stakes are not.",
-  "🌵 Desert island energy. One match.",
-  "🦔 Hedge your bets? No. One side only.",
-  "🎩 Top hats optional. Focus required.",
-  "🪨 Steady hands win. Timer's ticking.",
-  "🌶️ Hot take: lock your side now.",
-]
 
 type PersistedConnect4BoardState = {
   mode: "connect4-live"
@@ -752,10 +681,25 @@ export default function ArenaMatchPage() {
     return () => window.clearInterval(timer)
   }, [])
 
+  // Sync to server time as soon as we have a Live match so the turn timer never effectively ends early (clock skew). Don't wait for first tick.
+  useEffect(() => {
+    if (!match || match.status !== "Live" || match.turnExpiresAt == null) return
+    if (serverTimeSync.receivedAtMs > 0) return
+    let cancelled = false
+    fetch("/api/rooms/servertime")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || typeof data.server_time_ms !== "number") return
+        setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [match?.id, match?.status, match?.turnExpiresAt, serverTimeSync.receivedAtMs])
+
   useEffect(() => {
     if (!matchId || !match) return
     if (match.status !== "Ready to Start" && match.status !== "Live") return
-    const t = window.setInterval(() => {
+    const runTick = () => {
       fetch("/api/rooms/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -771,7 +715,9 @@ export default function ArenaMatchPage() {
           }
         })
         .catch(() => {})
-    }, 2000)
+    }
+    runTick()
+    const t = window.setInterval(runTick, 2000)
     return () => clearInterval(t)
   }, [matchId, match?.id, match?.status])
 
@@ -801,7 +747,7 @@ export default function ArenaMatchPage() {
 
     const interval = window.setInterval(() => {
       setCountdownLineIndex((value) => value + 1)
-    }, 2000)
+    }, 1200)
 
     return () => window.clearInterval(interval)
   }, [match])
@@ -816,7 +762,7 @@ export default function ArenaMatchPage() {
   const tttWinner = useMemo(() => getTttWinner(tttState.board), [tttState.board])
 
   const countdownLines = useMemo(() => {
-    const base = [...COUNTDOWN_HYPE_LINES_POOL]
+    const base = [...COUNTDOWN_PHRASES]
     let seed = 0
     for (let i = 0; i < matchId.length; i++) seed += matchId.charCodeAt(i)
     const rng = () => (seed = (seed * 9301 + 49297) % 233280) / 233280
