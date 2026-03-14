@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
           .maybeSingle()
         if (!intermissionError && intermissionData) {
           await insertMatchEvent(supabase, roomId, "next_round_started", {
-            round_number: (room.round_number ?? 1) + 1,
+            round_number: (room.currentRound ?? 1) + 1,
           })
           logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
           return NextResponse.json(

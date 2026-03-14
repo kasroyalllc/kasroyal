@@ -207,8 +207,8 @@ export async function POST(request: NextRequest) {
         dbUpdate.roundRecord.challengerScoreAfter
       )
       await insertMatchEvent(supabase, roomId, "match_finished", {
-        winner_identity_id: dbUpdate.payload.winner_identity_id,
-        win_reason: dbUpdate.payload.win_reason,
+        winner_identity_id: dbUpdate.payload.winner_identity_id as string | null | undefined,
+        win_reason: dbUpdate.payload.win_reason as string | undefined,
         host_score: dbUpdate.roundRecord.hostScoreAfter,
         challenger_score: dbUpdate.roundRecord.challengerScoreAfter,
       })
