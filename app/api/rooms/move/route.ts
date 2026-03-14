@@ -29,6 +29,9 @@ import type {
 
 export const dynamic = "force-dynamic"
 
+/** Seconds to show round result before starting next round (BO3/BO5). Tick starts next round when expired. */
+const INTERMISSION_SECONDS = 5
+
 /** Compute series update after a round ends. BO1 = 1 win, BO3 = first to 2, BO5 = first to 3. Uses canonical semantics (host_score, challenger_score, round_number). */
 function getSeriesUpdate(
   room: Room,
@@ -219,15 +222,22 @@ export async function POST(request: NextRequest) {
             { headers: { "Cache-Control": "no-store" } }
           )
         }
-        const nextBoardState = createInitialBoardState("Rock Paper Scissors")
+        const roundWinnerIdentityId =
+          roundWinner === "host"
+            ? room.hostIdentityId
+            : roundWinner === "challenger"
+              ? room.challengerIdentityId ?? null
+              : null
+        const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
         const { data, error } = await supabase
           .from("matches")
           .update({
             status: DB_STATUS.LIVE,
-            board_state: nextBoardState,
             round_number: series.currentRound,
             host_score: series.hostRoundWins,
             challenger_score: series.challengerRoundWins,
+            round_intermission_until: intermissionUntil,
+            last_round_winner_identity_id: roundWinnerIdentityId,
             updated_at: now,
           })
           .eq("id", roomId)
@@ -346,21 +356,22 @@ export async function POST(request: NextRequest) {
             { headers: { "Cache-Control": "no-store" } }
           )
         }
-        const nextBoardState = createInitialBoardState("Connect 4")
-        const nextTurnId = room.hostIdentityId
-        const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+        const roundWinnerIdentityId =
+          roundWinner === "host"
+            ? room.hostIdentityId
+            : roundWinner === "challenger"
+              ? room.challengerIdentityId ?? null
+              : null
+        const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
         const { data, error } = await supabase
           .from("matches")
           .update({
             status: DB_STATUS.LIVE,
-            board_state: nextBoardState,
             round_number: series.currentRound,
             host_score: series.hostRoundWins,
             challenger_score: series.challengerRoundWins,
-            move_turn_identity_id: nextTurnId,
-            move_turn_started_at: now,
-            move_turn_seconds: moveSeconds,
-            turn_expires_at: turnExpiresAt,
+            round_intermission_until: intermissionUntil,
+            last_round_winner_identity_id: roundWinnerIdentityId,
             updated_at: now,
           })
           .eq("id", roomId)
@@ -410,21 +421,16 @@ export async function POST(request: NextRequest) {
             { headers: { "Cache-Control": "no-store" } }
           )
         }
-        const nextBoardState = createInitialBoardState("Connect 4")
-        const nextTurnId = room.hostIdentityId
-        const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+        const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
         const { data, error } = await supabase
           .from("matches")
           .update({
             status: DB_STATUS.LIVE,
-            board_state: nextBoardState,
             round_number: series.currentRound,
             host_score: series.hostRoundWins,
             challenger_score: series.challengerRoundWins,
-            move_turn_identity_id: nextTurnId,
-            move_turn_started_at: now,
-            move_turn_seconds: moveSeconds,
-            turn_expires_at: turnExpiresAt,
+            round_intermission_until: intermissionUntil,
+            last_round_winner_identity_id: null,
             updated_at: now,
           })
           .eq("id", roomId)
@@ -534,21 +540,22 @@ export async function POST(request: NextRequest) {
           { headers: { "Cache-Control": "no-store" } }
         )
       }
-      const nextBoardState = createInitialBoardState("Tic-Tac-Toe")
-      const nextTurnId = room.hostIdentityId
-      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+      const roundWinnerIdentityId =
+        roundWinner === "host"
+          ? room.hostIdentityId
+          : roundWinner === "challenger"
+            ? room.challengerIdentityId ?? null
+            : null
+      const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
       const { data, error } = await supabase
         .from("matches")
         .update({
           status: DB_STATUS.LIVE,
-          board_state: nextBoardState,
           round_number: series.currentRound,
           host_score: series.hostRoundWins,
           challenger_score: series.challengerRoundWins,
-          move_turn_identity_id: nextTurnId,
-          move_turn_started_at: now,
-          move_turn_seconds: moveSeconds,
-          turn_expires_at: turnExpiresAt,
+          round_intermission_until: intermissionUntil,
+          last_round_winner_identity_id: roundWinnerIdentityId,
           updated_at: now,
         })
         .eq("id", roomId)
@@ -598,21 +605,16 @@ export async function POST(request: NextRequest) {
           { headers: { "Cache-Control": "no-store" } }
         )
       }
-      const nextBoardState = createInitialBoardState("Tic-Tac-Toe")
-      const nextTurnId = room.hostIdentityId
-      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+      const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
       const { data, error } = await supabase
         .from("matches")
         .update({
           status: DB_STATUS.LIVE,
-          board_state: nextBoardState,
           round_number: series.currentRound,
           host_score: series.hostRoundWins,
           challenger_score: series.challengerRoundWins,
-          move_turn_identity_id: nextTurnId,
-          move_turn_started_at: now,
-          move_turn_seconds: moveSeconds,
-          turn_expires_at: turnExpiresAt,
+          round_intermission_until: intermissionUntil,
+          last_round_winner_identity_id: null,
           updated_at: now,
         })
         .eq("id", roomId)

@@ -123,6 +123,10 @@ export type ArenaMatch = {
   /** Timeout strikes (move timer expired). After 3, that side loses. Connect 4 / Tic-Tac-Toe only. */
   timeoutStrikesHost?: number
   timeoutStrikesChallenger?: number
+  /** Between-round intermission: server sets when round ends (BO3/BO5). Next round starts when expired (ms). */
+  roundIntermissionUntil?: number | null
+  /** During intermission: identity of round winner for "X won Round N" (null = draw). */
+  lastRoundWinnerIdentityId?: string | null
 }
 
 export type SpectatorTicket = {

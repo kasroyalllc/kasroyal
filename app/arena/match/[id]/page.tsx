@@ -767,11 +767,13 @@ export default function ArenaMatchPage() {
     }
   }, [match?.id, match?.status])
 
-  // Tick: poll room state (and get server_time_ms). During countdown use 1s interval so transition to Live is detected quickly.
+  // Tick: poll room state (and get server_time_ms). During countdown or between-round intermission use 1s so transitions are detected quickly.
   useEffect(() => {
     if (!matchId || !match) return
     if (match.status !== "Ready to Start" && match.status !== "Live") return
-    const intervalMs = match.status === "Ready to Start" ? 1000 : 2000
+    const intermissionUntil = typeof match.roundIntermissionUntil === "number" ? match.roundIntermissionUntil : null
+    const inIntermission = match.status === "Live" && intermissionUntil != null && Date.now() < intermissionUntil
+    const intervalMs = match.status === "Ready to Start" || inIntermission ? 1000 : 2000
     const runTick = () => {
       fetch("/api/rooms/tick", {
         method: "POST",
@@ -785,6 +787,9 @@ export default function ArenaMatchPage() {
             if (typeof data.server_time_ms === "number") {
               setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
             }
+            if (data.transition === "ready_to_live" || data.transition === "intermission_next_round") {
+              void refreshRoom()
+            }
           }
         })
         .catch(() => {})
@@ -792,7 +797,7 @@ export default function ArenaMatchPage() {
     runTick()
     const t = window.setInterval(runTick, intervalMs)
     return () => clearInterval(t)
-  }, [matchId, match?.id, match?.status])
+  }, [matchId, match?.id, match?.status, match?.roundIntermissionUntil])
 
   useEffect(() => {
     if (!match) return
@@ -1093,10 +1098,19 @@ export default function ArenaMatchPage() {
       ? Math.max(0, Math.ceil((turnExpiresAtMs - syncedNowMs) / 1000))
       : 0
 
+  const intermissionUntilMs =
+    typeof match.roundIntermissionUntil === "number" ? match.roundIntermissionUntil : null
+  const isIntermission =
+    match.status === "Live" && intermissionUntilMs != null && Date.now() < intermissionUntilMs
+  const intermissionSecondsLeft = isIntermission && intermissionUntilMs != null
+    ? Math.max(0, Math.ceil((intermissionUntilMs - Date.now()) / 1000))
+    : 0
+
   const canHostMove =
     !isFinished &&
     !isCountdown &&
     !isPaused &&
+    !isIntermission &&
     match.status === "Live" &&
     ((match.game === "Connect 4" && connect4Turn === "host") ||
       (match.game === "Tic-Tac-Toe" && tttTurn === "X") ||
@@ -1106,6 +1120,7 @@ export default function ArenaMatchPage() {
     !isFinished &&
     !isCountdown &&
     !isPaused &&
+    !isIntermission &&
     match.status === "Live" &&
     ((match.game === "Connect 4" && connect4Turn === "challenger") ||
       (match.game === "Tic-Tac-Toe" && tttTurn === "O") ||
@@ -1619,33 +1634,6 @@ export default function ArenaMatchPage() {
     }
   }
 
-  function resetCurrentGame() {
-    if (!match) return
-
-    if (isSpectatorOnly) {
-      setMessage("Only seated players should reset a playable board.")
-      return
-    }
-
-    if (match.game === "Connect 4" || match.game === "Tic-Tac-Toe" || match.game === "Rock Paper Scissors") {
-      setMessage("Board state is server-authoritative. Reset is not available for this game.")
-      return
-    }
-
-    persistPartialMatch({
-      status: "Live",
-      result: null,
-      finishedAt: undefined,
-      moveText: "Fresh preview",
-      statusText: "Chess preview reset",
-      boardState: {
-        mode: "chess-preview",
-        fen: "startpos",
-        turnDeadlineTs: null,
-      },
-    })
-    setMessage("Chess preview reset.")
-  }
 
   const boardTurnLabel = isFinished
     ? "—"
@@ -2161,30 +2149,41 @@ export default function ArenaMatchPage() {
                           ? `Move timer • ${moveSecondsLeft}s`
                           : "Move timer idle"}
                   </div>
-                  <button
-                    type="button"
-                    onClick={resetCurrentGame}
-                    className="rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10"
-                  >
-                    Reset Board
-                  </button>
                 </div>
               </div>
 
               <div className="mb-6 rounded-2xl border border-white/8 bg-black/25 p-4 text-sm leading-6 text-white/80">
                 {isFinished
                   ? `Match finished. Final state: ${match.statusText}.`
-                  : isCountdown
-                    ? isPlayer
-                      ? bettingSecondsLeft > 0 ? `You are seated in this room. Stay here — the countdown is active and the match begins in ${bettingSecondsLeft}s.` : "Match is starting… Stay here — the arena will go live shortly."
-                      : bettingSecondsLeft > 0 ? `Match starts in ${bettingSecondsLeft}s. Betting remains open until lock, then the arena goes live.` : "Starting match…"
-                    : isPaused
-                      ? `Pause active. ${pausedByName} paused the match. Gameplay is frozen for ${pauseSecondsLeft}s unless resumed early.`
-                      : isSpectatorOnly
-                        ? "You are spectating this room. You can watch the live game here."
-                        : canCurrentUserMove
-                          ? `Your turn. You are seated as ${playerRoleLabel}.`
-                          : `You are seated as ${playerRoleLabel}, but it is currently ${currentTurnPlayerName}'s turn.`}
+                  : isIntermission
+                    ? (() => {
+                        const roundJustEnded = Math.max(1, (match.currentRound ?? 2) - 1)
+                        const roundWinnerName =
+                          match.lastRoundWinnerIdentityId === match.hostIdentityId
+                            ? (match.host?.name ?? "Host")
+                            : match.lastRoundWinnerIdentityId === match.challengerIdentityId
+                              ? (challenger?.name ?? "Challenger")
+                              : null
+                        return (
+                          <>
+                            {roundWinnerName != null
+                              ? `${roundWinnerName} won Round ${roundJustEnded}. `
+                              : `Round ${roundJustEnded} was a draw. `}
+                            Next round starts in {intermissionSecondsLeft}s…
+                          </>
+                        )
+                      })()
+                    : isCountdown
+                      ? isPlayer
+                        ? bettingSecondsLeft > 0 ? `You are seated in this room. Stay here — the countdown is active and the match begins in ${bettingSecondsLeft}s.` : "Match is starting… Stay here — the arena will go live shortly."
+                        : bettingSecondsLeft > 0 ? `Match starts in ${bettingSecondsLeft}s. Betting remains open until lock, then the arena goes live.` : "Starting match…"
+                      : isPaused
+                        ? `Pause active. ${pausedByName} paused the match. Gameplay is frozen for ${pauseSecondsLeft}s unless resumed early.`
+                        : isSpectatorOnly
+                          ? "You are spectating this room. You can watch the live game here."
+                          : canCurrentUserMove
+                            ? `Your turn. You are seated as ${playerRoleLabel}.`
+                            : `You are seated as ${playerRoleLabel}, but it is currently ${currentTurnPlayerName}'s turn.`}
               </div>
 
               {match.game === "Connect 4" ? (

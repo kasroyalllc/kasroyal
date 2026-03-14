@@ -191,6 +191,10 @@ export type Room = {
   pauseExpiresAt?: number | null
   pauseCountHost?: number
   pauseCountChallenger?: number
+  /** Between-round intermission: server sets to now+5s when round ends (BO3/BO5). Tick starts next round when expired. */
+  roundIntermissionUntil?: number | null
+  /** Set during intermission so UI can show "X won Round N". Cleared when next round starts. */
+  lastRoundWinnerIdentityId?: string | null
   createdAt: number
   updatedAt: number
   finishedAt: number | null
@@ -331,6 +335,14 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
         : null,
     pauseCountHost: Math.max(0, Number(row.pause_count_host ?? 0)),
     pauseCountChallenger: Math.max(0, Number(row.pause_count_challenger ?? 0)),
+    roundIntermissionUntil:
+      row.round_intermission_until != null
+        ? new Date(String(row.round_intermission_until)).getTime()
+        : null,
+    lastRoundWinnerIdentityId:
+      row.last_round_winner_identity_id != null
+        ? String(row.last_round_winner_identity_id)
+        : null,
     createdAt,
     updatedAt,
     finishedAt,

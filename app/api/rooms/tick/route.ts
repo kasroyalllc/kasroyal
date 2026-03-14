@@ -117,14 +117,68 @@ export async function POST(request: NextRequest) {
           { headers: { "Cache-Control": "no-store" } }
         )
       }
+      // Update matched 0 rows (e.g. another request already transitioned). Re-fetch and return latest so client gets Live.
+      const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
+      const latestRoom = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : room
+      const isNowLive = refetched && String((refetched as Record<string, unknown>).status) === DB_STATUS.LIVE
       return NextResponse.json(
-        { ok: true, room, transition: null, server_time_ms: Date.now() },
+        {
+          ok: true,
+          room: latestRoom,
+          transition: isNowLive ? "ready_to_live" : null,
+          server_time_ms: Date.now(),
+        },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
     if (room.status === "Live") {
       const gameTypeLive = room.game as GameType
+      // Between-round intermission: wait until round_intermission_until then start next round.
+      const intermissionUntilMs = room.roundIntermissionUntil ?? null
+      if (intermissionUntilMs != null) {
+        if (nowMs < intermissionUntilMs) {
+          return NextResponse.json(
+            { ok: true, room, transition: null, server_time_ms: nowMs },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+        const moveSeconds = getMoveSecondsForGame(gameTypeLive)
+        const nextBoardState = createInitialBoardState(gameTypeLive)
+        const isRps = gameTypeLive === "Rock Paper Scissors"
+        const nextTurnId = isRps ? null : room.hostIdentityId
+        const turnExpiresAt = isRps
+          ? null
+          : new Date(nowMs + moveSeconds * 1000).toISOString()
+        const { data: intermissionData, error: intermissionError } = await supabase
+          .from("matches")
+          .update({
+            round_intermission_until: null,
+            last_round_winner_identity_id: null,
+            board_state: nextBoardState,
+            move_turn_identity_id: nextTurnId,
+            move_turn_started_at: isRps ? null : nowIso,
+            move_turn_seconds: isRps ? null : moveSeconds,
+            turn_expires_at: turnExpiresAt,
+            updated_at: nowIso,
+          })
+          .eq("id", roomId)
+          .in("status", ["Live", "live"])
+          .select("*")
+          .maybeSingle()
+        if (!intermissionError && intermissionData) {
+          logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
+          return NextResponse.json(
+            {
+              ok: true,
+              room: mapDbRowToRoom((intermissionData as Record<string, unknown>)),
+              transition: "intermission_next_round",
+              server_time_ms: nowMs,
+            },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+      }
       if (gameTypeLive === "Rock Paper Scissors") {
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },

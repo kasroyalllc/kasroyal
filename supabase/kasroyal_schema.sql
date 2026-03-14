@@ -39,6 +39,9 @@ ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS paused_by TEXT;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS pause_expires_at TIMESTAMPTZ;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS pause_count_host INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS pause_count_challenger INTEGER NOT NULL DEFAULT 0;
+-- Between-round intermission: 5s pause before next round in BO3/BO5. Tick clears and starts next round when expired.
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS round_intermission_until TIMESTAMPTZ;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS last_round_winner_identity_id TEXT;
 
 -- =============================================================================
 -- 2. PROFILES (users/leaderboard display names)

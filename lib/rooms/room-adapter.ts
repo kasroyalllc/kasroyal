@@ -121,5 +121,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     timeoutStrikesHost: Math.max(0, Number(room.hostTimeoutStrikes ?? 0)),
     timeoutStrikesChallenger: Math.max(0, Number(room.challengerTimeoutStrikes ?? 0)),
     pauseState,
+    roundIntermissionUntil: room.roundIntermissionUntil ?? undefined,
+    lastRoundWinnerIdentityId: room.lastRoundWinnerIdentityId ?? undefined,
   }
 }
