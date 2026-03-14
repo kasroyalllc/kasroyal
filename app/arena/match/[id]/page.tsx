@@ -42,7 +42,7 @@ import {
 } from "@/lib/mock/arena-data"
 import { getCurrentIdentity } from "@/lib/identity"
 import { createClient } from "@/lib/supabase/client"
-import { getRoomById, listRoomMessages } from "@/lib/rooms/rooms-service"
+import { getRoomById, listRoomMessages, listSpectateMessages } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
 import { acceptAndReconcile, reconcileRoom } from "@/lib/rooms/sync-policy"
 import type { Room } from "@/lib/engine/match/types"
@@ -662,7 +662,9 @@ export default function ArenaMatchPage() {
   const [countdownLineIndex, setCountdownLineIndex] = useState(0)
   const [tick, setTick] = useState(0)
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
+  const [spectateMessages, setSpectateMessages] = useState<RoomChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
+  const [spectateChatInput, setSpectateChatInput] = useState("")
   const [showCancelRoomConfirm, setShowCancelRoomConfirm] = useState(false)
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -680,12 +682,14 @@ export default function ArenaMatchPage() {
 
   const previousMatchRef = useRef<ArenaMatch | null>(null)
   const refreshChatRef = useRef<(() => Promise<void>) | null>(null)
+  const refreshSpectateChatRef = useRef<(() => Promise<void>) | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
   /** Stick to bottom only when user is already near bottom; do not force scroll when user scrolled up (active or finished). */
   const isChatNearBottomRef = useRef(true)
   const prevChatLengthRef = useRef(0)
+  const prevSpectateChatLengthRef = useRef(0)
 
   useEffect(() => {
     setMounted(true)
@@ -741,6 +745,11 @@ export default function ArenaMatchPage() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "match_messages", filter: `match_id=eq.${matchId}` },
         () => { void refreshChatRef.current?.() }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "spectate_messages", filter: `match_id=eq.${matchId}` },
+        () => { void refreshSpectateChatRef.current?.() }
       )
       .on(
         "postgres_changes",
@@ -919,7 +928,20 @@ export default function ArenaMatchPage() {
     setChatMessages(uiMessages)
   }, [matchId])
 
-  // Room chat: everyone in the room (host, challenger, spectators) can send. No player-only restriction.
+  const refreshSpectateChat = useCallback(async () => {
+    if (!matchId || typeof window === "undefined") return
+    const supabase = createClient()
+    const messages = await listSpectateMessages(supabase, matchId)
+    const uiMessages: RoomChatMessage[] = messages.map((m) => ({
+      id: m.id,
+      user: m.senderDisplayName,
+      text: m.message,
+      ts: m.createdAt,
+    }))
+    setSpectateMessages(uiMessages)
+  }, [matchId])
+
+  // Room chat: seated players (host, challenger) only can send. Everyone can read.
   const handleChatSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault()
@@ -950,10 +972,46 @@ export default function ArenaMatchPage() {
     [matchId, chatInput, refreshChat]
   )
 
+  // Crowd chat: spectators only can send. Everyone (players + spectators) can read.
+  const handleSpectateChatSubmit = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      const text = spectateChatInput.trim()
+      if (!text) return
+      try {
+        const res = await fetch("/api/spectate/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            match_id: matchId,
+            sender_identity_id: getCurrentIdentity().id,
+            sender_display_name: getCurrentUser().name,
+            message: text,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) {
+          setSpectateChatInput("")
+          await refreshSpectateChat()
+        } else {
+          setMessage(typeof data?.error === "string" ? data.error : "Send failed")
+        }
+      } catch {
+        setMessage("Send failed")
+      }
+    },
+    [matchId, spectateChatInput, refreshSpectateChat]
+  )
+
   useEffect(() => {
     refreshChatRef.current = refreshChat
     return () => { refreshChatRef.current = null }
   }, [refreshChat])
+
+  useEffect(() => {
+    refreshSpectateChatRef.current = refreshSpectateChat
+    return () => { refreshSpectateChatRef.current = null }
+  }, [refreshSpectateChat])
 
   useEffect(() => {
     if (!matchId) return
@@ -961,6 +1019,13 @@ export default function ArenaMatchPage() {
     const poll = window.setInterval(() => { void refreshChat() }, 1500)
     return () => window.clearInterval(poll)
   }, [matchId, refreshChat])
+
+  useEffect(() => {
+    if (!matchId) return
+    refreshSpectateChat()
+    const poll = window.setInterval(() => { void refreshSpectateChat() }, 1500)
+    return () => window.clearInterval(poll)
+  }, [matchId, refreshSpectateChat])
 
   useEffect(() => {
     const len = chatMessages.length
@@ -2678,7 +2743,7 @@ export default function ArenaMatchPage() {
                   >
                     {chatMessages.length === 0 ? (
                       <div className="flex min-h-[120px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45 md:min-h-[220px]">
-                        No messages yet. Say something!
+                        {isPlayer ? "No messages yet. Say something!" : "Room chat — players only. Crowd chat below for spectators."}
                       </div>
                     ) : (
                       <>
@@ -2725,16 +2790,17 @@ export default function ArenaMatchPage() {
                               inputMode="text"
                               value={chatInput}
                               onChange={(e) => setChatInput(e.target.value)}
-                              placeholder="Type a message…"
+                              placeholder={isPlayer ? "Type a message…" : "Room chat — players only"}
                               maxLength={500}
                               autoComplete="off"
-                              className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 touch-manipulation"
+                              disabled={!isPlayer}
+                              className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed"
                               style={{ fontSize: "16px" }}
-                              aria-label="Chat message"
+                              aria-label="Room chat message"
                             />
                             <button
                               type="submit"
-                              disabled={!chatInput.trim()}
+                              disabled={!isPlayer || !chatInput.trim()}
                               className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 transition active:scale-[0.98] hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-50"
                               aria-label="Send message"
                             >
@@ -2759,16 +2825,17 @@ export default function ArenaMatchPage() {
                         inputMode="text"
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        placeholder="Type a message…"
+                        placeholder={isPlayer ? "Type a message…" : "Room chat — players only"}
                         maxLength={500}
                         autoComplete="off"
-                        className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4 touch-manipulation"
+                        disabled={!isPlayer}
+                        className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-emerald-300/30 focus:ring-2 focus:ring-emerald-300/20 md:min-h-[48px] md:py-4 touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed"
                         style={{ fontSize: "16px" }}
-                        aria-label="Chat message"
+                        aria-label="Room chat message"
                       />
                       <button
                         type="submit"
-                        disabled={!chatInput.trim()}
+                        disabled={!isPlayer || !chatInput.trim()}
                         className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3.5 text-base font-bold text-emerald-200 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4"
                         aria-label="Send message"
                       >
@@ -2776,6 +2843,74 @@ export default function ArenaMatchPage() {
                       </button>
                     </form>
                   )}
+                </div>
+              </div>
+
+              {/* Crowd Chat (spectator/crowd) — spectate_messages; spectators send, everyone can read */}
+              <div className="mt-5 w-full">
+                <div className="flex max-h-[75vh] flex-col rounded-2xl border border-amber-400/20 bg-[var(--surface-card)] p-4 shadow-[0_0_28px_rgba(251,191,36,0.08)] ring-1 ring-amber-400/10 md:max-h-none">
+                  <div className="mb-3 flex shrink-0 items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-300/90">Crowd Chat</p>
+                    <span className="rounded-full border border-amber-400/25 bg-amber-500/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
+                      Live
+                    </span>
+                  </div>
+                  <div
+                    className="min-h-[140px] flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden rounded-xl border border-white/8 bg-black/25 p-3.5 overscroll-contain md:min-h-[240px] md:max-h-[380px] md:flex-none md:pb-0 max-md:min-h-[120px] max-md:max-h-[50vh]"
+                    style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+                  >
+                    {spectateMessages.length === 0 ? (
+                      <div className="flex min-h-[120px] items-center justify-center rounded-xl bg-white/[0.02] px-4 py-6 text-center text-sm text-white/45 md:min-h-[220px]">
+                        {isSpectatorOnly ? "No crowd messages yet. Say something!" : "Crowd chat — spectators can send. You can read."}
+                      </div>
+                    ) : (
+                      <>
+                        {spectateMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className="rounded-xl border border-white/5 bg-white/[0.04] px-4 py-3 transition hover:bg-white/[0.06]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-amber-300">{msg.user}</span>
+                              <span className="text-xs uppercase tracking-wider text-white/40">
+                                {new Date(msg.ts).toLocaleTimeString(undefined, {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                            <div className="mt-2 break-words text-base leading-snug text-white/90">{msg.text}</div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                  <form
+                    className="mt-4 flex shrink-0 gap-2 md:gap-3"
+                    onSubmit={handleSpectateChatSubmit}
+                  >
+                    <input
+                      type="text"
+                      inputMode="text"
+                      value={spectateChatInput}
+                      onChange={(e) => setSpectateChatInput(e.target.value)}
+                      placeholder={isSpectatorOnly ? "Type a crowd message…" : "Crowd chat — spectators only"}
+                      maxLength={500}
+                      autoComplete="off"
+                      disabled={!isSpectatorOnly}
+                      className="min-h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-base text-white outline-none placeholder:text-white/40 focus:border-amber-300/30 focus:ring-2 focus:ring-amber-300/20 md:min-h-[48px] md:py-4 touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed"
+                      style={{ fontSize: "16px" }}
+                      aria-label="Crowd chat message"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!isSpectatorOnly || !spectateChatInput.trim()}
+                      className="touch-manipulation select-none min-h-[52px] min-w-[64px] shrink-0 rounded-xl border border-amber-300/30 bg-amber-400/20 px-5 py-3.5 text-base font-bold text-amber-200 md:min-h-[48px] md:min-w-[52px] md:px-6 md:py-4 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="Send crowd message"
+                    >
+                      Send
+                    </button>
+                  </form>
                 </div>
               </div>
             </div>
