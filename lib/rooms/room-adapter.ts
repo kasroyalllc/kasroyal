@@ -85,6 +85,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
             ? "Finished"
             : "Waiting",
     roundScore: { host: room.hostRoundWins, challenger: room.challengerRoundWins },
+    currentRound: room.currentRound,
     spectatorPool: { host: 0, challenger: 0 },
     bettingWindowSeconds: 30,
     result: room.winnerIdentityId

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
+import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
@@ -50,6 +51,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    assertTransition(room.status, "Finished", "cancel")
+
     const now = new Date().toISOString()
     const { error } = await supabase
       .from("matches")
@@ -61,6 +64,7 @@ export async function POST(request: NextRequest) {
         finished_at: now,
       })
       .eq("id", roomId)
+      .eq("status", "Waiting for Opponent")
       .eq("host_wallet", hostIdentityId)
 
     if (error) throw error

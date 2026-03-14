@@ -98,6 +98,8 @@ export type ArenaMatch = {
     host: number
     challenger: number
   }
+  /** Current round in a best-of series (1-based). */
+  currentRound?: number
 
   spectatorPool: {
     host: number

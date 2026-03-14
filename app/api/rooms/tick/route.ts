@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
+import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { createInitialBoardState } from "@/lib/rooms/game-board"
 import {
   getMoveSecondsForGame,
@@ -78,6 +79,8 @@ export async function POST(request: NextRequest) {
         ? null
         : new Date(nowMs + moveSeconds * 1000).toISOString()
 
+      assertTransition(room.status, "Live", "tick_ready_to_live")
+
       const { data, error } = await supabase
         .from("matches")
         .update({
@@ -149,6 +152,7 @@ export async function POST(request: NextRequest) {
         : (room.challengerTimeoutStrikes ?? 0)
 
       if (newHostStrikes >= TIMEOUT_STRIKES_TO_LOSE) {
+        assertTransition(room.status, "Finished", "tick_timeout_finish")
         const { data, error } = await supabase
           .from("matches")
           .update({
@@ -161,6 +165,7 @@ export async function POST(request: NextRequest) {
             ended_at: nowIso,
           })
           .eq("id", roomId)
+          .eq("status", "Live")
           .select("*")
           .maybeSingle()
         if (error) throw error
@@ -177,6 +182,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (newChallengerStrikes >= TIMEOUT_STRIKES_TO_LOSE) {
+        assertTransition(room.status, "Finished", "tick_timeout_finish")
         const { data, error } = await supabase
           .from("matches")
           .update({
@@ -189,6 +195,7 @@ export async function POST(request: NextRequest) {
             ended_at: nowIso,
           })
           .eq("id", roomId)
+          .eq("status", "Live")
           .select("*")
           .maybeSingle()
         if (error) throw error
@@ -224,6 +231,7 @@ export async function POST(request: NextRequest) {
           updated_at: nowIso,
         })
         .eq("id", roomId)
+        .eq("status", "Live")
         .select("*")
         .maybeSingle()
       if (error) throw error

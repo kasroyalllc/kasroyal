@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById, forfeitRoom } from "@/lib/rooms/rooms-service"
+import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { logRoomAction } from "@/lib/log"
 
 export const dynamic = "force-dynamic"
@@ -44,6 +45,8 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       )
     }
+
+    assertTransition(room.status, "Finished", "forfeit")
 
     const winnerIdentityId = isHost ? room.challengerIdentityId! : room.hostIdentityId
 

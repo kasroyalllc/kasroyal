@@ -46,6 +46,7 @@ import { getCurrentIdentity } from "@/lib/identity"
 import { createClient } from "@/lib/supabase/client"
 import { getRoomById, listRoomMessages } from "@/lib/rooms/rooms-service"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
+import { getMatchRole } from "@/lib/rooms/match-role"
 import { COUNTDOWN_PHRASES } from "@/lib/countdown-phrases"
 
 type Connect4Cell = "host" | "challenger" | null
@@ -701,7 +702,9 @@ export default function ArenaMatchPage() {
         { event: "INSERT", schema: "public", table: "moves", filter: `match_id=eq.${matchId}` },
         () => { void refreshRoom() }
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") void refreshRoom()
+      })
 
     const pollInterval = window.setInterval(() => { void refreshRoom() }, 2000)
 
@@ -1001,16 +1004,12 @@ export default function ArenaMatchPage() {
   const isCountdown = match.status === "Ready to Start"
   const isPaused = match.status === "Live" && pauseState.isPaused
   const isQuickMatch = match.matchMode === "quick"
-  const currentIdentityId = getCurrentIdentity().id.toLowerCase()
   const currentUserProfile = getCurrentUser()
-  const isHostUser =
-    (match.hostIdentityId && match.hostIdentityId.toLowerCase() === currentIdentityId) ||
-    match.host.name === currentUserProfile.name
-  const isChallengerUser =
-    (match.challengerIdentityId && match.challengerIdentityId.toLowerCase() === currentIdentityId) ||
-    (!!challenger && challenger.name === currentUserProfile.name)
-  const isPlayer = isHostUser || isChallengerUser
-  const isSpectatorOnly = !isPlayer
+  const roleInfo = useMemo(
+    () => getMatchRole(match, getCurrentIdentity().id),
+    [match, getCurrentIdentity().id]
+  )
+  const { isHost: isHostUser, isChallenger: isChallengerUser, isPlayer, isSpectatorOnly } = roleInfo
   const spectatorBetLockedForPlayers = isPlayer
 
   const pauseSecondsLeft =
@@ -1148,7 +1147,7 @@ export default function ArenaMatchPage() {
     ? `Player • ${match.hostSideLabel}`
     : isChallengerUser
       ? `Player • ${match.challengerSideLabel}`
-      : "Spectator Only"
+      : roleInfo.playerRoleLabel
 
   const hostProbability = challenger ? getWinProbability(match.host.rating, challenger.rating) : 0.5
   const challengerProbability = challenger
@@ -1773,6 +1772,11 @@ export default function ArenaMatchPage() {
         {match.status === "Finished" ? (
           <div className="mb-6 rounded-[28px] border-2 border-amber-300/30 bg-amber-300/10 p-6 text-center">
             <h2 className="text-2xl font-black text-amber-200">Match Over</h2>
+            {match.bestOf > 1 && (match.roundScore?.host != null || match.roundScore?.challenger != null) ? (
+              <p className="mt-2 text-base font-bold text-amber-100">
+                Series: {match.host.name} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
+              </p>
+            ) : null}
             {(() => {
               const resultCopy = getMatchResultCopy(match, getCurrentIdentity().id)
               const winnerName = getWinnerDisplayName(match)
@@ -2056,6 +2060,19 @@ export default function ArenaMatchPage() {
                     {match.host.name}
                     {challenger ? ` vs ${challenger.name}` : " vs Waiting Opponent"}
                   </h2>
+                  {match.bestOf > 1 && (match.status === "Live" || match.status === "Finished") && (
+                    <p className="mt-2 flex flex-wrap items-center gap-2 text-base font-bold text-white/90">
+                      <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-amber-200">
+                        {match.host.name} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/80">
+                        BO{match.bestOf}
+                        {typeof match.currentRound === "number" && match.currentRound >= 1
+                          ? ` • Round ${match.currentRound} of ${match.bestOf}`
+                          : ""}
+                      </span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">

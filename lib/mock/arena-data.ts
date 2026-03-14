@@ -2552,10 +2552,11 @@ export function getWinnerDisplayLine(match: ArenaMatch | null): string {
   return `Winner${reason}: ${winnerName}`
 }
 
-/** Format win reason for banner: "timeout", "forfeit", or "" for game win. */
+/** Format win reason for banner: "timeout", "forfeit", " series 2-1", or "" for game win. */
 function formatWinReasonForBanner(winReason: string | null | undefined): string {
   if (winReason === "timeout") return " by timeout"
   if (winReason === "forfeit") return " by forfeit"
+  if (winReason && winReason.startsWith("series ")) return ` ${winReason}`
   return ""
 }
 
@@ -2593,12 +2594,13 @@ export function getWinnerDisplayName(match: ArenaMatch | null): string | null {
   return null
 }
 
-/** Human-readable win reason for banner (timeout, forfeit, game win). */
+/** Human-readable win reason for banner (timeout, forfeit, game win, series). */
 export function getWinReasonLabel(winReason: string | null | undefined): string | null {
   if (!winReason) return null
   if (winReason === "timeout") return "Timeout"
   if (winReason === "forfeit") return "Forfeit"
   if (winReason === "win") return "Game win"
+  if (winReason.startsWith("series ")) return `Won ${winReason}`
   return winReason
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
+import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { createInitialBoardState } from "@/lib/rooms/game-board"
 import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom, type GameType } from "@/lib/engine/match/types"
@@ -39,6 +40,8 @@ export async function POST(request: NextRequest) {
         { headers: { "Cache-Control": "no-store" } }
       )
     }
+
+    assertTransition(room.status, "Live", "start")
 
     if (!room.challengerIdentityId) {
       return NextResponse.json(

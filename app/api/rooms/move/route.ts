@@ -12,6 +12,7 @@ import {
   resolveRps,
   getRpsWinReason,
 } from "@/lib/rooms/game-board"
+import { createInitialBoardState } from "@/lib/rooms/game-board"
 import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type {
@@ -22,9 +23,59 @@ import type {
   TttCell,
   RpsChoice,
   GameType,
+  Room,
 } from "@/lib/engine/match/types"
 
 export const dynamic = "force-dynamic"
+
+/** Compute series update after a round ends. BO1 = 1 win, BO3 = first to 2, BO5 = first to 3. */
+function getSeriesUpdate(
+  room: Room,
+  roundWinner: "host" | "challenger" | null
+): {
+  seriesOver: boolean
+  winnerIdentityId: string | null
+  winReason: string
+  hostRoundWins: number
+  challengerRoundWins: number
+  currentRound: number
+} {
+  const bestOf = room.bestOf === 3 || room.bestOf === 5 ? room.bestOf : 1
+  const requiredWins = bestOf === 1 ? 1 : bestOf === 3 ? 2 : 3
+  let hostRoundWins = room.hostRoundWins
+  let challengerRoundWins = room.challengerRoundWins
+  if (roundWinner === "host") hostRoundWins += 1
+  if (roundWinner === "challenger") challengerRoundWins += 1
+  const seriesOver =
+    bestOf === 1 && roundWinner === null
+      ? true
+      : hostRoundWins >= requiredWins || challengerRoundWins >= requiredWins
+  const winnerIdentityId = seriesOver
+    ? bestOf === 1 && roundWinner === null
+      ? null
+      : hostRoundWins >= requiredWins
+        ? room.hostIdentityId
+        : room.challengerIdentityId
+    : null
+  const winReason = seriesOver
+    ? bestOf === 1 && roundWinner === null
+      ? "draw"
+      : `series ${hostRoundWins}-${challengerRoundWins}`
+    : roundWinner === "host"
+      ? "win"
+      : roundWinner === "challenger"
+        ? "win"
+        : "draw"
+  const currentRound = room.currentRound + (seriesOver ? 0 : 1)
+  return {
+    seriesOver,
+    winnerIdentityId,
+    winReason,
+    hostRoundWins,
+    challengerRoundWins,
+    currentRound,
+  }
+}
 
 /**
  * Process Connect 4 or Tic-Tac-Toe move on the server.
@@ -129,33 +180,59 @@ export async function POST(request: NextRequest) {
       if (bothSubmitted) {
         nextState.revealed = true
         nextState.winner = resolveRps(hostChoice, challengerChoice)
-        const winReason = getRpsWinReason(hostChoice, challengerChoice)
-        const winnerId =
-          nextState.winner === "host"
-            ? room.hostIdentityId
-            : nextState.winner === "challenger"
-              ? room.challengerIdentityId
-              : null
+        const roundWinner = nextState.winner === "draw" ? null : nextState.winner
+        const series = getSeriesUpdate(room, roundWinner)
+        if (series.seriesOver) {
+          const { data, error } = await supabase
+            .from("matches")
+            .update({
+              status: "Finished",
+              board_state: nextState,
+              winner_identity_id: series.winnerIdentityId,
+              win_reason: series.winReason,
+              host_round_wins: series.hostRoundWins,
+              challenger_round_wins: series.challengerRoundWins,
+              current_round: series.currentRound,
+              updated_at: now,
+              finished_at: now,
+              ended_at: now,
+            })
+            .eq("id", roomId)
+            .eq("status", "Live")
+            .select("*")
+            .maybeSingle()
+          if (error) throw error
+          const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
+          logRoomAction(
+            nextState.winner === "draw" ? "move_draw" : "move_win",
+            roomId,
+            { game: "Rock Paper Scissors", reason: series.winReason }
+          )
+          return NextResponse.json(
+            { ok: true, room: updatedRoom, server_time_ms: nowMs },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+        const nextBoardState = createInitialBoardState("Rock Paper Scissors")
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
-            board_state: nextState,
-            winner_identity_id: winnerId,
-            win_reason: winReason,
+            status: "Live",
+            board_state: nextBoardState,
+            host_round_wins: series.hostRoundWins,
+            challenger_round_wins: series.challengerRoundWins,
+            current_round: series.currentRound,
             updated_at: now,
-            finished_at: now,
-            ended_at: now,
           })
           .eq("id", roomId)
+          .eq("status", "Live")
           .select("*")
           .maybeSingle()
         if (error) throw error
-        logRoomAction(
-          nextState.winner === "draw" ? "move_draw" : "move_win",
-          roomId,
-          { game: "Rock Paper Scissors", reason: nextState.winner === "draw" ? "draw" : "win" }
-        )
+        logRoomAction("move_round_win", roomId, {
+          game: "Rock Paper Scissors",
+          roundWinner: roundWinner ?? "draw",
+        })
         return NextResponse.json(
           {
             ok: true,
@@ -172,6 +249,7 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         })
         .eq("id", roomId)
+        .eq("status", "Live")
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -226,28 +304,64 @@ export async function POST(request: NextRequest) {
       const nextTurn: "host" | "challenger" = side === "host" ? "challenger" : "host"
 
       if (winner) {
-        const winnerId = winner === "host" ? room.hostIdentityId : room.challengerIdentityId!
+        const roundWinner = winner === "host" ? "host" : "challenger"
+        const series = getSeriesUpdate(room, roundWinner)
+        const finalBoard = {
+          mode: "connect4-live",
+          board: result.board,
+          turn: nextTurn,
+          turnDeadlineTs: null,
+        }
+        if (series.seriesOver) {
+          const { data, error } = await supabase
+            .from("matches")
+            .update({
+              status: "Finished",
+              board_state: finalBoard,
+              winner_identity_id: series.winnerIdentityId,
+              win_reason: series.winReason,
+              host_round_wins: series.hostRoundWins,
+              challenger_round_wins: series.challengerRoundWins,
+              current_round: series.currentRound,
+              updated_at: now,
+              finished_at: now,
+              ended_at: now,
+            })
+            .eq("id", roomId)
+            .eq("status", "Live")
+            .select("*")
+            .maybeSingle()
+          if (error) throw error
+          const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
+          logRoomAction("move_win", roomId, { game: "Connect 4", reason: series.winReason })
+          return NextResponse.json(
+            { ok: true, room: updatedRoom, server_time_ms: nowMs },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+        const nextBoardState = createInitialBoardState("Connect 4")
+        const nextTurnId = room.hostIdentityId
+        const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
-            board_state: {
-              mode: "connect4-live",
-              board: result.board,
-              turn: nextTurn,
-              turnDeadlineTs: null,
-            },
-            winner_identity_id: winnerId,
-            win_reason: "win",
+            status: "Live",
+            board_state: nextBoardState,
+            host_round_wins: series.hostRoundWins,
+            challenger_round_wins: series.challengerRoundWins,
+            current_round: series.currentRound,
+            move_turn_identity_id: nextTurnId,
+            move_turn_started_at: now,
+            move_turn_seconds: moveSeconds,
+            turn_expires_at: turnExpiresAt,
             updated_at: now,
-            finished_at: now,
-            ended_at: now,
           })
           .eq("id", roomId)
+          .eq("status", "Live")
           .select("*")
           .maybeSingle()
         if (error) throw error
-        logRoomAction("move_win", roomId, { game: "Connect 4", reason: "win" })
+        logRoomAction("move_round_win", roomId, { game: "Connect 4", roundWinner })
         return NextResponse.json(
           { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
@@ -255,23 +369,58 @@ export async function POST(request: NextRequest) {
       }
 
       if (full) {
+        const series = getSeriesUpdate(room, null)
+        const finalBoard = {
+          mode: "connect4-live",
+          board: result.board,
+          turn: nextTurn,
+          turnDeadlineTs: null,
+        }
+        if (series.seriesOver) {
+          const { data, error } = await supabase
+            .from("matches")
+            .update({
+              status: "Finished",
+              board_state: finalBoard,
+              winner_identity_id: null,
+              win_reason: series.winReason,
+              host_round_wins: series.hostRoundWins,
+              challenger_round_wins: series.challengerRoundWins,
+              current_round: series.currentRound,
+              updated_at: now,
+              finished_at: now,
+              ended_at: now,
+            })
+            .eq("id", roomId)
+            .eq("status", "Live")
+            .select("*")
+            .maybeSingle()
+          if (error) throw error
+          const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
+          return NextResponse.json(
+            { ok: true, room: updatedRoom, server_time_ms: nowMs },
+            { headers: { "Cache-Control": "no-store" } }
+          )
+        }
+        const nextBoardState = createInitialBoardState("Connect 4")
+        const nextTurnId = room.hostIdentityId
+        const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
         const { data, error } = await supabase
           .from("matches")
           .update({
-            status: "Finished",
-            board_state: {
-              mode: "connect4-live",
-              board: result.board,
-              turn: nextTurn,
-              turnDeadlineTs: null,
-            },
-            winner_identity_id: null,
-            win_reason: "draw",
+            status: "Live",
+            board_state: nextBoardState,
+            host_round_wins: series.hostRoundWins,
+            challenger_round_wins: series.challengerRoundWins,
+            current_round: series.currentRound,
+            move_turn_identity_id: nextTurnId,
+            move_turn_started_at: now,
+            move_turn_seconds: moveSeconds,
+            turn_expires_at: turnExpiresAt,
             updated_at: now,
-            finished_at: now,
-            ended_at: now,
           })
           .eq("id", roomId)
+          .eq("status", "Live")
           .select("*")
           .maybeSingle()
         if (error) throw error
@@ -300,6 +449,7 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         })
         .eq("id", roomId)
+        .eq("status", "Live")
         .select("*")
         .maybeSingle()
       if (error) throw error
@@ -340,28 +490,64 @@ export async function POST(request: NextRequest) {
     const nextTurn: TttCell = side === "X" ? "O" : "X"
 
     if (winner) {
-      const winnerId = winner === "X" ? room.hostIdentityId : room.challengerIdentityId!
+      const roundWinner = winner === "X" ? "host" : "challenger"
+      const series = getSeriesUpdate(room, roundWinner)
+      const finalBoard = {
+        mode: "ttt-live",
+        board: nextBoard,
+        turn: nextTurn,
+        turnDeadlineTs: null,
+      }
+      if (series.seriesOver) {
+        const { data, error } = await supabase
+          .from("matches")
+          .update({
+            status: "Finished",
+            board_state: finalBoard,
+            winner_identity_id: series.winnerIdentityId,
+            win_reason: series.winReason,
+            host_round_wins: series.hostRoundWins,
+            challenger_round_wins: series.challengerRoundWins,
+            current_round: series.currentRound,
+            updated_at: now,
+            finished_at: now,
+            ended_at: now,
+          })
+          .eq("id", roomId)
+          .eq("status", "Live")
+          .select("*")
+          .maybeSingle()
+        if (error) throw error
+        const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
+        logRoomAction("move_win", roomId, { game: "Tic-Tac-Toe", reason: series.winReason })
+        return NextResponse.json(
+          { ok: true, room: updatedRoom, server_time_ms: nowMs },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      const nextBoardState = createInitialBoardState("Tic-Tac-Toe")
+      const nextTurnId = room.hostIdentityId
+      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
       const { data, error } = await supabase
         .from("matches")
         .update({
-          status: "Finished",
-          board_state: {
-            mode: "ttt-live",
-            board: nextBoard,
-            turn: nextTurn,
-            turnDeadlineTs: null,
-          },
-          winner_identity_id: winnerId,
-          win_reason: "win",
+          status: "Live",
+          board_state: nextBoardState,
+          host_round_wins: series.hostRoundWins,
+          challenger_round_wins: series.challengerRoundWins,
+          current_round: series.currentRound,
+          move_turn_identity_id: nextTurnId,
+          move_turn_started_at: now,
+          move_turn_seconds: moveSeconds,
+          turn_expires_at: turnExpiresAt,
           updated_at: now,
-          finished_at: now,
-          ended_at: now,
         })
         .eq("id", roomId)
+        .eq("status", "Live")
         .select("*")
         .maybeSingle()
       if (error) throw error
-      logRoomAction("move_win", roomId, { game: "Tic Tac Toe", reason: "win" })
+      logRoomAction("move_round_win", roomId, { game: "Tic-Tac-Toe", roundWinner })
       return NextResponse.json(
         { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
         { headers: { "Cache-Control": "no-store" } }
@@ -369,27 +555,62 @@ export async function POST(request: NextRequest) {
     }
 
     if (full) {
+      const series = getSeriesUpdate(room, null)
+      const finalBoard = {
+        mode: "ttt-live",
+        board: nextBoard,
+        turn: nextTurn,
+        turnDeadlineTs: null,
+      }
+      if (series.seriesOver) {
+        const { data, error } = await supabase
+          .from("matches")
+          .update({
+            status: "Finished",
+            board_state: finalBoard,
+            winner_identity_id: null,
+            win_reason: series.winReason,
+            host_round_wins: series.hostRoundWins,
+            challenger_round_wins: series.challengerRoundWins,
+            current_round: series.currentRound,
+            updated_at: now,
+            finished_at: now,
+            ended_at: now,
+          })
+          .eq("id", roomId)
+          .eq("status", "Live")
+          .select("*")
+          .maybeSingle()
+        if (error) throw error
+        const updatedRoom = data ? mapDbRowToRoom((data as Record<string, unknown>)) : (await getRoomById(supabase, roomId)) ?? room
+        return NextResponse.json(
+          { ok: true, room: updatedRoom, server_time_ms: nowMs },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      const nextBoardState = createInitialBoardState("Tic-Tac-Toe")
+      const nextTurnId = room.hostIdentityId
+      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
       const { data, error } = await supabase
         .from("matches")
         .update({
-          status: "Finished",
-          board_state: {
-            mode: "ttt-live",
-            board: nextBoard,
-            turn: nextTurn,
-            turnDeadlineTs: null,
-          },
-          winner_identity_id: null,
-          win_reason: "draw",
+          status: "Live",
+          board_state: nextBoardState,
+          host_round_wins: series.hostRoundWins,
+          challenger_round_wins: series.challengerRoundWins,
+          current_round: series.currentRound,
+          move_turn_identity_id: nextTurnId,
+          move_turn_started_at: now,
+          move_turn_seconds: moveSeconds,
+          turn_expires_at: turnExpiresAt,
           updated_at: now,
-          finished_at: now,
-          ended_at: now,
         })
         .eq("id", roomId)
+        .eq("status", "Live")
         .select("*")
         .maybeSingle()
       if (error) throw error
-      logRoomAction("move_draw", roomId, { game: "Tic Tac Toe", reason: "draw" })
+      logRoomAction("move_draw", roomId, { game: "Tic-Tac-Toe", reason: "draw" })
       return NextResponse.json(
         { ok: true, room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room, server_time_ms: nowMs },
         { headers: { "Cache-Control": "no-store" } }
@@ -414,6 +635,7 @@ export async function POST(request: NextRequest) {
         updated_at: now,
       })
       .eq("id", roomId)
+      .eq("status", "Live")
       .select("*")
       .maybeSingle()
     if (error) throw error

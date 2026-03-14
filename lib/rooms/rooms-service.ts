@@ -230,11 +230,12 @@ export async function forfeitRoom(
       finished_at: now,
     })
     .eq("id", roomId)
+    .in("status", ["Ready to Start", "Live"])
     .select("*")
     .maybeSingle()
 
   if (error) throw error
-  if (!data) throw new Error("Room not found")
+  if (!data) throw new Error("Room not found or already finished")
   return mapDbRowToRoom(data as Record<string, unknown>)
 }
 
