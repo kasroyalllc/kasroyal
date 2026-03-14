@@ -720,7 +720,7 @@ export default function ArenaMatchPage() {
     return () => window.clearInterval(timer)
   }, [])
 
-  // Sync to server time for both pre-game countdown and Live turn timer so displayed timers match server transitions (no early end from clock skew).
+  // Initial server time sync when we need it (pre-game or Live with turn timer).
   useEffect(() => {
     if (!match) return
     const needSync =
@@ -739,9 +739,33 @@ export default function ArenaMatchPage() {
     return () => { cancelled = true }
   }, [match?.id, match?.status, match?.turnExpiresAt, serverTimeSync.receivedAtMs])
 
+  // During pre-game countdown: poll server time every 1s so displayed countdown matches server (no early stop at 4s from clock skew).
+  useEffect(() => {
+    if (!match || match.status !== "Ready to Start") return
+    let cancelled = false
+    const poll = () => {
+      if (cancelled) return
+      fetch("/api/rooms/servertime")
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled || typeof data.server_time_ms !== "number") return
+          setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+        })
+        .catch(() => {})
+    }
+    poll()
+    const interval = window.setInterval(poll, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [match?.id, match?.status])
+
+  // Tick: poll room state (and get server_time_ms). During countdown use 1s interval so transition to Live is detected quickly.
   useEffect(() => {
     if (!matchId || !match) return
     if (match.status !== "Ready to Start" && match.status !== "Live") return
+    const intervalMs = match.status === "Ready to Start" ? 1000 : 2000
     const runTick = () => {
       fetch("/api/rooms/tick", {
         method: "POST",
@@ -760,7 +784,7 @@ export default function ArenaMatchPage() {
         .catch(() => {})
     }
     runTick()
-    const t = window.setInterval(runTick, 2000)
+    const t = window.setInterval(runTick, intervalMs)
     return () => clearInterval(t)
   }, [matchId, match?.id, match?.status])
 
@@ -836,6 +860,7 @@ export default function ArenaMatchPage() {
     setChatMessages(uiMessages)
   }, [matchId])
 
+  // Room chat: everyone in the room (host, challenger, spectators) can send. No player-only restriction.
   const handleChatSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault()
@@ -852,12 +877,15 @@ export default function ArenaMatchPage() {
             message: text,
           }),
         })
+        const data = await res.json().catch(() => ({}))
         if (res.ok) {
           setChatInput("")
           await refreshChat()
+        } else {
+          setMessage(typeof data?.error === "string" ? data.error : "Send failed")
         }
       } catch {
-        // keep input on error
+        setMessage("Send failed")
       }
     },
     [matchId, chatInput, refreshChat]

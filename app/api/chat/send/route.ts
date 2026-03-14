@@ -5,7 +5,11 @@ import { getRoomById } from "@/lib/rooms/rooms-service"
 
 export const dynamic = "force-dynamic"
 
-/** Persist room chat message in Supabase. No localStorage authority. */
+/**
+ * Send a room chat message. Persisted in Supabase (match_messages). No localStorage authority.
+ * Room chat is for everyone in the match room: host, challenger, and spectators.
+ * Any identity viewing the room can send; there is no player-only restriction.
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -30,7 +34,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Room chat is shared by everyone in the match room: host, challenger, and spectators.
     const msg = await sendRoomMessage(supabase, {
       match_id: matchId,
       sender_identity_id: senderIdentityId,
