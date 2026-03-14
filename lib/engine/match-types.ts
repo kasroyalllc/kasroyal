@@ -1,4 +1,4 @@
-export type GameType = "Chess Duel" | "Connect 4" | "Tic-Tac-Toe"
+export type GameType = "Chess Duel" | "Connect 4" | "Rock Paper Scissors" | "Tic-Tac-Toe"
 
 /** Full ranked ladder: Bronze III → Grandmaster. XP bar per rank; wins/losses/forfeits affect XP. */
 export type RankTier =

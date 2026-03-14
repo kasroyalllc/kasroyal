@@ -12,5 +12,6 @@ export const TIMEOUT_STRIKES_TO_LOSE = 3
 export function getMoveSecondsForGame(game: string): number {
   if (game === "Connect 4") return CONNECT4_MOVE_SECONDS
   if (game === "Tic-Tac-Toe") return TTT_MOVE_SECONDS
+  if (game === "Rock Paper Scissors") return 0
   return 30
 }

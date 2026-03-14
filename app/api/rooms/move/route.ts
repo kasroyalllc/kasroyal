@@ -9,14 +9,18 @@ import {
   getTttWinner,
   isConnect4Full,
   isTttFull,
+  resolveRps,
+  getRpsWinReason,
 } from "@/lib/rooms/game-board"
 import { getMoveSecondsForGame } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import type {
   Connect4BoardState,
   TttBoardState,
+  RpsBoardState,
   Connect4Cell,
   TttCell,
+  RpsChoice,
   GameType,
 } from "@/lib/engine/match/types"
 
@@ -68,10 +72,116 @@ export async function POST(request: NextRequest) {
     }
 
     const gameType = room.game as GameType
-    if (gameType !== "Connect 4" && gameType !== "Tic-Tac-Toe") {
+    if (
+      gameType !== "Connect 4" &&
+      gameType !== "Tic-Tac-Toe" &&
+      gameType !== "Rock Paper Scissors"
+    ) {
       return NextResponse.json(
-        { ok: false, error: "Only Connect 4 and Tic-Tac-Toe support move" },
+        { ok: false, error: "Only Connect 4, Tic-Tac-Toe, and Rock Paper Scissors support move" },
         { status: 400 }
+      )
+    }
+
+    const rawBoard = room.boardState
+    const now = new Date().toISOString()
+    const nowMs = Date.now()
+
+    if (gameType === "Rock Paper Scissors") {
+      const choice = (typeof move === "string" ? move : String(move)).toLowerCase() as RpsChoice
+      if (choice !== "rock" && choice !== "paper" && choice !== "scissors") {
+        return NextResponse.json(
+          { ok: false, error: "Invalid move: rock, paper, or scissors required" },
+          { status: 400 }
+        )
+      }
+      const state = rawBoard as RpsBoardState | null | undefined
+      if (!state || state.mode !== "rps-live") {
+        return NextResponse.json(
+          { ok: false, error: "Invalid Rock Paper Scissors board state" },
+          { status: 409 }
+        )
+      }
+      const isHost = room.hostIdentityId === playerIdentityId
+      const isChallenger = room.challengerIdentityId === playerIdentityId
+      if (isHost && state.hostChoice != null) {
+        return NextResponse.json(
+          { ok: false, error: "You already locked in your choice" },
+          { status: 409 }
+        )
+      }
+      if (isChallenger && state.challengerChoice != null) {
+        return NextResponse.json(
+          { ok: false, error: "You already locked in your choice" },
+          { status: 409 }
+        )
+      }
+      const nextState: RpsBoardState = {
+        mode: "rps-live",
+        hostChoice: isHost ? choice : state.hostChoice,
+        challengerChoice: isChallenger ? choice : state.challengerChoice,
+        revealed: false,
+        winner: null,
+      }
+      const hostChoice = nextState.hostChoice!
+      const challengerChoice = nextState.challengerChoice!
+      const bothSubmitted = hostChoice != null && challengerChoice != null
+      if (bothSubmitted) {
+        nextState.revealed = true
+        nextState.winner = resolveRps(hostChoice, challengerChoice)
+        const winReason = getRpsWinReason(hostChoice, challengerChoice)
+        const winnerId =
+          nextState.winner === "host"
+            ? room.hostIdentityId
+            : nextState.winner === "challenger"
+              ? room.challengerIdentityId
+              : null
+        const { data, error } = await supabase
+          .from("matches")
+          .update({
+            status: "Finished",
+            board_state: nextState,
+            winner_identity_id: winnerId,
+            win_reason: winReason,
+            updated_at: now,
+            finished_at: now,
+            ended_at: now,
+          })
+          .eq("id", roomId)
+          .select("*")
+          .maybeSingle()
+        if (error) throw error
+        logRoomAction(
+          nextState.winner === "draw" ? "move_draw" : "move_win",
+          roomId,
+          { game: "Rock Paper Scissors", reason: nextState.winner === "draw" ? "draw" : "win" }
+        )
+        return NextResponse.json(
+          {
+            ok: true,
+            room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
+            server_time_ms: nowMs,
+          },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      const { data, error } = await supabase
+        .from("matches")
+        .update({
+          board_state: nextState,
+          updated_at: now,
+        })
+        .eq("id", roomId)
+        .select("*")
+        .maybeSingle()
+      if (error) throw error
+      return NextResponse.json(
+        {
+          ok: true,
+          room: data ? mapDbRowToRoom((data as Record<string, unknown>)) : room,
+          server_time_ms: nowMs,
+        },
+        { headers: { "Cache-Control": "no-store" } }
       )
     }
 
@@ -83,9 +193,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const rawBoard = room.boardState
-    const now = new Date().toISOString()
-    const nowMs = Date.now()
     const moveSeconds = getMoveSecondsForGame(gameType)
 
     if (gameType === "Connect 4") {

@@ -68,6 +68,16 @@ type PersistedTttBoardState = {
   turnDeadlineTs: number | null
 }
 
+type RpsChoice = "rock" | "paper" | "scissors"
+
+type PersistedRpsBoardState = {
+  mode: "rps-live"
+  hostChoice: RpsChoice | null
+  challengerChoice: RpsChoice | null
+  revealed: boolean
+  winner: "host" | "challenger" | "draw" | null
+}
+
 type PersistedChessPreviewState = {
   mode: "chess-preview"
   fen?: string
@@ -77,6 +87,7 @@ type PersistedChessPreviewState = {
 type MatchBoardState =
   | PersistedConnect4BoardState
   | PersistedTttBoardState
+  | PersistedRpsBoardState
   | PersistedChessPreviewState
   | Record<string, unknown>
   | undefined
@@ -556,6 +567,32 @@ function getTttState(match: ArenaMatch | null) {
   }
 }
 
+function getRpsState(match: ArenaMatch | null) {
+  const boardState = (match?.boardState ?? null) as MatchBoardState
+  if (
+    boardState &&
+    typeof boardState === "object" &&
+    "mode" in boardState &&
+    (boardState as PersistedRpsBoardState).mode === "rps-live"
+  ) {
+    const rps = boardState as PersistedRpsBoardState
+    return {
+      hostChoice: rps.hostChoice ?? null,
+      challengerChoice: rps.challengerChoice ?? null,
+      revealed: rps.revealed === true,
+      winner: rps.winner ?? null,
+      hasPersistedState: true,
+    }
+  }
+  return {
+    hostChoice: null,
+    challengerChoice: null,
+    revealed: false,
+    winner: null,
+    hasPersistedState: false,
+  }
+}
+
 function makeLiveFeed(match: ArenaMatch | null) {
   if (!match) {
     return ["Loading room state..."]
@@ -754,6 +791,7 @@ export default function ArenaMatchPage() {
 
   const connect4State = useMemo(() => getConnect4State(match), [match])
   const tttState = useMemo(() => getTttState(match), [match])
+  const rpsState = useMemo(() => getRpsState(match), [match])
 
   const connect4Winner = useMemo(
     () => getConnect4Winner(connect4State.board),
@@ -1004,7 +1042,8 @@ export default function ArenaMatchPage() {
     !isPaused &&
     match.status === "Live" &&
     ((match.game === "Connect 4" && connect4Turn === "host") ||
-      (match.game === "Tic-Tac-Toe" && tttTurn === "X"))
+      (match.game === "Tic-Tac-Toe" && tttTurn === "X") ||
+      (match.game === "Rock Paper Scissors" && rpsState.hostChoice === null && !rpsState.revealed))
 
   const canChallengerMove =
     !isFinished &&
@@ -1012,13 +1051,14 @@ export default function ArenaMatchPage() {
     !isPaused &&
     match.status === "Live" &&
     ((match.game === "Connect 4" && connect4Turn === "challenger") ||
-      (match.game === "Tic-Tac-Toe" && tttTurn === "O"))
+      (match.game === "Tic-Tac-Toe" && tttTurn === "O") ||
+      (match.game === "Rock Paper Scissors" && rpsState.challengerChoice === null && !rpsState.revealed))
 
   const canCurrentUserMove =
     !isFinished &&
     !isCountdown &&
     !isPaused &&
-    moveSecondsLeft > 0 &&
+    (moveSecondsLeft > 0 || match.game === "Rock Paper Scissors") &&
     ((isHostUser && canHostMove) || (isChallengerUser && canChallengerMove))
 
   const currentUserSide: ArenaSide | null = isHostUser
@@ -1453,6 +1493,55 @@ export default function ArenaMatchPage() {
     }
   }
 
+  async function submitRpsChoice(choice: RpsChoice) {
+    if (!match) return
+    if (match.game !== "Rock Paper Scissors") return
+    if (isFinished) return
+    if (isCountdown) {
+      setMessage("Countdown active. Choices unlock at match start.")
+      return
+    }
+    if (isPaused) {
+      setMessage("Match is paused. Resume to continue gameplay.")
+      return
+    }
+    if (rpsState.revealed) return
+    if (match.status !== "Live") return
+    if (isSpectatorOnly) {
+      setMessage("Spectating only. You are not seated in this match.")
+      return
+    }
+    const myChoice = isHostUser ? rpsState.hostChoice : isChallengerUser ? rpsState.challengerChoice : null
+    if (myChoice !== null) {
+      setMessage("You have already locked in your choice.")
+      return
+    }
+    try {
+      const res = await fetch("/api/rooms/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: match.id,
+          player_identity_id: getCurrentIdentity().id,
+          move: choice,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok && data.room) {
+        const updated = roomToArenaMatch(data.room)
+        setMatch(updated)
+        if (typeof data.server_time_ms === "number") {
+          setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+        }
+        setFeed((prev) => ["✊ You locked in your choice", ...prev].slice(0, 12))
+      } else {
+        setMessage(data.error ?? "Move failed.")
+      }
+    } catch {
+      setMessage("Move failed.")
+    }
+  }
+
   function resetCurrentGame() {
     if (!match) return
 
@@ -1461,7 +1550,7 @@ export default function ArenaMatchPage() {
       return
     }
 
-    if (match.game === "Connect 4" || match.game === "Tic-Tac-Toe") {
+    if (match.game === "Connect 4" || match.game === "Tic-Tac-Toe" || match.game === "Rock Paper Scissors") {
       setMessage("Board state is server-authoritative. Reset is not available for this game.")
       return
     }
@@ -1495,7 +1584,15 @@ export default function ArenaMatchPage() {
             ? tttTurn === "X"
               ? match.host.name
               : challenger?.name ?? "Challenger"
-            : "—"
+            : match.game === "Rock Paper Scissors"
+              ? rpsState.revealed
+                ? "—"
+                : (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
+                  ? "Locked in"
+                  : (isHostUser || isChallengerUser)
+                    ? "Choose"
+                    : "—"
+              : "—"
 
   const boardClockLabel = isFinished
     ? "—"
@@ -1503,9 +1600,11 @@ export default function ArenaMatchPage() {
       ? bettingSecondsLeft > 0 ? `Match starts in ${bettingSecondsLeft}s` : "Starting…"
       : isPaused
         ? `${pauseSecondsLeft}s`
-        : match.status === "Live"
-          ? (currentTurnSide === currentUserSide ? `Your turn: ${moveSecondsLeft}s` : `Opponent turn: ${moveSecondsLeft}s`)
-          : "—"
+        : match.game === "Rock Paper Scissors"
+          ? rpsState.revealed ? "—" : "No timer"
+          : match.status === "Live"
+            ? (currentTurnSide === currentUserSide ? `Your turn: ${moveSecondsLeft}s` : `Opponent turn: ${moveSecondsLeft}s`)
+            : "—"
 
   const resultLine =
     match.status === "Finished"
@@ -1543,7 +1642,13 @@ export default function ArenaMatchPage() {
                 : tttBoardFull
                   ? "Draw"
                   : "Live"
-              : "Preview"
+              : match.game === "Rock Paper Scissors"
+                ? rpsState.revealed
+                  ? rpsState.winner === "draw"
+                    ? "Draw"
+                    : "Win"
+                  : "Choose"
+                : "Preview"
 
   const countdownLine =
     countdownLines.length > 0 ? countdownLines[countdownLineIndex % countdownLines.length] : "Match starting soon…"
@@ -2128,6 +2233,116 @@ export default function ArenaMatchPage() {
                                 : "text-amber-300"
                         }
                       />
+                      <StatCard
+                        label={match.status === "Finished" ? "Result" : "State"}
+                        value={boardStateLabel}
+                        accent="text-amber-300"
+                      />
+                    </div>
+                  </div>
+                </GameBoardShell>
+              ) : match.game === "Rock Paper Scissors" ? (
+                <GameBoardShell title="Rock Paper Scissors" subtitle={match.statusText}>
+                  {isCountdown && challenger ? (
+                    <CountdownOverlay
+                      seconds={bettingSecondsLeft}
+                      hostName={match.host.name}
+                      challengerName={challenger.name}
+                      hypeLine={countdownLine}
+                      isQuickMatch={isQuickMatch}
+                    />
+                  ) : null}
+
+                  {isPaused ? (
+                    <PauseOverlay
+                      seconds={pauseSecondsLeft}
+                      pausedByName={pausedByName}
+                      canResume={canResumeCurrentUser}
+                      onResume={handleResumeMatch}
+                    />
+                  ) : null}
+
+                  <div className="flex w-full flex-col items-center justify-center">
+                    {rpsState.revealed || match.status === "Finished" ? (
+                      <div className="w-full max-w-md space-y-6 rounded-3xl border border-amber-300/20 bg-[#07100e] p-6 shadow-[inset_0_0_32px_rgba(255,200,80,0.06)] sm:p-8">
+                        <p className="text-center text-lg font-bold uppercase tracking-wider text-amber-200/90">Reveal</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="rounded-2xl border border-amber-300/15 bg-black/30 px-4 py-3 text-center">
+                            <p className="text-xs font-bold uppercase text-white/60">{match.host.name}</p>
+                            <p className="mt-1 text-2xl font-black capitalize text-amber-200">
+                              {rpsState.hostChoice ?? "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border border-emerald-300/15 bg-black/30 px-4 py-3 text-center">
+                            <p className="text-xs font-bold uppercase text-white/60">{challenger?.name ?? "Challenger"}</p>
+                            <p className="mt-1 text-2xl font-black capitalize text-emerald-200">
+                              {rpsState.challengerChoice ?? "—"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-center">
+                          {rpsState.winner === "draw" ? (
+                            <p className="text-xl font-bold text-white/90">Draw</p>
+                          ) : rpsState.winner === "host" ? (
+                            <p className="text-xl font-bold text-amber-300">{match.host.name} wins</p>
+                          ) : rpsState.winner === "challenger" ? (
+                            <p className="text-xl font-bold text-emerald-300">{challenger?.name ?? "Challenger"} wins</p>
+                          ) : (
+                            <p className="text-lg text-white/70">—</p>
+                          )}
+                          {match.winReason && match.status === "Finished" && (
+                            <p className="mt-1 text-sm text-white/60">{match.winReason}</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid w-full max-w-lg grid-cols-3 gap-4 sm:gap-6">
+                        {(["rock", "paper", "scissors"] as const).map((choice) => {
+                          const isLocked = (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
+                          const myChoice = isHostUser ? rpsState.hostChoice : isChallengerUser ? rpsState.challengerChoice : null
+                          const isSelected = myChoice === choice
+                          const disabled =
+                            isCountdown ||
+                            isPaused ||
+                            match.status !== "Live" ||
+                            !(isHostUser || isChallengerUser) ||
+                            isLocked
+                          return (
+                            <button
+                              key={choice}
+                              type="button"
+                              onClick={() => submitRpsChoice(choice)}
+                              disabled={disabled}
+                              className={`flex flex-col items-center justify-center rounded-2xl border-2 px-6 py-8 text-center transition touch-manipulation sm:px-8 sm:py-10 ${
+                                isSelected
+                                  ? "border-amber-400 bg-amber-400/20 text-amber-200 shadow-[0_0_24px_rgba(255,200,80,0.2)]"
+                                  : "border-white/15 bg-black/40 text-white/90 hover:border-amber-300/30 hover:bg-amber-400/10 disabled:opacity-50 disabled:pointer-events-none"
+                              }`}
+                            >
+                              <span className="text-3xl sm:text-4xl" aria-hidden>
+                                {choice === "rock" ? "✊" : choice === "paper" ? "✋" : "✌️"}
+                              </span>
+                              <span className="mt-2 text-lg font-bold capitalize sm:text-xl">{choice}</span>
+                              {isLocked && isSelected && (
+                                <span className="mt-1 text-xs font-medium uppercase text-amber-300/90">Locked in</span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <p className="mt-6 text-center text-sm text-white/60">
+                      {rpsState.revealed
+                        ? "Result is final."
+                        : (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
+                          ? "Waiting for opponent…"
+                          : isHostUser || isChallengerUser
+                            ? "Choose Rock, Paper, or Scissors. Your choice is hidden until both lock in."
+                            : "Spectating. Choices will be revealed when both players have locked in."}
+                    </p>
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                      <StatCard label="Turn" value={boardTurnLabel} accent="text-sky-300" />
+                      <StatCard label="Clock" value={boardClockLabel} accent="text-amber-300" />
                       <StatCard
                         label={match.status === "Finished" ? "Result" : "State"}
                         value={boardStateLabel}

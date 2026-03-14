@@ -54,7 +54,11 @@ export async function POST(request: NextRequest) {
         )
       }
       const gameType = room.game as GameType
-      if (gameType !== "Connect 4" && gameType !== "Tic-Tac-Toe") {
+      if (
+        gameType !== "Connect 4" &&
+        gameType !== "Tic-Tac-Toe" &&
+        gameType !== "Rock Paper Scissors"
+      ) {
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
@@ -62,7 +66,10 @@ export async function POST(request: NextRequest) {
       }
       const moveSeconds = getMoveSecondsForGame(gameType)
       const boardState = createInitialBoardState(gameType)
-      const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+      const isRps = gameType === "Rock Paper Scissors"
+      const turnExpiresAt = isRps
+        ? null
+        : new Date(nowMs + moveSeconds * 1000).toISOString()
 
       const { data, error } = await supabase
         .from("matches")
@@ -72,9 +79,9 @@ export async function POST(request: NextRequest) {
           started_at: nowIso,
           betting_open: false,
           board_state: boardState,
-          move_turn_identity_id: room.hostIdentityId,
-          move_turn_started_at: nowIso,
-          move_turn_seconds: moveSeconds,
+          move_turn_identity_id: isRps ? null : room.hostIdentityId,
+          move_turn_started_at: isRps ? null : nowIso,
+          move_turn_seconds: isRps ? null : moveSeconds,
           turn_expires_at: turnExpiresAt,
           updated_at: nowIso,
         })
@@ -102,6 +109,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (room.status === "Live") {
+      const gameTypeLive = room.game as GameType
+      if (gameTypeLive === "Rock Paper Scissors") {
+        return NextResponse.json(
+          { ok: true, room, transition: null, server_time_ms: nowMs },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
       // Timeout only when authoritative DB deadline has actually passed. No buffer, no computed fallback.
       const turnExpiresAtMs = room.turnExpiresAt ?? null
       if (turnExpiresAtMs == null || nowMs < turnExpiresAtMs) {

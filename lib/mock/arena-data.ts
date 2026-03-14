@@ -190,7 +190,15 @@ type ChessPreviewBoardState = {
   turnDeadlineTs?: null
 }
 
-type MatchBoardState = Connect4BoardState | TttBoardState | ChessPreviewBoardState
+type RpsBoardState = {
+  mode: "rps-live"
+  hostChoice: "rock" | "paper" | "scissors" | null
+  challengerChoice: "rock" | "paper" | "scissors" | null
+  revealed: boolean
+  winner: "host" | "challenger" | "draw" | null
+}
+
+type MatchBoardState = Connect4BoardState | TttBoardState | ChessPreviewBoardState | RpsBoardState
 
 type ArenaStore = {
   revision: number
@@ -318,6 +326,14 @@ export const gameMeta: Record<GameType, GameMeta> = {
     subtitle: "Quick-turn pressure matches with crowd-friendly pacing.",
     glow: "border-emerald-300/20 bg-emerald-400/10 text-emerald-300",
   },
+  "Rock Paper Scissors": {
+    accent: "text-fuchsia-300",
+    surface: "bg-gradient-to-br from-[#0f0814] to-[#0b0b0b]",
+    icon: "✊",
+    description: "Classic showdown. Lock in your pick, reveal together, winner takes all.",
+    subtitle: "Simultaneous choice, instant reveal, no turn timer.",
+    glow: "border-fuchsia-300/20 bg-fuchsia-400/10 text-fuchsia-300",
+  },
   "Tic-Tac-Toe": {
     accent: "text-sky-300",
     surface: "bg-gradient-to-br from-[#08131a] to-[#0b0b0b]",
@@ -424,6 +440,24 @@ function isTttBoardState(value: unknown): value is TttBoardState {
   )
 }
 
+function isRpsBoardState(value: unknown): value is RpsBoardState {
+  if (!value || typeof value !== "object") return false
+  const state = value as RpsBoardState
+  const choiceOk = (c: unknown) => c === null || c === "rock" || c === "paper" || c === "scissors"
+  const winnerOk =
+    state.winner === null ||
+    state.winner === "host" ||
+    state.winner === "challenger" ||
+    state.winner === "draw"
+  return (
+    state.mode === "rps-live" &&
+    choiceOk(state.hostChoice) &&
+    choiceOk(state.challengerChoice) &&
+    typeof state.revealed === "boolean" &&
+    winnerOk
+  )
+}
+
 function createWaitingBoardState(game: GameType): MatchBoardState {
   if (game === "Connect 4") {
     return {
@@ -442,6 +476,16 @@ function createWaitingBoardState(game: GameType): MatchBoardState {
       board: Array.from({ length: 9 }, () => null as "X" | "O" | null),
       turn: "X",
       turnDeadlineTs: null,
+    }
+  }
+
+  if (game === "Rock Paper Scissors") {
+    return {
+      mode: "rps-live",
+      hostChoice: null,
+      challengerChoice: null,
+      revealed: false,
+      winner: null,
     }
   }
 
@@ -473,6 +517,16 @@ function createLiveBoardState(game: GameType, startedAt = Date.now()): MatchBoar
     }
   }
 
+  if (game === "Rock Paper Scissors") {
+    return {
+      mode: "rps-live",
+      hostChoice: null,
+      challengerChoice: null,
+      revealed: false,
+      winner: null,
+    }
+  }
+
   return {
     mode: "chess-preview",
     fen: "start",
@@ -483,6 +537,7 @@ function createLiveBoardState(game: GameType, startedAt = Date.now()): MatchBoar
 function getLiveMoveText(game: GameType) {
   if (game === "Chess Duel") return "1. e4"
   if (game === "Connect 4") return "Opening disc dropped"
+  if (game === "Rock Paper Scissors") return "Choose rock, paper, or scissors"
   return "Opening move"
 }
 
@@ -519,6 +574,9 @@ function getLiveStatusText(
 ) {
   if (game === "Connect 4" || game === "Tic-Tac-Toe") {
     return `${currentTurnName ?? hostName} to move`
+  }
+  if (game === "Rock Paper Scissors") {
+    return "Choose your move"
   }
 
   return challengerName ? `${hostName} vs ${challengerName} live` : "Match is live"
@@ -1045,6 +1103,9 @@ function sideLabelsForGame(game: GameType) {
   if (game === "Connect 4") {
     return { host: "Red", challenger: "Yellow" }
   }
+  if (game === "Rock Paper Scissors") {
+    return { host: "Host", challenger: "Challenger" }
+  }
   return { host: "X", challenger: "O" }
 }
 
@@ -1052,6 +1113,7 @@ function bestOfForGame(game: GameType, explicit?: 1 | 3 | 5): 1 | 3 | 5 {
   if (explicit === 1 || explicit === 3 || explicit === 5) return explicit
   if (game === "Chess Duel") return 3
   if (game === "Connect 4") return 3
+  if (game === "Rock Paper Scissors") return 1
   return 1
 }
 

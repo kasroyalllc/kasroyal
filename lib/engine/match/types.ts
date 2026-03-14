@@ -9,7 +9,7 @@
 
 export type MatchMode = "quick" | "ranked"
 
-export type GameType = "Chess Duel" | "Connect 4" | "Tic-Tac-Toe"
+export type GameType = "Chess Duel" | "Connect 4" | "Rock Paper Scissors" | "Tic-Tac-Toe"
 
 /** Backend status; maps to UI ArenaStatus. */
 export type RoomStatus =
@@ -111,7 +111,19 @@ export type TttBoardState = {
   turnDeadlineTs: number | null
 }
 
-export type GameBoardState = Connect4BoardState | TttBoardState
+/** Rock Paper Scissors choice. */
+export type RpsChoice = "rock" | "paper" | "scissors"
+
+/** Backend board state for Rock Paper Scissors. Both choices hidden until both submitted; then revealed and winner set. */
+export type RpsBoardState = {
+  mode: "rps-live"
+  hostChoice: RpsChoice | null
+  challengerChoice: RpsChoice | null
+  revealed: boolean
+  winner: "host" | "challenger" | "draw" | null
+}
+
+export type GameBoardState = Connect4BoardState | TttBoardState | RpsBoardState
 
 export type MoveRecord = {
   id: string

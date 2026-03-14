@@ -1,6 +1,6 @@
 import type { ArenaMatch, GameType } from "@/lib/engine/match-types"
 
-export const gameDisplayOrder: GameType[] = ["Chess Duel", "Connect 4", "Tic-Tac-Toe"]
+export const gameDisplayOrder: GameType[] = ["Chess Duel", "Connect 4", "Rock Paper Scissors", "Tic-Tac-Toe"]
 
 function getFeaturedCandidateScore(match: ArenaMatch) {
   if (!match.challenger) return 0

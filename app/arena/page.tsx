@@ -1013,7 +1013,7 @@ export default function ArenaPage() {
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
                   <label className="text-xs uppercase tracking-[0.16em] text-white/45">Game</label>
                   <div className="mt-3 grid gap-2">
-                    {(["Chess Duel", "Connect 4", "Tic-Tac-Toe"] as GameType[]).map((game) => {
+                    {(["Chess Duel", "Connect 4", "Rock Paper Scissors", "Tic-Tac-Toe"] as GameType[]).map((game) => {
                       const active = selectedGame === game
                       return (
                         <button
@@ -1165,7 +1165,7 @@ export default function ArenaPage() {
                 />
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
-                {(["All", "Chess Duel", "Connect 4", "Tic-Tac-Toe"] as GameFilter[]).map((filterValue) => {
+                {(["All", "Chess Duel", "Connect 4", "Rock Paper Scissors", "Tic-Tac-Toe"] as GameFilter[]).map((filterValue) => {
                   const active = gameFilter === filterValue
                   return (
                     <button

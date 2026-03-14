@@ -3,7 +3,14 @@
  * Used by /api/rooms/start and /api/rooms/move.
  */
 
-import type { Connect4BoardState, TttBoardState, Connect4Cell, TttCell } from "@/lib/engine/match/types"
+import type {
+  Connect4BoardState,
+  TttBoardState,
+  RpsBoardState,
+  Connect4Cell,
+  TttCell,
+  RpsChoice,
+} from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
 
 export function getEmptyConnect4Board(): Connect4Cell[][] {
@@ -16,7 +23,8 @@ export function getEmptyTttBoard(): TttCell[] {
 
 export function createInitialBoardState(gameType: GameType):
   | Connect4BoardState
-  | TttBoardState {
+  | TttBoardState
+  | RpsBoardState {
   if (gameType === "Connect 4") {
     return {
       mode: "connect4-live",
@@ -33,7 +41,48 @@ export function createInitialBoardState(gameType: GameType):
       turnDeadlineTs: null,
     }
   }
+  if (gameType === "Rock Paper Scissors") {
+    return {
+      mode: "rps-live",
+      hostChoice: null,
+      challengerChoice: null,
+      revealed: false,
+      winner: null,
+    }
+  }
   throw new Error(`Unsupported game type for board init: ${gameType}`)
+}
+
+/** Resolve RPS winner from both choices. Returns "host" | "challenger" | "draw". */
+export function resolveRps(
+  hostChoice: RpsChoice,
+  challengerChoice: RpsChoice
+): "host" | "challenger" | "draw" {
+  if (hostChoice === challengerChoice) return "draw"
+  if (
+    (hostChoice === "rock" && challengerChoice === "scissors") ||
+    (hostChoice === "paper" && challengerChoice === "rock") ||
+    (hostChoice === "scissors" && challengerChoice === "paper")
+  ) {
+    return "host"
+  }
+  return "challenger"
+}
+
+/** Win reason string for RPS result (e.g. "rock beats scissors"). */
+export function getRpsWinReason(
+  hostChoice: RpsChoice,
+  challengerChoice: RpsChoice
+): string {
+  if (hostChoice === challengerChoice) return "draw"
+  if (
+    (hostChoice === "rock" && challengerChoice === "scissors") ||
+    (hostChoice === "paper" && challengerChoice === "rock") ||
+    (hostChoice === "scissors" && challengerChoice === "paper")
+  ) {
+    return `${hostChoice} beats ${challengerChoice}`
+  }
+  return `${challengerChoice} beats ${hostChoice}`
 }
 
 export function getConnect4Winner(board: Connect4Cell[][]): Connect4Cell {
