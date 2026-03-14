@@ -29,10 +29,8 @@ import {
   MIN_BET,
   PAUSE_DURATION_SECONDS,
   TIMEOUT_STRIKES_TO_LOSE,
-  pauseArenaMatch,
   placeArenaSpectatorBet,
   readCurrentUserTickets,
-  resumeArenaMatch,
   subscribeSpectatorTickets,
   type ArenaMatch,
   type ArenaSide,
@@ -1356,7 +1354,7 @@ export default function ArenaMatchPage() {
     }
   }
 
-  function handlePauseMatch() {
+  async function handlePauseMatch() {
     if (!match) return
 
     if (!currentUserSide) {
@@ -1365,38 +1363,56 @@ export default function ArenaMatchPage() {
     }
 
     try {
-      const updated = pauseArenaMatch(match.id, currentUserSide)
-      if (updated) {
-        setMatch(updated)
-        const actor = currentUserSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Challenger"
-        setFeed((prev) => [`⏸ ${actor} used a pause`, ...prev].slice(0, 12))
-        setMessage(
-          `Pause started. ${actor} used one of their ${MAX_PAUSES_PER_SIDE} pauses. Match will auto-resume in ${PAUSE_DURATION_SECONDS}s or can be resumed early.`
-        )
+      const res = await fetch("/api/rooms/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: matchId,
+          player_identity_id: getCurrentIdentity().id,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!data.ok) {
+        setMessage(data.error ?? "Failed to pause match.")
+        return
       }
+      if (data.room) setMatch(roomToArenaMatch(data.room))
+      const actor = currentUserSide === "host" ? match.host?.name ?? "Host" : challenger?.name ?? "Challenger"
+      setFeed((prev) => [`⏸ ${actor} used a pause`, ...prev].slice(0, 12))
+      setMessage(
+        `Pause started. ${actor} used one of their ${MAX_PAUSES_PER_SIDE} pauses. Match will auto-resume in ${PAUSE_DURATION_SECONDS}s or can be resumed early.`
+      )
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to pause match.")
     }
   }
 
-  function handleResumeMatch() {
+  async function handleResumeMatch() {
     if (!match) return
 
-    const resumedBy = currentUserSide ?? "system"
-
     try {
-      const updated = resumeArenaMatch(match.id, resumedBy)
-      if (updated) {
-        setMatch(updated)
-        const actor =
-          currentUserSide === "host"
-            ? match.host?.name ?? "Host"
-            : currentUserSide === "challenger"
-              ? challenger?.name ?? "Challenger"
-              : "System"
-        setFeed((prev) => [`▶ ${actor} resumed the match`, ...prev].slice(0, 12))
-        setMessage("Match resumed. Active player's turn timer has been reset to full time.")
+      const res = await fetch("/api/rooms/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: matchId,
+          player_identity_id: getCurrentIdentity().id,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!data.ok) {
+        setMessage(data.error ?? "Failed to resume match.")
+        return
       }
+      if (data.room) setMatch(roomToArenaMatch(data.room))
+      const actor =
+        currentUserSide === "host"
+          ? match.host?.name ?? "Host"
+          : currentUserSide === "challenger"
+            ? challenger?.name ?? "Challenger"
+            : "System"
+      setFeed((prev) => [`▶ ${actor} resumed the match`, ...prev].slice(0, 12))
+      setMessage("Match resumed. Active player's turn timer has been reset to full time.")
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to resume match.")
     }
@@ -2069,19 +2085,35 @@ export default function ArenaMatchPage() {
                     {match.host?.name ?? "Host"}
                     {challenger ? ` vs ${challenger.name}` : " vs Waiting Opponent"}
                   </h2>
-                  {match.bestOf > 1 && (match.status === "Live" || match.status === "Finished") && (
-                    <p className="mt-2 flex flex-wrap items-center gap-2 text-base font-bold text-white/90">
-                      <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-amber-200">
-                        {match.host?.name ?? "Host"} {match.roundScore?.host ?? 0} — {match.roundScore?.challenger ?? 0} {challenger?.name ?? "Challenger"}
+                  {/* Series Scoreboard: always visible for BO1/BO3/BO5 */}
+                  <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 sm:px-5 sm:py-4">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <span className="text-sm font-bold uppercase tracking-wider text-amber-200/90">Series</span>
+                      <span className="text-xl font-black text-amber-100 sm:text-2xl">
+                        {match.host?.name ?? "Host"} <span className="text-amber-300">{match.roundScore?.host ?? 0}</span>
+                        <span className="mx-2 text-white/50">—</span>
+                        <span className="text-amber-300">{match.roundScore?.challenger ?? 0}</span> {challenger?.name ?? "Challenger"}
                       </span>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/80">
-                        BO{match.bestOf}
-                        {typeof match.currentRound === "number" && match.currentRound >= 1
-                          ? ` • Round ${match.currentRound} of ${match.bestOf}`
-                          : ""}
+                      <span className="rounded-full border border-amber-300/30 bg-amber-300/15 px-3 py-1 text-sm font-bold text-amber-200">
+                        BO{match.bestOf ?? 1}
                       </span>
-                    </p>
-                  )}
+                      {(match.bestOf === 3 || match.bestOf === 5) && (
+                        <span className="text-sm text-amber-200/80">
+                          First to {match.bestOf === 3 ? 2 : 3}
+                        </span>
+                      )}
+                      {typeof match.currentRound === "number" && match.currentRound >= 1 && (match.status === "Live" || match.status === "Ready to Start") && (
+                        <span className="text-sm font-semibold text-white/80">
+                          Round {match.currentRound} of {match.bestOf ?? 1}
+                        </span>
+                      )}
+                    </div>
+                    {isFinished && match.result && match.result !== "draw" && (match.roundScore?.host != null || match.roundScore?.challenger != null) && (
+                      <p className="mt-2 text-sm font-bold text-amber-100">
+                        {match.result === "host" ? (match.host?.name ?? "Host") : (challenger?.name ?? "Challenger")} wins the series {match.roundScore?.host ?? 0}–{match.roundScore?.challenger ?? 0}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">

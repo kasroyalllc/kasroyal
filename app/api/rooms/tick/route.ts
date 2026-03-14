@@ -131,6 +131,44 @@ export async function POST(request: NextRequest) {
           { headers: { "Cache-Control": "no-store" } }
         )
       }
+      // When paused: skip turn timeout; if pause duration expired, auto-resume and extend turn.
+      if (room.isPaused) {
+        const pauseExpiresAtMs = room.pauseExpiresAt ?? null
+        if (pauseExpiresAtMs != null && nowMs >= pauseExpiresAtMs) {
+          const moveSeconds = getMoveSecondsForGame(gameTypeLive)
+          const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+          const { data: resumeData, error: resumeError } = await supabase
+            .from("matches")
+            .update({
+              is_paused: false,
+              paused_at: null,
+              paused_by: null,
+              pause_expires_at: null,
+              move_turn_started_at: nowIso,
+              turn_expires_at: turnExpiresAt,
+              updated_at: nowIso,
+            })
+            .eq("id", roomId)
+            .in("status", ["Live", "live"])
+            .select("*")
+            .maybeSingle()
+          if (!resumeError && resumeData) {
+            return NextResponse.json(
+              {
+                ok: true,
+                room: mapDbRowToRoom((resumeData as Record<string, unknown>)),
+                transition: "pause_expired_resume",
+                server_time_ms: nowMs,
+              },
+              { headers: { "Cache-Control": "no-store" } }
+            )
+          }
+        }
+        return NextResponse.json(
+          { ok: true, room, transition: null, server_time_ms: nowMs },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
       // Timeout only when authoritative DB deadline has actually passed. No buffer, no computed fallback.
       const turnExpiresAtMs = room.turnExpiresAt ?? null
       if (turnExpiresAtMs == null || nowMs < turnExpiresAtMs) {

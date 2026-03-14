@@ -185,6 +185,12 @@ export type Room = {
   challengerRoundWins: number
   currentRound: number
   roomHypeIndex: number
+  /** Pause: server-authoritative; when true tick skips turn timeout. */
+  isPaused?: boolean
+  pausedBy?: MatchSide | null
+  pauseExpiresAt?: number | null
+  pauseCountHost?: number
+  pauseCountChallenger?: number
   createdAt: number
   updatedAt: number
   finishedAt: number | null
@@ -314,6 +320,17 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
     challengerRoundWins: Math.max(0, Number(row.challenger_score ?? row.challenger_round_wins ?? 0)),
     currentRound: Math.max(1, Math.min(Number(row.round_number ?? row.current_round ?? 1), 5)),
     roomHypeIndex: Number(row.room_hype_index ?? 0),
+    isPaused: Boolean(row.is_paused ?? false),
+    pausedBy:
+      row.paused_by === "host" || row.paused_by === "challenger"
+        ? (row.paused_by as MatchSide)
+        : null,
+    pauseExpiresAt:
+      row.pause_expires_at != null
+        ? new Date(String(row.pause_expires_at)).getTime()
+        : null,
+    pauseCountHost: Math.max(0, Number(row.pause_count_host ?? 0)),
+    pauseCountChallenger: Math.max(0, Number(row.pause_count_challenger ?? 0)),
     createdAt,
     updatedAt,
     finishedAt,

@@ -32,9 +32,13 @@ ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NUL
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS host_score INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS challenger_score INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS best_of INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS host_round_wins INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS challenger_round_wins INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS current_round INTEGER NOT NULL DEFAULT 1;
+-- Pause: server-authoritative; tick skips turn timeout when is_paused.
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS is_paused BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS paused_by TEXT;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS pause_expires_at TIMESTAMPTZ;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS pause_count_host INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS pause_count_challenger INTEGER NOT NULL DEFAULT 0;
 
 -- =============================================================================
 -- 2. PROFILES (users/leaderboard display names)

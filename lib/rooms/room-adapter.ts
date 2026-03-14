@@ -55,6 +55,22 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
   const hostRoundWins = Math.max(0, Number(room.hostRoundWins ?? 0))
   const challengerRoundWins = Math.max(0, Number(room.challengerRoundWins ?? 0))
   const currentRound = Math.max(1, Number(room.currentRound ?? 1))
+  const isPaused = Boolean(room.isPaused ?? false)
+  const pausedBy =
+    room.pausedBy === "host" || room.pausedBy === "challenger" ? room.pausedBy : null
+  const pauseExpiresAt =
+    room.pauseExpiresAt != null && Number.isFinite(room.pauseExpiresAt)
+      ? Number(room.pauseExpiresAt)
+      : null
+  const pauseCountHost = Math.max(0, Number(room.pauseCountHost ?? 0))
+  const pauseCountChallenger = Math.max(0, Number(room.pauseCountChallenger ?? 0))
+  const pauseState = {
+    isPaused,
+    pausedBy,
+    pauseExpiresAt,
+    pauseCountHost,
+    pauseCountChallenger,
+  }
   return {
     id: room.id,
     game: room.game,
@@ -104,5 +120,6 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     boardState: boardState ?? room.boardState,
     timeoutStrikesHost: Math.max(0, Number(room.hostTimeoutStrikes ?? 0)),
     timeoutStrikesChallenger: Math.max(0, Number(room.challengerTimeoutStrikes ?? 0)),
+    pauseState,
   }
 }

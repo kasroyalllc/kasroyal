@@ -29,7 +29,7 @@ import type {
 
 export const dynamic = "force-dynamic"
 
-/** Compute series update after a round ends. BO1 = 1 win, BO3 = first to 2, BO5 = first to 3. */
+/** Compute series update after a round ends. BO1 = 1 win, BO3 = first to 2, BO5 = first to 3. Uses canonical semantics (host_score, challenger_score, round_number). */
 function getSeriesUpdate(
   room: Room,
   roundWinner: "host" | "challenger" | null
@@ -43,8 +43,11 @@ function getSeriesUpdate(
 } {
   const bestOf = room.bestOf === 3 || room.bestOf === 5 ? room.bestOf : 1
   const requiredWins = bestOf === 1 ? 1 : bestOf === 3 ? 2 : 3
-  let hostRoundWins = room.hostRoundWins
-  let challengerRoundWins = room.challengerRoundWins
+  const hostRoundWinsPrev = Math.max(0, Number(room.hostRoundWins ?? 0))
+  const challengerRoundWinsPrev = Math.max(0, Number(room.challengerRoundWins ?? 0))
+  const currentRoundPrev = Math.max(1, Math.min(Number(room.currentRound ?? 1), 5))
+  let hostRoundWins = hostRoundWinsPrev
+  let challengerRoundWins = challengerRoundWinsPrev
   if (roundWinner === "host") hostRoundWins += 1
   if (roundWinner === "challenger") challengerRoundWins += 1
   const seriesOver =
@@ -56,7 +59,7 @@ function getSeriesUpdate(
       ? null
       : hostRoundWins >= requiredWins
         ? room.hostIdentityId
-        : room.challengerIdentityId
+        : room.challengerIdentityId ?? null
     : null
   const winReason = seriesOver
     ? bestOf === 1 && roundWinner === null
@@ -67,8 +70,8 @@ function getSeriesUpdate(
       : roundWinner === "challenger"
         ? "win"
         : "draw"
-  const nextRound = room.currentRound + (seriesOver ? 0 : 1)
-  const currentRound = Math.min(nextRound, bestOf)
+  const nextRound = currentRoundPrev + (seriesOver ? 0 : 1)
+  const currentRound = Math.min(Math.max(1, nextRound), 5)
   return {
     seriesOver,
     winnerIdentityId,
@@ -351,9 +354,9 @@ export async function POST(request: NextRequest) {
           .update({
             status: DB_STATUS.LIVE,
             board_state: nextBoardState,
-            host_round_wins: series.hostRoundWins,
-            challenger_round_wins: series.challengerRoundWins,
-            current_round: series.currentRound,
+            round_number: series.currentRound,
+            host_score: series.hostRoundWins,
+            challenger_score: series.challengerRoundWins,
             move_turn_identity_id: nextTurnId,
             move_turn_started_at: now,
             move_turn_seconds: moveSeconds,
@@ -511,9 +514,9 @@ export async function POST(request: NextRequest) {
             board_state: finalBoard,
             winner_identity_id: series.winnerIdentityId,
             win_reason: series.winReason,
-            host_round_wins: series.hostRoundWins,
-            challenger_round_wins: series.challengerRoundWins,
-            current_round: series.currentRound,
+            round_number: series.currentRound,
+            host_score: series.hostRoundWins,
+            challenger_score: series.challengerRoundWins,
             updated_at: now,
             finished_at: now,
             ended_at: now,
