@@ -17,7 +17,7 @@ function defaultPlayer(name: string): PlayerProfile {
   }
 }
 
-/** Enrich board_state with DB-authoritative turn deadline (turnExpiresAt). */
+/** Enrich board_state with DB-authoritative turn deadline (turnExpiresAt). Only adds turnDeadlineTs; never preserves or merges hostChoice/challengerChoice for RPS. */
 function enrichBoardStateWithMoveTimer(room: Room): unknown {
   const raw = room.boardState
   if (room.status !== "Live" || !raw || typeof raw !== "object") return raw

@@ -34,6 +34,25 @@ export function shouldAcceptRoomUpdate(
     decision = true
   } else if (source === "tick") {
     decision = incomingUpdatedAt >= currentUpdatedAt
+    // RPS host stuck: never keep old round when server sends a fresh round board (both choices null).
+    if (!decision && current && incomingStatus === "Live") {
+      const incomingBoard = incomingRoom.boardState as { mode?: string; hostChoice?: unknown; challengerChoice?: unknown; revealed?: boolean } | null | undefined
+      const isFreshRound =
+        incomingBoard &&
+        typeof incomingBoard === "object" &&
+        incomingBoard.mode === "rps-live" &&
+        incomingBoard.hostChoice == null &&
+        incomingBoard.challengerChoice == null &&
+        incomingBoard.revealed === false
+      const currentBoard = current.boardState as { hostChoice?: unknown; challengerChoice?: unknown } | null | undefined
+      const currentHasChoices =
+        currentBoard &&
+        typeof currentBoard === "object" &&
+        (currentBoard.hostChoice != null || currentBoard.challengerChoice != null)
+      if (isFreshRound && currentHasChoices && incomingRoom.game === "Rock Paper Scissors") {
+        decision = true
+      }
+    }
   } else if (source === "refetch" || source === "realtime" || source === "ej") {
     if (!current) {
       decision = true
@@ -90,6 +109,7 @@ export function reconcileRoom(room: Room): Room {
     const driver = getGameDriver(r.game)
     if (driver && (!r.boardState || typeof r.boardState !== "object")) {
       // RPS needs roundExpiresAt; use createRpsRoundBoard. Other games use driver.createInitialBoardState().
+      // No partial merge: we replace boardState entirely; never preserve hostChoice/challengerChoice from anywhere.
       const boardState =
         r.game === "Rock Paper Scissors"
           ? createRpsRoundBoard(Date.now() + RPS_ROUND_SECONDS * 1000)

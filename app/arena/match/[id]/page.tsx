@@ -694,7 +694,7 @@ export default function ArenaMatchPage() {
   const countdownEndMsRef = useRef<number>(0)
   const rpsStuckLoggedRef = useRef(false)
   /** RPS live-debug: throttle render log to avoid spam (dev only). */
-  const rpsDebugLastLogRef = useRef<{ at: number; status: string; shell: boolean; controls: boolean; boardMode: string } | null>(null)
+  const rpsDebugLastLogRef = useRef<{ at: number; status: string; shell: boolean; controls: boolean; boardMode: string; hostChoice: RpsChoice | null; challengerChoice: RpsChoice | null } | null>(null)
   /** Pregame phrase debug: throttle state log (dev only). */
   const pregamePhraseLogRef = useRef<{ at: number; fingerprint: string } | null>(null)
   const chatMessagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -1334,12 +1334,12 @@ export default function ArenaMatchPage() {
     const rpsState = getRpsState(match)
     const shell_visible = match.status === "Ready to Start" && !!challenger
     const controls_visible = match.status === "Live" && !rpsState.revealed
-    const board = (match.boardState ?? null) as { mode?: string } | null
-    const board_mode = board && typeof board === "object" && "mode" in board ? String((board as { mode?: string }).mode) : "none"
+    const board = (match.boardState ?? null) as PersistedRpsBoardState | null
+    const board_mode = board && typeof board === "object" && "mode" in board ? String(board.mode) : "none"
     const now = Date.now()
     const last = rpsDebugLastLogRef.current
-    const fingerprint = `${match.status}|${shell_visible}|${controls_visible}|${board_mode}`
-    const changed = !last || last.status !== match.status || last.shell !== shell_visible || last.controls !== controls_visible || last.boardMode !== board_mode
+    const fingerprint = `${match.status}|${shell_visible}|${controls_visible}|${board_mode}|${rpsState.hostChoice}|${rpsState.challengerChoice}`
+    const changed = !last || last.status !== match.status || last.shell !== shell_visible || last.controls !== controls_visible || last.boardMode !== board_mode || last.hostChoice !== rpsState.hostChoice || last.challengerChoice !== rpsState.challengerChoice
     const throttleMs = 3000
     const elapsed = last ? now - last.at : throttleMs
     if (changed || elapsed >= throttleMs) {
@@ -1360,10 +1360,24 @@ export default function ArenaMatchPage() {
         match.status === "Live" &&
         typeof match.roundIntermissionUntil === "number" &&
         Date.now() < match.roundIntermissionUntil
-      rpsDebugLastLogRef.current = { at: now, status: match.status, shell: shell_visible, controls: controls_visible, boardMode: board_mode }
+      const rawHostChoice = board && typeof board === "object" && "hostChoice" in board ? board.hostChoice : undefined
+      const rawChallengerChoice = board && typeof board === "object" && "challengerChoice" in board ? board.challengerChoice : undefined
+      const buttonsDisabled =
+        match.status !== "Live" ||
+        isIntermission ||
+        (roleInfo.isHost && rpsState.hostChoice !== null) ||
+        (roleInfo.isChallenger && rpsState.challengerChoice !== null)
+      rpsDebugLastLogRef.current = { at: now, status: match.status, shell: shell_visible, controls: controls_visible, boardMode: board_mode, hostChoice: rpsState.hostChoice, challengerChoice: rpsState.challengerChoice }
       const renderBranch = shell_visible ? "countdown_shell" : controls_visible ? "live_controls" : "other"
       console.info("[RPS render]", {
         render_branch: renderBranch,
+        raw_boardState_hostChoice: rawHostChoice,
+        raw_boardState_challengerChoice: rawChallengerChoice,
+        derived_hostChoice: rpsState.hostChoice,
+        derived_challengerChoice: rpsState.challengerChoice,
+        isHostUser: roleInfo.isHost,
+        isChallengerUser: roleInfo.isChallenger,
+        buttons_disabled: buttonsDisabled,
         shell_visible,
         controls_visible,
         match_status: match.status,
@@ -1377,7 +1391,7 @@ export default function ArenaMatchPage() {
         },
       })
     }
-  }, [match, serverTimeSync.receivedAtMs, serverTimeSync.serverMs])
+  }, [match, serverTimeSync.receivedAtMs, serverTimeSync.serverMs, roleInfo.isHost, roleInfo.isChallenger])
 
   // Pregame phrase live-debug: role, phrase_index, match.status, etc. (dev only, throttled). Must run unconditionally (before any early return).
   useEffect(() => {
