@@ -62,6 +62,7 @@ export const READY_LIKE_STATUSES = [
  * Payload by game (audit):
  * - Tic-Tac-Toe / Connect 4 (hasTurnTimer: true): base + move_turn_identity_id (host), move_turn_started_at, move_turn_seconds, turn_expires_at.
  * - Rock Paper Scissors (hasTurnTimer: false): base only. No move_turn_* or turn_expires_at.
+ *   RPS board_state comes from createRpsRoundBoard(roundExpiresAtMs), not driver.createInitialBoardState(), so it includes roundExpiresAt.
  * RPS must never include turn-based fields; the shared path must not assume a single current mover for RPS.
  */
 /** Normalize game_type from DB so RPS is recognized regardless of casing. */

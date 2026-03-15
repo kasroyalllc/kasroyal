@@ -26,7 +26,11 @@ function enrichBoardStateWithMoveTimer(room: Room): unknown {
   return withDeadline
 }
 
-/** Convert a Room from Supabase to ArenaMatch for the arena UI (presentation only). Defensive: all fields have safe defaults. */
+/**
+ * Convert a Room from Supabase to ArenaMatch for the arena UI (presentation only).
+ * Status: passed through exactly (match.status = room.status). Live is never remapped to Ready to Start.
+ * boardState: preserved; for Live we only add turnDeadlineTs; RPS board_state is not altered.
+ */
 export function roomToArenaMatch(room: Room): ArenaMatch {
   const host: PlayerProfile = defaultPlayer(room.hostDisplayName ?? "Host")
   const challenger: PlayerProfile | null = room.challengerDisplayName != null && String(room.challengerDisplayName).trim() !== ""
@@ -83,6 +87,7 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     wager: Number(room.wager ?? 0),
     createdAt: Number(room.createdAt ?? 0),
     countdownStartedAt,
+    countdownSeconds,
     bettingClosesAt,
     startedAt,
     finishedAt,

@@ -6,16 +6,18 @@
 import type { Room } from "@/lib/engine/match/types"
 import type { ArenaMatch } from "@/lib/engine/match-types"
 import { roomToArenaMatch } from "@/lib/rooms/room-adapter"
-import { getMatchRuntime } from "@/lib/engine/match-runtime"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
+import { createRpsRoundBoard } from "@/lib/rooms/game-board"
+import { RPS_ROUND_SECONDS } from "@/lib/engine/game-constants"
 
-export type RoomUpdateSource = "mutation" | "refetch" | "realtime" | "tick"
+export type RoomUpdateSource = "mutation" | "refetch" | "realtime" | "tick" | "ej"
 
 /**
  * Decide whether to accept an incoming room over current match state.
  * Prefer mutation response when we have a clear transition; otherwise prefer newer updated_at.
  * Never regress from Live to Ready to Start (fixes RPS/stale refetch overwriting tick transition).
  * Never accept a tick with older updated_at than current (fixes RPS challenger stuck: stale tick must not overwrite new-round state).
+ * "ej" = refreshRoom/getRoomById path (poll or realtime-triggered); same rules as refetch.
  */
 export function shouldAcceptRoomUpdate(
   current: ArenaMatch | null,
@@ -32,7 +34,7 @@ export function shouldAcceptRoomUpdate(
     decision = true
   } else if (source === "tick") {
     decision = incomingUpdatedAt >= currentUpdatedAt
-  } else if (source === "refetch" || source === "realtime") {
+  } else if (source === "refetch" || source === "realtime" || source === "ej") {
     if (!current) {
       decision = true
     } else if (currentStatus === "Live" && incomingStatus === "Ready to Start") {
@@ -87,7 +89,12 @@ export function reconcileRoom(room: Room): Room {
   if (status === "Live") {
     const driver = getGameDriver(r.game)
     if (driver && (!r.boardState || typeof r.boardState !== "object")) {
-      r = { ...r, boardState: driver.createInitialBoardState() }
+      // RPS needs roundExpiresAt; use createRpsRoundBoard. Other games use driver.createInitialBoardState().
+      const boardState =
+        r.game === "Rock Paper Scissors"
+          ? createRpsRoundBoard(Date.now() + RPS_ROUND_SECONDS * 1000)
+          : driver.createInitialBoardState()
+      r = { ...r, boardState }
     }
   }
 
@@ -115,6 +122,7 @@ export function reconcileRoom(room: Room): Room {
 /**
  * Build ArenaMatch from room with sync policy and reconciliation.
  * Use this in the match page instead of raw roomToArenaMatch when you have a source and optional current state.
+ * Logs every apply (ACCEPTED/REJECTED) so we can prove the race: tick sets Live -> ej overwrites with Ready.
  */
 export function acceptAndReconcile(
   incomingRoom: Room,
@@ -124,9 +132,32 @@ export function acceptAndReconcile(
   const reconciled = reconcileRoom(incomingRoom)
   const accept = shouldAcceptRoomUpdate(currentMatch, reconciled, source)
   const roomToUse = accept ? reconciled : (currentMatch ? undefined : reconciled)
+  const incomingStatus = reconciled.status ?? "Waiting for Opponent"
+  const incomingUpdatedAt = getRoomUpdatedAt(reconciled)
+  const currentUpdatedAt = typeof currentMatch?.updatedAt === "number" ? currentMatch.updatedAt : 0
+
   if (roomToUse === undefined && currentMatch) {
+    const ejOverwrite = (source === "ej" || source === "refetch") && currentMatch.status === "Live" && incomingStatus === "Ready to Start"
+    console.info("[R] REJECTED", {
+      source,
+      room_id: reconciled.id,
+      raw_incoming_status: incomingStatus,
+      mapped_status_would_be: incomingStatus,
+      kept_status: currentMatch.status,
+      updatedAt: incomingUpdatedAt,
+      current_updatedAt: currentUpdatedAt,
+      ej_overwrote_live: ejOverwrite,
+    })
     return currentMatch
   }
   const room = roomToUse ?? reconciled
-  return roomToArenaMatch(room)
+  const mapped = roomToArenaMatch(room)
+  console.info("[R] ACCEPTED", {
+    source,
+    room_id: room.id,
+    raw_incoming_status: incomingStatus,
+    mapped_status: mapped.status,
+    updatedAt: mapped.updatedAt ?? incomingUpdatedAt,
+  })
+  return mapped
 }

@@ -97,6 +97,11 @@ export async function listSpectateRooms(
   return ((data ?? []) as Record<string, unknown>[]).map(mapDbRowToRoom)
 }
 
+/**
+ * Fetch room by id. Fresh read every time (no client-side cache).
+ * Status is normalized via mapDbRowToRoom (ROOM_STATUS_TO_UI): DB "live"|"ready"|"countdown" -> "Live"|"Ready to Start".
+ * No stale row: each call runs a new .select(); Supabase client does not cache this query.
+ */
 export async function getRoomById(
   supabase: SupabaseClient,
   roomId: string
@@ -109,7 +114,18 @@ export async function getRoomById(
 
   if (error) throw error
   if (!data) return null
-  return mapDbRowToRoom(data as Record<string, unknown>)
+  const row = data as Record<string, unknown>
+  const room = mapDbRowToRoom(row)
+  if (process.env.NODE_ENV !== "production") {
+    const dbStatus = String(row.status ?? "null")
+    console.info("[getRoomById]", {
+      room_id: roomId,
+      db_status_raw: dbStatus,
+      mapped_status: room.status,
+      updated_at: row.updated_at ?? null,
+    })
+  }
+  return room
 }
 
 /**

@@ -723,6 +723,14 @@ export default function ArenaMatchPage() {
       const supabase = createClient()
       const room = await getRoomById(supabase, matchId)
       if (room) {
+        if (process.env.NODE_ENV !== "production") {
+          console.info("[match page] refreshRoom (ej) got room", {
+            source: "refetch",
+            room_id: room.id,
+            raw_status: room.status,
+            updatedAt: (room as { updatedAt?: number }).updatedAt ?? null,
+          })
+        }
         if (room.game === "Rock Paper Scissors" && room.status === "Live") {
           const intermissionUntil = (room as { roundIntermissionUntil?: number | null }).roundIntermissionUntil ?? null
           const board = room.boardState as PersistedRpsBoardState | undefined
@@ -743,7 +751,7 @@ export default function ArenaMatchPage() {
           }
         }
         const reconciled = reconcileRoom(room)
-        setMatch((prev) => acceptAndReconcile(reconciled, prev, "refetch"))
+        setMatch((prev) => acceptAndReconcile(reconciled, prev, "ej"))
       } else {
         setMatch(null)
       }
@@ -883,6 +891,15 @@ export default function ArenaMatchPage() {
           }
           if (data.ok && data.room) {
             let room = data.room as Room
+            // Debug: countdown reached zero → tick returned; log when we get ready_to_live
+            if (data.transition === "ready_to_live" && process.env.NODE_ENV !== "production") {
+              const r = room as { status?: string; boardState?: unknown }
+              console.info("[match page] tick response: countdown reached zero, received ready_to_live", {
+                room_status: r?.status,
+                has_board_state: r?.boardState != null && typeof r?.boardState === "object",
+                board_mode: r?.boardState != null && typeof r?.boardState === "object" && "mode" in (r.boardState as Record<string, unknown>) ? (r.boardState as Record<string, unknown>).mode : null,
+              })
+            }
             // Never apply a tick room that lacks boardState for RPS intermission→next round (would leave stale hostChoice/challengerChoice).
             if (
               data.transition === "intermission_next_round" &&
@@ -1072,7 +1089,7 @@ export default function ArenaMatchPage() {
     const endMs =
       match.bettingClosesAt ??
       (match.countdownStartedAt != null
-        ? (match.countdownStartedAt as number) + (match.bettingWindowSeconds ?? 30) * 1000
+        ? (match.countdownStartedAt as number) + (match.countdownSeconds ?? match.bettingWindowSeconds ?? 30) * 1000
         : 0)
     countdownEndMsRef.current = endMs
   }
@@ -1126,7 +1143,7 @@ export default function ArenaMatchPage() {
       board_state_mode: board?.mode,
       rps_hasPersistedState: board && typeof board === "object" && "mode" in board && (board as { mode?: string }).mode === "rps-live",
     })
-  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, match?.countdownStartedAt, match?.bettingClosesAt, match?.bettingWindowSeconds])
+  }, [match?.game, match?.status, match?.updatedAt, match?.boardState, match?.countdownStartedAt, match?.bettingClosesAt, match?.countdownSeconds, match?.bettingWindowSeconds])
 
   // When we leave Ready to Start, stop advancing (ref is updated above every render).
   // No extra effect needed — interval just no-ops when status isn't Ready.
@@ -1329,7 +1346,7 @@ export default function ArenaMatchPage() {
       const countdownEndMs =
         match.bettingClosesAt ??
         (match.countdownStartedAt != null
-          ? match.countdownStartedAt + (match.bettingWindowSeconds ?? 30) * 1000
+          ? match.countdownStartedAt + (match.countdownSeconds ?? match.bettingWindowSeconds ?? 30) * 1000
           : 0)
       const nowForCountdownMs =
         serverTimeSync.receivedAtMs > 0
@@ -1344,7 +1361,9 @@ export default function ArenaMatchPage() {
         typeof match.roundIntermissionUntil === "number" &&
         Date.now() < match.roundIntermissionUntil
       rpsDebugLastLogRef.current = { at: now, status: match.status, shell: shell_visible, controls: controls_visible, boardMode: board_mode }
+      const renderBranch = shell_visible ? "countdown_shell" : controls_visible ? "live_controls" : "other"
       console.info("[RPS render]", {
+        render_branch: renderBranch,
         shell_visible,
         controls_visible,
         match_status: match.status,
@@ -1369,7 +1388,7 @@ export default function ArenaMatchPage() {
     const countdownEndMs =
       match.bettingClosesAt ??
       (match.countdownStartedAt != null
-        ? match.countdownStartedAt + (match.bettingWindowSeconds ?? 30) * 1000
+        ? match.countdownStartedAt + (match.countdownSeconds ?? match.bettingWindowSeconds ?? 30) * 1000
         : 0)
     const nowForCountdownMs =
       serverTimeSync.receivedAtMs > 0
@@ -1499,7 +1518,7 @@ export default function ArenaMatchPage() {
   const countdownEndMs =
     match.bettingClosesAt ??
     (match.countdownStartedAt != null
-      ? match.countdownStartedAt + (match.bettingWindowSeconds ?? 30) * 1000
+      ? match.countdownStartedAt + (match.countdownSeconds ?? match.bettingWindowSeconds ?? 30) * 1000
       : 0)
   const nowForCountdownMs =
     serverTimeSync.receivedAtMs > 0

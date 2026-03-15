@@ -212,6 +212,7 @@ export type RoomMessage = {
   createdAt: number
 }
 
+/** DB status -> exact UI strings. Client checks status === "Ready to Start" | "Live"; these must match. */
 const ROOM_STATUS_TO_UI: Record<string, Room["status"]> = {
   waiting: "Waiting for Opponent",
   "Waiting for Opponent": "Waiting for Opponent",

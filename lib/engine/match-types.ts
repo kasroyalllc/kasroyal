@@ -74,6 +74,8 @@ export type ArenaMatch = {
   createdAt: number
   seatedAt?: number
   countdownStartedAt?: number
+  /** Canonical countdown length (seconds); matches server countdown_seconds. Use for countdown-end math. */
+  countdownSeconds?: number
   bettingClosesAt?: number
   startedAt?: number
   finishedAt?: number

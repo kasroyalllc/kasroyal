@@ -172,6 +172,7 @@ function rpsDriver(): GameDriver {
   return {
     gameKey: "Rock Paper Scissors",
     gameType: "Rock Paper Scissors",
+    /** Fallback only (e.g. reconcile). Ready→Live and intermission use createRpsRoundBoard(roundExpiresAtMs) for a valid round board. */
     createInitialBoardState() {
       return createInitialBoardState("Rock Paper Scissors")
     },

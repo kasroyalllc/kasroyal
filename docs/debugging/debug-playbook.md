@@ -40,6 +40,24 @@ Lessons learned while building the system. Each entry includes symptom, root cau
 
 ---
 
+## RPS stuck at Ready countdown (Ready→Live transition)
+
+- **Symptom**: Rock Paper Scissors stays on “Match is starting… Stay here — the arena will go live shortly.” and status badge “READY TO START” after the countdown reaches zero; the hand-selection screen never appears.
+- **Root cause**: (Audit performed; one or more of:) (1) Tick route’s Ready→Live branch not entered (e.g. `canTransitionReadyToLive` false: missing `countdownStartedAt` or server time &lt; countdown end). (2) Update matched 0 rows because DB `status` value is not in `READY_LIKE_STATUSES` (e.g. legacy “Ready to Start” vs “ready”/“countdown”). (3) Tick returns Live but response omits `board_state` for RPS so client or reconcile keeps invalid state. (4) Client rejects the Live update (sync policy: `incoming.updated_at` < `current.updated_at`). (5) Refetch or realtime overwrites Live with stale Ready.
+- **Fix**: (1) Tick route: added `[tick Ready→Live] countdown branch` log (room_id, prior_status, countdown values, server_says_go, client_says_go). When update succeeds, log `resulting_status`, `has_board_state`, `board_state_mode`. When update affects 0 rows, log `refetched_status` and whether it equals `DB_STATUS.LIVE`. (2) Ensure RPS Live response always includes `board_state`: if `mapDbRowToRoom` result has null `boardState` for RPS, attach `payload.board_state` before returning. (3) Sync-policy: never accept Ready over Live (refetch/realtime); for tick, accept only when `incoming.updated_at >= current.updated_at`; added dev logs when client rejects tick Live or accepts tick Live. (4) Reconcile: when status is Live and game is RPS and `boardState` is missing, use `createRpsRoundBoard(roundExpiresAtMs)` instead of `driver.createInitialBoardState()` so reconciled board has `roundExpiresAt`. (5) Match page: log when tick response has `transition === "ready_to_live"` and add `render_branch` (countdown_shell | live_controls) to `[RPS render]` so we can see which branch the client rendered.
+- **Prevention**: Use the new logs to pinpoint where the pipeline fails: server “countdown branch” → “update succeeded” vs “0 rows” → client “[match page] tick response: ready_to_live” → “[sync-policy] client accepted tick” vs “rejected” → “[RPS render] render_branch: live_controls”. Ensure DB status for pre-live is one of `READY_LIKE_STATUSES`; RPS payload must include `board_state` from `createRpsRoundBoard`; never return Live without `board_state` for RPS.
+
+---
+
+## Tick vs refresh (ej/getRoomById) race — Ready→Live overwrite
+
+- **Symptom**: Same as RPS stuck at Ready countdown: UI stays on "Match is starting…" after countdown reaches zero; rendered match still has status "Ready to Start".
+- **Root cause**: Two competing state update paths: (A) tick (or start) response → `acceptAndReconcile(..., "tick")` → sets Live; (B) `refreshRoom()` → `getRoomById()` → `acceptAndReconcile(..., "refetch")`. If the refetch request was in-flight before the server wrote Live, the refetch response can return a room that is still Ready. If that refetch is applied *after* the tick has already set Live, we must not overwrite (stale refetch would regress to Ready).
+- **Fix**: (1) Sync policy already rejects refetch when `current.status === "Live"` and `incoming.status === "Ready to Start"`. (2) Logging: every `acceptAndReconcile` call logs (dev) `[sync-policy] apply room: ACCEPTED | REJECTED` with `source`, `room_id`, `raw_incoming_status`, `mapped_status` (or current_status on reject), `updatedAt`. When rejecting a refetch that would overwrite Live with Ready, log `refetch_would_overwrite_live: true`. (3) `refreshRoom` logs `[match page] refreshRoom (ej) got room` with `raw_status`, `updatedAt`. (4) Client countdown math: use canonical `match.countdownSeconds ?? match.bettingWindowSeconds ?? 30`.
+- **Prevention**: Never accept a refetch/realtime update that would regress Live → Ready to Start. Use the apply-room logs to confirm the race: if you see "ACCEPTED" for tick with Live followed by "REJECTED" for refetch with Ready and `refetch_would_overwrite_live: true`, the race occurred but was correctly rejected.
+
+---
+
 ## DB NOT NULL constraint (move_turn_seconds)
 
 - **Symptom**: Tick or start route returns 500; Supabase error about null value in column move_turn_seconds (or similar turn column).

@@ -72,6 +72,20 @@ export async function POST(request: NextRequest) {
         (countdownEndMs > 0
           ? clientTimeMs >= countdownEndMs
           : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
+      // Debug: countdown reached zero branch (always log for RPS Ready→Live audit)
+      console.info("[tick Ready→Live] countdown branch", {
+        room_id: roomId,
+        game: room.game,
+        prior_status: room.status,
+        countdown_started_at: countdownStartedAt,
+        countdown_seconds: countdownSeconds,
+        countdown_end_ms: countdownEndMs,
+        server_now_ms: nowMs,
+        client_time_ms: clientTimeMs ?? null,
+        server_says_go: serverSaysGo,
+        client_says_go: clientSaysGo,
+        will_attempt_transition: serverSaysGo || clientSaysGo,
+      })
       if (!serverSaysGo && !clientSaysGo) {
         if (process.env.NODE_ENV !== "production") {
           console.info("[tick Ready->Live]", {
@@ -94,6 +108,7 @@ export async function POST(request: NextRequest) {
       try {
         const payload = getReadyToLivePayload(room, now)
         if (!payload) {
+          console.info("[tick Ready→Live] no payload (driver null)", { room_id: roomId, game: room.game })
           return NextResponse.json(
             { ok: true, room, transition: null, server_time_ms: nowMs },
             { headers: { "Cache-Control": "no-store" } }
@@ -110,6 +125,16 @@ export async function POST(request: NextRequest) {
           .maybeSingle()
         if (error) throw error
         if (data) {
+          const row = data as Record<string, unknown>
+          const resultingStatus = String(row?.status ?? "null")
+          const resultingBoardState = row?.board_state ?? row?.boardState ?? null
+          console.info("[tick Ready→Live] update succeeded", {
+            room_id: roomId,
+            prior_status: room.status,
+            resulting_status: resultingStatus,
+            has_board_state: resultingBoardState != null && typeof resultingBoardState === "object",
+            board_state_mode: typeof resultingBoardState === "object" && resultingBoardState != null && "mode" in resultingBoardState ? (resultingBoardState as { mode?: string }).mode : null,
+          })
           if (process.env.NODE_ENV !== "production") {
             console.info("[tick Ready->Live]", {
               room_id: roomId,
@@ -124,7 +149,14 @@ export async function POST(request: NextRequest) {
           }
           await insertMatchEvent(supabase, roomId, "match_live", {})
           logRoomAction("ready_to_live", roomId, { game: gameType })
-          const readyRoom = mapDbRowToRoom((data as Record<string, unknown>))
+          const readyRoom = mapDbRowToRoom(row)
+          // Ensure RPS never gets Live without board_state (e.g. if select("*") omits it)
+          if (gameType === "Rock Paper Scissors" && (readyRoom.boardState == null || typeof readyRoom.boardState !== "object")) {
+            const payloadBoard = (payload as { board_state?: unknown }).board_state
+            if (payloadBoard != null && typeof payloadBoard === "object") {
+              readyRoom.boardState = payloadBoard
+            }
+          }
           return NextResponse.json(
             {
               ok: true,
@@ -139,6 +171,13 @@ export async function POST(request: NextRequest) {
         const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
         const refetchedStatus = refetched != null ? String((refetched as Record<string, unknown>).status) : "null"
         const finalStatus = refetched ? refetchedStatus : "Ready to Start"
+        console.info("[tick Ready→Live] update affected 0 rows", {
+          room_id: roomId,
+          prior_status: room.status,
+          refetched_status: refetchedStatus,
+          db_status_live: DB_STATUS.LIVE,
+          match: refetchedStatus === DB_STATUS.LIVE,
+        })
         if (process.env.NODE_ENV !== "production") {
           console.info("[tick Ready->Live]", {
             room_id: roomId,
