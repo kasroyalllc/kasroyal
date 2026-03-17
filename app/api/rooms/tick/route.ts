@@ -229,8 +229,17 @@ export async function POST(request: NextRequest) {
           )
         }
         const driver = getGameDriver(gameTypeLive)
-        // RPS is simultaneous; next rounds must rebuild board state from scratch (no spread/merge of previous board).
-        // Timer is reset each round via createRpsRoundBoard(futureTimestamp). No turn-based fields for RPS.
+        // RPS: log old board (prior round) before creating next round so we can confirm no carry-over.
+        if (gameTypeLive === "Rock Paper Scissors" && room.boardState != null && typeof room.boardState === "object") {
+          const oldBoard = room.boardState as Record<string, unknown>
+          console.info("[tick RPS intermission→next] OLD board (prior round, before next round)", {
+            room_id: roomId,
+            hostChoice: oldBoard.hostChoice ?? null,
+            challengerChoice: oldBoard.challengerChoice ?? null,
+            revealed: oldBoard.revealed ?? null,
+          })
+        }
+        // RPS is simultaneous; next rounds must use a brand-new board_state (no spread/merge; do not preserve hostChoice/challengerChoice).
         const roundExpiresAtMs = nowMs + RPS_ROUND_SECONDS * 1000
         const nextBoardState =
           gameTypeLive === "Rock Paper Scissors"
@@ -240,15 +249,18 @@ export async function POST(request: NextRequest) {
               : createInitialBoardState(gameTypeLive)
         if (gameTypeLive === "Rock Paper Scissors") {
           const rpsBoard = nextBoardState as { hostChoice?: unknown; challengerChoice?: unknown; revealed?: unknown; winner?: unknown; roundExpiresAt?: unknown }
-          console.info("[tick RPS intermission→next] payload board_state (fresh round)", {
+          const newHostNull = rpsBoard.hostChoice == null
+          const newChallengerNull = rpsBoard.challengerChoice == null
+          console.info("[tick RPS intermission→next] NEW board (after createRpsRoundBoard, no spread)", {
             room_id: roomId,
-            hostChoice: rpsBoard.hostChoice,
-            challengerChoice: rpsBoard.challengerChoice,
-            revealed: rpsBoard.revealed,
-            winner: rpsBoard.winner,
-            roundExpiresAt: rpsBoard.roundExpiresAt,
-            roundExpiresAt_future: (rpsBoard.roundExpiresAt as number) > nowMs,
-            RPS_ROUND_SECONDS,
+            hostChoice: rpsBoard.hostChoice ?? null,
+            challengerChoice: rpsBoard.challengerChoice ?? null,
+            revealed: rpsBoard.revealed ?? null,
+            winner: rpsBoard.winner ?? null,
+            roundExpiresAt: rpsBoard.roundExpiresAt ?? null,
+            hostChoice_null_in_new_round: newHostNull,
+            challengerChoice_null_in_new_round: newChallengerNull,
+            both_null: newHostNull && newChallengerNull,
           })
         }
         const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null

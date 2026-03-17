@@ -54,8 +54,9 @@ export function createInitialBoardState(gameType: GameType):
 }
 
 /**
- * Create a clean RPS board for a new round with no keys carried over from any previous state.
+ * Create a brand-new RPS board for a new round. Do not derive from previous board (no spread/merge).
  * Use this whenever starting a new RPS round (Ready→Live or intermission→next round).
+ * Required: hostChoice and challengerChoice must be null so both players can pick again.
  */
 export function createRpsRoundBoard(roundExpiresAtMs: number): RpsBoardState {
   return {
