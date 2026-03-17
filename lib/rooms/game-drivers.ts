@@ -185,19 +185,17 @@ function rpsDriver(): GameDriver {
       if (!boardState || boardState.mode !== "rps-live") {
         return { error: "Invalid board state" }
       }
+      if (boardState.revealed) {
+        return { error: "Round already resolved" }
+      }
       const isHost = payload.side === "host"
-      if (isHost && boardState.hostChoice != null) {
-        return { error: "Already locked in" }
-      }
-      if (!isHost && boardState.challengerChoice != null) {
-        return { error: "Already locked in" }
-      }
       const rawChoice = payload.choice ?? payload.move
       const choice = (typeof rawChoice === "string" ? rawChoice.toLowerCase() : "") as RpsChoice
       const validChoices: RpsChoice[] = ["rock", "paper", "scissors"]
       if (!choice || !validChoices.includes(choice)) {
         return { error: "Invalid choice" }
       }
+      // No lock: each player may change their choice until round resolves. Overwrite current choice.
       const hostChoice = isHost ? choice : (boardState.hostChoice ?? null)
       const challengerChoice = isHost ? (boardState.challengerChoice ?? null) : choice
       if (hostChoice === null || challengerChoice === null) {

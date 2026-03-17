@@ -1666,7 +1666,7 @@ export default function ArenaMatchPage() {
     match.status === "Live" &&
     ((match.game === "Connect 4" && connect4Turn === "host") ||
       (match.game === "Tic-Tac-Toe" && tttTurn === "X") ||
-      (match.game === "Rock Paper Scissors" && rpsState.hostChoice === null && !rpsState.revealed))
+      (match.game === "Rock Paper Scissors" && !rpsState.revealed))
 
   const canChallengerMove =
     !isFinished &&
@@ -1676,7 +1676,7 @@ export default function ArenaMatchPage() {
     match.status === "Live" &&
     ((match.game === "Connect 4" && connect4Turn === "challenger") ||
       (match.game === "Tic-Tac-Toe" && tttTurn === "O") ||
-      (match.game === "Rock Paper Scissors" && rpsState.challengerChoice === null && !rpsState.revealed))
+      (match.game === "Rock Paper Scissors" && !rpsState.revealed))
 
   const canCurrentUserMove =
     !isFinished &&
@@ -2161,11 +2161,6 @@ export default function ArenaMatchPage() {
       setMessage("Spectating only. You are not seated in this match.")
       return
     }
-    const myChoice = isHostUser ? rpsState.hostChoice : isChallengerUser ? rpsState.challengerChoice : null
-    if (myChoice !== null) {
-      setMessage("You have already locked in your choice.")
-      return
-    }
     try {
       const res = await fetch("/api/rooms/move", {
         method: "POST",
@@ -2183,7 +2178,7 @@ export default function ArenaMatchPage() {
         if (typeof data.server_time_ms === "number") {
           setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
         }
-        setFeed((prev) => ["✊ You locked in your choice", ...prev].slice(0, 12))
+        setFeed((prev) => [`✊ You chose ${choice}`, ...prev].slice(0, 12))
       } else {
         setMessage(data.error ?? "Move failed.")
       }
@@ -2210,11 +2205,9 @@ export default function ArenaMatchPage() {
             : match.game === "Rock Paper Scissors"
               ? rpsState.revealed
                 ? "—"
-                : (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
-                  ? "Locked in"
-                  : (isHostUser || isChallengerUser)
-                    ? "Choose"
-                    : "—"
+                : (isHostUser || isChallengerUser)
+                  ? "Choose or change your hand"
+                  : "—"
               : "—"
 
   const boardClockLabel = isFinished
@@ -3048,15 +3041,14 @@ export default function ArenaMatchPage() {
                     ) : (
                       <div className="grid w-full max-w-lg grid-cols-3 gap-4 sm:gap-6">
                         {(["rock", "paper", "scissors"] as const).map((choice) => {
-                          const isLocked = (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
                           const myChoice = isHostUser ? rpsState.hostChoice : isChallengerUser ? rpsState.challengerChoice : null
                           const isSelected = myChoice === choice
                           const disabled =
                             match.status !== "Live" ||
                             isPaused ||
                             isIntermission ||
-                            !(isHostUser || isChallengerUser) ||
-                            isLocked
+                            rpsState.revealed ||
+                            !(isHostUser || isChallengerUser)
                           return (
                             <button
                               key={choice}
@@ -3073,8 +3065,8 @@ export default function ArenaMatchPage() {
                                 {choice === "rock" ? "✊" : choice === "paper" ? "✋" : "✌️"}
                               </span>
                               <span className="mt-2 text-lg font-bold capitalize sm:text-xl">{choice}</span>
-                              {isLocked && isSelected && (
-                                <span className="mt-1 text-xs font-medium uppercase text-amber-300/90">Locked in</span>
+                              {isSelected && !rpsState.revealed && (
+                                <span className="mt-1 text-xs font-medium uppercase text-amber-300/90">Current choice</span>
                               )}
                             </button>
                           )
@@ -3085,21 +3077,14 @@ export default function ArenaMatchPage() {
                       {rpsState.revealed
                         ? "Result is final."
                         : (() => {
-                            const myLocked = (isHostUser && rpsState.hostChoice !== null) || (isChallengerUser && rpsState.challengerChoice !== null)
-                            const opponentLocked = (isHostUser && rpsState.challengerChoice !== null) || (isChallengerUser && rpsState.hostChoice !== null)
-                            if (myLocked && opponentLocked) return "Both locked in — resolving."
-                            if (myLocked) return "Locked in — waiting for opponent."
-                            if (!myLocked && opponentLocked) {
-                              return rpsRoundSecondsLeft != null && rpsRoundSecondsLeft > 0
-                                ? `Opponent locked in. Choose your hand — round ends in ${rpsRoundSecondsLeft}s.`
-                                : "Opponent locked in. Choose your hand."
-                            }
+                            const bothChosen = rpsState.hostChoice != null && rpsState.challengerChoice != null
+                            if (bothChosen) return "Both chosen — resolving."
                             if (isHostUser || isChallengerUser) {
                               return rpsRoundSecondsLeft != null && rpsRoundSecondsLeft > 0
-                                ? `Choose your hand. Round ends in ${rpsRoundSecondsLeft}s.`
-                                : "Choose your hand. Your choice is hidden until both lock in."
+                                ? "Choose or change your hand. Round ends when both have chosen or time runs out."
+                                : "Choose or change your hand. Round ends when both have chosen or time runs out."
                             }
-                            return "Spectating. Choices will be revealed when both players have locked in."
+                            return "Spectating. Round resolves when both players have chosen or time runs out."
                           })()}
                     </p>
                     <div className="mt-8 flex flex-wrap items-center justify-center gap-4">

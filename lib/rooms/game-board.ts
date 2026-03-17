@@ -56,7 +56,7 @@ export function createInitialBoardState(gameType: GameType):
 /**
  * Create a brand-new RPS board for a new round. Do not derive from previous board (no spread/merge).
  * Use this whenever starting a new RPS round (Ready→Live or intermission→next round).
- * Required: hostChoice and challengerChoice must be null so both players can pick again.
+ * hostChoice and challengerChoice are null; players may change their choice freely until the round resolves (both chosen or timer expires).
  */
 export function createRpsRoundBoard(roundExpiresAtMs: number): RpsBoardState {
   return {
