@@ -92,6 +92,7 @@ export function getReadyToLivePayload(
     ? new Date(nowMs + moveSeconds * 1000).toISOString()
     : null
 
+  const currentVersion = typeof room.roomVersion === "number" ? room.roomVersion : 0
   const base: Record<string, unknown> = {
     status: DB_STATUS.LIVE,
     live_started_at: nowIso,
@@ -101,6 +102,7 @@ export function getReadyToLivePayload(
     host_score: 0,
     challenger_score: 0,
     updated_at: nowIso,
+    room_version: currentVersion + 1,
   }
   if (driver.hasTurnTimer) {
     base.move_turn_identity_id = room.hostIdentityId ?? ""
@@ -123,4 +125,35 @@ export function canTransitionReadyToLive(room: Room, nowMs: number): boolean {
   if (nowMs < countdownEndMs) return false
   const gameKey = normalizeGameForDriver(room.game)
   return getGameDriver(gameKey as GameType) != null
+}
+
+/**
+ * Pure Ready→Live transition: given (room, nowMs, clientTimeMs) return deterministic update.
+ * Used by tick and start so the route is thin: fetch room → compute → atomic guarded update → return canonical room.
+ */
+export function computeReadyToLiveUpdate(
+  room: Room,
+  nowMs: number,
+  clientTimeMs: number | null
+): { shouldTransition: boolean; payload: Record<string, unknown> | null } {
+  if (room.status !== "Ready to Start") {
+    return { shouldTransition: false, payload: null }
+  }
+  const countdownStartedAt = room.countdownStartedAt ?? null
+  const countdownSeconds = (room.countdownSeconds ?? 30) * 1000
+  const countdownEndMs = countdownStartedAt != null ? countdownStartedAt + countdownSeconds : 0
+  const roomUpdatedAtMs = Number(room.updatedAt ?? 0)
+  const serverSaysGo = canTransitionReadyToLive(room, nowMs)
+  const clientSaysGo =
+    clientTimeMs != null &&
+    (countdownEndMs > 0
+      ? clientTimeMs >= countdownEndMs
+      : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
+  const shouldTransition = serverSaysGo || clientSaysGo
+  if (!shouldTransition) {
+    return { shouldTransition: false, payload: null }
+  }
+  const now = new Date(nowMs)
+  const payload = getReadyToLivePayload(room, now)
+  return { shouldTransition: true, payload }
 }

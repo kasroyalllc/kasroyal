@@ -14,7 +14,7 @@ import { logRoomAction } from "@/lib/log"
 import { DB_STATUS } from "@/lib/rooms/db-status"
 import { releaseActiveMatchByMatch } from "@/lib/rooms/rooms-service"
 import {
-  canTransitionReadyToLive,
+  computeReadyToLiveUpdate,
   getReadyToLivePayload,
   READY_LIKE_STATUSES,
 } from "@/lib/rooms/lifecycle"
@@ -62,43 +62,27 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString()
 
     if (room.status === "Ready to Start") {
+      const { shouldTransition, payload } = computeReadyToLiveUpdate(room, nowMs, clientTimeMs)
       const countdownStartedAt = room.countdownStartedAt ?? null
-      const countdownSeconds = (room.countdownSeconds ?? 30) * 1000
-      const countdownEndMs = countdownStartedAt != null ? countdownStartedAt + countdownSeconds : 0
-      const roomUpdatedAtMs = Number(room.updatedAt ?? 0)
-      const serverSaysGo = canTransitionReadyToLive(room, nowMs)
-      const clientSaysGo =
-        clientTimeMs != null &&
-        (countdownEndMs > 0
-          ? clientTimeMs >= countdownEndMs
-          : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
-      // Debug: countdown reached zero branch (always log for RPS Ready→Live audit)
+      const countdownEndMs =
+        countdownStartedAt != null ? countdownStartedAt + (room.countdownSeconds ?? 30) * 1000 : 0
       console.info("[tick Ready→Live] countdown branch", {
         room_id: roomId,
         game: room.game,
         prior_status: room.status,
-        countdown_started_at: countdownStartedAt,
-        countdown_seconds: countdownSeconds,
         countdown_end_ms: countdownEndMs,
         server_now_ms: nowMs,
         client_time_ms: clientTimeMs ?? null,
-        server_says_go: serverSaysGo,
-        client_says_go: clientSaysGo,
-        will_attempt_transition: serverSaysGo || clientSaysGo,
+        will_attempt_transition: shouldTransition,
       })
-      if (!serverSaysGo && !clientSaysGo) {
-        if (process.env.NODE_ENV !== "production") {
-          console.info("[tick Ready->Live]", {
-            room_id: roomId,
-            previous_status: room.status,
-            countdown_end_ms: countdownEndMs,
-            server_now_ms: nowMs,
-            client_time_ms: clientTimeMs ?? null,
-            transition_allowed: false,
-            db_rows_affected: 0,
-            final_returned_room_status: "Ready to Start",
-          })
-        }
+      if (!shouldTransition) {
+        return NextResponse.json(
+          { ok: true, room, transition: null, server_time_ms: nowMs },
+          { headers: { "Cache-Control": "no-store" } }
+        )
+      }
+      if (!payload) {
+        console.info("[tick Ready→Live] no payload (driver null)", { room_id: roomId, game: room.game })
         return NextResponse.json(
           { ok: true, room, transition: null, server_time_ms: nowMs },
           { headers: { "Cache-Control": "no-store" } }
@@ -106,16 +90,13 @@ export async function POST(request: NextRequest) {
       }
       const gameType = room.game as GameType
       try {
-        const payload = getReadyToLivePayload(room, now)
-        if (!payload) {
-          console.info("[tick Ready→Live] no payload (driver null)", { room_id: roomId, game: room.game })
-          return NextResponse.json(
-            { ok: true, room, transition: null, server_time_ms: nowMs },
-            { headers: { "Cache-Control": "no-store" } }
-          )
-        }
         assertTransition(room.status, "Live", "tick_ready_to_live")
 
+        console.info("[tick Ready→Live] attempt", {
+          room_id: roomId,
+          filters: { eq_id: roomId, in_status: [...READY_LIKE_STATUSES] },
+          payload_keys: Object.keys(payload),
+        })
         const { data, error } = await supabase
           .from("matches")
           .update(payload)
@@ -128,10 +109,13 @@ export async function POST(request: NextRequest) {
           const row = data as Record<string, unknown>
           const resultingStatus = String(row?.status ?? "null")
           const resultingBoardState = row?.board_state ?? row?.boardState ?? null
+          const returnedUpdatedAt = row?.updated_at != null ? String(row.updated_at) : null
           console.info("[tick Ready→Live] update succeeded", {
             room_id: roomId,
             prior_status: room.status,
-            resulting_status: resultingStatus,
+            affected_rows: 1,
+            returned_status: resultingStatus,
+            returned_updated_at: returnedUpdatedAt,
             has_board_state: resultingBoardState != null && typeof resultingBoardState === "object",
             board_state_mode: typeof resultingBoardState === "object" && resultingBoardState != null && "mode" in resultingBoardState ? (resultingBoardState as { mode?: string }).mode : null,
           })
@@ -150,8 +134,8 @@ export async function POST(request: NextRequest) {
           await insertMatchEvent(supabase, roomId, "match_live", {})
           logRoomAction("ready_to_live", roomId, { game: gameType })
           const readyRoom = mapDbRowToRoom(row)
-          // Ensure RPS never gets Live without board_state (e.g. if select("*") omits it)
-          if (gameType === "Rock Paper Scissors" && (readyRoom.boardState == null || typeof readyRoom.boardState !== "object")) {
+          // All games: ensure Live response always has boardState (Supabase/select may omit it; partial room causes stuck Ready UI).
+          if (readyRoom.boardState == null || typeof readyRoom.boardState !== "object") {
             const payloadBoard = (payload as { board_state?: unknown }).board_state
             if (payloadBoard != null && typeof payloadBoard === "object") {
               readyRoom.boardState = payloadBoard
@@ -171,10 +155,15 @@ export async function POST(request: NextRequest) {
         const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
         const refetchedStatus = refetched != null ? String((refetched as Record<string, unknown>).status) : "null"
         const finalStatus = refetched ? refetchedStatus : "Ready to Start"
+        const refetchedUpdatedAt = refetched != null && (refetched as Record<string, unknown>).updated_at != null
+          ? String((refetched as Record<string, unknown>).updated_at)
+          : null
         console.info("[tick Ready→Live] update affected 0 rows", {
           room_id: roomId,
           prior_status: room.status,
+          affected_rows: 0,
           refetched_status: refetchedStatus,
+          refetched_updated_at: refetchedUpdatedAt,
           db_status_live: DB_STATUS.LIVE,
           match: refetchedStatus === DB_STATUS.LIVE,
         })
@@ -191,7 +180,15 @@ export async function POST(request: NextRequest) {
           })
         }
         logRoomAction("tick_ready_to_live_0_rows", roomId, { game: gameType, refetched_status: refetchedStatus })
-        const latestRoom = refetched ? ensureFullRoom(mapDbRowToRoom(refetched as Record<string, unknown>), room) : room
+        const mappedRefetched = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : null
+        // When refetched row is Live but has no boardState (e.g. select omits it), attach from payload so client never gets partial room.
+        if (mappedRefetched && refetchedStatus === DB_STATUS.LIVE && (mappedRefetched.boardState == null || typeof mappedRefetched.boardState !== "object")) {
+          const payload0 = getReadyToLivePayload(room, new Date())
+          if (payload0?.board_state != null && typeof payload0.board_state === "object") {
+            mappedRefetched.boardState = payload0.board_state
+          }
+        }
+        const latestRoom = mappedRefetched != null ? ensureFullRoom(mappedRefetched, room) : room
         const isNowLive = refetched && refetchedStatus === DB_STATUS.LIVE
         return NextResponse.json(
           {
@@ -248,6 +245,7 @@ export async function POST(request: NextRequest) {
           nextTurnId != null
             ? new Date(nowMs + moveSeconds * 1000).toISOString()
             : null
+        const nextVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
         const { data: intermissionData, error: intermissionError } = await supabase
           .from("matches")
           .update({
@@ -259,6 +257,7 @@ export async function POST(request: NextRequest) {
             move_turn_seconds: nextTurnId != null ? moveSeconds : null,
             turn_expires_at: turnExpiresAt,
             updated_at: nowIso,
+            room_version: nextVersion,
           })
           .eq("id", roomId)
           .in("status", ["Live", "live"])
@@ -393,6 +392,7 @@ export async function POST(request: NextRequest) {
         if (pauseExpiresAtMs != null && nowMs >= pauseExpiresAtMs) {
           const moveSeconds = getMoveSecondsForGame(gameTypeLive)
           const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
+          const resumeVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
           const { data: resumeData, error: resumeError } = await supabase
             .from("matches")
             .update({
@@ -403,6 +403,7 @@ export async function POST(request: NextRequest) {
               move_turn_started_at: nowIso,
               turn_expires_at: turnExpiresAt,
               updated_at: nowIso,
+              room_version: resumeVersion,
             })
             .eq("id", roomId)
             .in("status", ["Live", "live"])
@@ -463,6 +464,7 @@ export async function POST(request: NextRequest) {
             updated_at: nowIso,
             finished_at: nowIso,
             ended_at: nowIso,
+            room_version: (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1,
           })
           .eq("id", roomId)
           .in("status", ["Live", "live"])
@@ -508,6 +510,7 @@ export async function POST(request: NextRequest) {
             updated_at: nowIso,
             finished_at: nowIso,
             ended_at: nowIso,
+            room_version: (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1,
           })
           .eq("id", roomId)
           .in("status", ["Live", "live"])
@@ -549,6 +552,7 @@ export async function POST(request: NextRequest) {
         nowMs + nextMoveSeconds * 1000
       ).toISOString()
 
+      const strikeVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
       const { data, error } = await supabase
         .from("matches")
         .update({
@@ -559,6 +563,7 @@ export async function POST(request: NextRequest) {
           move_turn_seconds: nextMoveSeconds,
           turn_expires_at: nextTurnExpiresAt,
           updated_at: nowIso,
+          room_version: strikeVersion,
         })
         .eq("id", roomId)
         .in("status", ["Live", "live"])

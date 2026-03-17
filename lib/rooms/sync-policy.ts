@@ -24,16 +24,27 @@ export function shouldAcceptRoomUpdate(
   incomingRoom: Room,
   source: RoomUpdateSource
 ): boolean {
+  const incomingVersion = getRoomVersion(incomingRoom)
+  const currentVersion = getRoomVersion(current ?? {})
   const incomingUpdatedAt = getRoomUpdatedAt(incomingRoom)
   const currentUpdatedAt = typeof current?.updatedAt === "number" ? current.updatedAt : 0
   const incomingStatus = incomingRoom.status ?? "Waiting for Opponent"
   const currentStatus = current?.status
 
+  // Prefer higher room_version; never let refetch/ej overwrite a higher version.
+  if (source === "refetch" || source === "realtime" || source === "ej") {
+    if (current != null && incomingVersion < currentVersion) {
+      return false
+    }
+  }
+
   let decision: boolean
   if (source === "mutation") {
     decision = true
   } else if (source === "tick") {
-    decision = incomingUpdatedAt >= currentUpdatedAt
+    if (incomingVersion > currentVersion) decision = true
+    else if (incomingVersion < currentVersion) decision = false
+    else decision = incomingUpdatedAt >= currentUpdatedAt
     // RPS host stuck: never keep old round when server sends a fresh round board (both choices null).
     if (!decision && current && incomingStatus === "Live") {
       const incomingBoard = incomingRoom.boardState as { mode?: string; hostChoice?: unknown; challengerChoice?: unknown; revealed?: boolean } | null | undefined
@@ -58,6 +69,8 @@ export function shouldAcceptRoomUpdate(
       decision = true
     } else if (currentStatus === "Live" && incomingStatus === "Ready to Start") {
       decision = false
+    } else if (incomingVersion !== currentVersion) {
+      decision = incomingVersion > currentVersion
     } else {
       decision = incomingUpdatedAt >= currentUpdatedAt
     }
@@ -80,11 +93,19 @@ export function shouldAcceptRoomUpdate(
 
 /**
  * Get updatedAt from an ArenaMatch if we store it (optional field).
- * Room has updatedAt from mapDbRowToRoom; roomToArenaMatch does not currently pass it.
- * We can add it to ArenaMatch for sync comparison.
+ * Room has updatedAt from mapDbRowToRoom; roomToArenaMatch passes it to ArenaMatch.
  */
 export function getRoomUpdatedAt(room: Room): number {
   return Number(room.updatedAt ?? 0)
+}
+
+/**
+ * Get monotonic room_version from Room (or ArenaMatch). Prefer over updatedAt for ordering.
+ */
+export function getRoomVersion(room: Room | { roomVersion?: number }): number {
+  return typeof (room as { roomVersion?: number }).roomVersion === "number"
+    ? (room as { roomVersion: number }).roomVersion
+    : 0
 }
 
 /**

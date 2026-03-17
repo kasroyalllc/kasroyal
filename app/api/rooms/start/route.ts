@@ -5,7 +5,7 @@ import { assertTransition } from "@/lib/rooms/match-lifecycle"
 import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import { ensureFullRoom } from "@/lib/rooms/canonical-room"
 import {
-  canTransitionReadyToLive,
+  computeReadyToLiveUpdate,
   getReadyToLivePayload,
   READY_LIKE_STATUSES,
 } from "@/lib/rooms/lifecycle"
@@ -59,55 +59,26 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const nowMs = now.getTime()
-    const countdownStartedAt = room.countdownStartedAt ?? null
-    const countdownSeconds = (room.countdownSeconds ?? 30) * 1000
-    const countdownEndMs = countdownStartedAt != null ? countdownStartedAt + countdownSeconds : 0
-    const roomUpdatedAtMs = Number(room.updatedAt ?? 0)
-    const serverSaysGo = canTransitionReadyToLive(room, nowMs)
-    const clientSaysGo =
-      clientTimeMs != null &&
-      (countdownEndMs > 0
-        ? clientTimeMs >= countdownEndMs
-        : roomUpdatedAtMs > 0 && clientTimeMs - roomUpdatedAtMs > 35000)
+    const { shouldTransition, payload } = computeReadyToLiveUpdate(room, nowMs, clientTimeMs)
+    const countdownEndMs =
+      room.countdownStartedAt != null
+        ? room.countdownStartedAt + (room.countdownSeconds ?? 30) * 1000
+        : 0
 
-    const transitionAllowed = serverSaysGo || clientSaysGo
-    if (!transitionAllowed) {
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[start Ready->Live]", {
-          room_id: roomId,
-          previous_status: room.status,
-          countdown_end_ms: countdownEndMs,
-          server_now_ms: nowMs,
-          client_time_ms: clientTimeMs ?? null,
-          transition_allowed: false,
-          db_rows_affected: 0,
-          final_returned_room_status: "Ready to Start",
-        })
-      }
+    if (!shouldTransition) {
       return NextResponse.json(
         { ok: true, room, countdownNotExpired: true },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
-    if (!serverSaysGo && clientSaysGo && process.env.NODE_ENV !== "production") {
-      console.info("[start] using client time; server clock may be behind", { roomId, nowMs, clientTimeMs, countdownEndMs })
-    }
-
-    const payload = getReadyToLivePayload(room, now)
-    if (!payload) {
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[start Ready->Live]", {
-          room_id: roomId,
-          previous_status: room.status,
-          countdown_end_ms: countdownEndMs,
-          server_now_ms: nowMs,
-          client_time_ms: clientTimeMs ?? null,
-          transition_allowed: true,
-          db_rows_affected: 0,
-          final_returned_room_status: "error_no_payload",
-        })
-      }
+    const payloadFromLifecycle = payload
+    console.info("[start Ready→Live] attempt", {
+      room_id: roomId,
+      filters: { eq_id: roomId, in_status: [...READY_LIKE_STATUSES] },
+      payload_keys: Object.keys(payloadFromLifecycle ?? {}),
+    })
+    if (!payloadFromLifecycle) {
       return NextResponse.json(
         { ok: false, error: "Only Connect 4, Tic-Tac-Toe, and Rock Paper Scissors support start" },
         { status: 400 }
@@ -116,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("matches")
-      .update(payload)
+      .update(payloadFromLifecycle)
       .eq("id", roomId)
       .in("status", READY_LIKE_STATUSES)
       .select("*")
@@ -126,42 +97,38 @@ export async function POST(request: NextRequest) {
 
     if (!data) {
       const { data: refetched } = await supabase.from("matches").select("*").eq("id", roomId).maybeSingle()
-      const latestRoom = refetched ? ensureFullRoom(mapDbRowToRoom(refetched as Record<string, unknown>), room) : room
+      const mappedRefetched = refetched ? mapDbRowToRoom(refetched as Record<string, unknown>) : null
+      // When refetched row is Live but has no boardState, attach from payload so client never gets partial room.
+      if (mappedRefetched && mappedRefetched.status === "Live" && (mappedRefetched.boardState == null || typeof mappedRefetched.boardState !== "object")) {
+        const fallbackPayload = getReadyToLivePayload(room, new Date())
+        if (fallbackPayload?.board_state != null && typeof fallbackPayload.board_state === "object") {
+          mappedRefetched.boardState = fallbackPayload.board_state
+        }
+      }
+      const latestRoom = mappedRefetched != null ? ensureFullRoom(mappedRefetched, room) : room
       const isLive = latestRoom.status === "Live"
       const finalStatus = latestRoom.status ?? "unknown"
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[start Ready->Live]", {
-          room_id: roomId,
-          previous_status: room.status,
-          countdown_end_ms: countdownEndMs,
-          server_now_ms: nowMs,
-          client_time_ms: clientTimeMs ?? null,
-          transition_allowed: true,
-          db_rows_affected: 0,
-          final_returned_room_status: finalStatus,
-        })
-      }
+      console.info("[start Ready→Live] update affected 0 rows", {
+        room_id: roomId,
+        affected_rows: 0,
+        refetched_status: latestRoom.status,
+        refetched_updated_at: latestRoom.updatedAt ?? null,
+      })
       return NextResponse.json(
         { ok: true, room: latestRoom, alreadyLive: isLive },
         { headers: { "Cache-Control": "no-store" } }
       )
     }
 
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[start Ready->Live]", {
-        room_id: roomId,
-        previous_status: room.status,
-        countdown_end_ms: countdownEndMs,
-        server_now_ms: nowMs,
-        client_time_ms: clientTimeMs ?? null,
-        transition_allowed: true,
-        db_rows_affected: 1,
-        final_returned_room_status: "Live",
-      })
-    }
+    console.info("[start Ready→Live] update succeeded", {
+      room_id: roomId,
+      affected_rows: 1,
+      returned_status: (data as Record<string, unknown>)?.status ?? "live",
+      returned_updated_at: (data as Record<string, unknown>)?.updated_at != null ? String((data as Record<string, unknown>).updated_at) : null,
+    })
     await insertMatchEvent(supabase, roomId, "match_live", {})
     const updatedRoom = mapDbRowToRoom((data ?? {}) as Record<string, unknown>)
-    const payloadBoardState = (payload as { board_state?: unknown }).board_state
+    const payloadBoardState = (payloadFromLifecycle as { board_state?: unknown }).board_state
     if (updatedRoom.boardState == null && payloadBoardState != null) {
       updatedRoom.boardState = payloadBoardState
     }

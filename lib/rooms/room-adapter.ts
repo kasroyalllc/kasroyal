@@ -129,5 +129,6 @@ export function roomToArenaMatch(room: Room): ArenaMatch {
     roundIntermissionUntil: room.roundIntermissionUntil ?? undefined,
     lastRoundWinnerIdentityId: room.lastRoundWinnerIdentityId ?? undefined,
     updatedAt: Number(room.updatedAt ?? 0) || undefined,
+    roomVersion: typeof room.roomVersion === "number" ? room.roomVersion : undefined,
   }
 }

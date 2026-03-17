@@ -32,7 +32,8 @@ const CORE_FIELDS: (keyof Room)[] = [
  */
 export function ensureFullRoom(mapped: Room, fallback: Room | null): Room {
   if (fallback != null) {
-    if (mapped.boardState == null && fallback.boardState != null) {
+    // Never copy boardState from fallback when mapped is Live (fallback is often pre-transition Ready with null boardState).
+    if (mapped.boardState == null && fallback.boardState != null && mapped.status !== "Live") {
       mapped.boardState = fallback.boardState
     }
     if (mapped.currentRound == null && fallback.currentRound != null) {

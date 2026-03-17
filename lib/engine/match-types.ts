@@ -131,6 +131,8 @@ export type ArenaMatch = {
   lastRoundWinnerIdentityId?: string | null
   /** Room updated_at (ms) for sync comparison; set when built from Room. */
   updatedAt?: number
+  /** Monotonic room_version from DB; prefer over updatedAt for reconcile. */
+  roomVersion?: number
 }
 
 export type SpectatorTicket = {

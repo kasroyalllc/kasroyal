@@ -197,6 +197,8 @@ export type Room = {
   roundIntermissionUntil?: number | null
   /** Set during intermission so UI can show "X won Round N". Cleared when next round starts. */
   lastRoundWinnerIdentityId?: string | null
+  /** Monotonic version from DB; incremented on every mutation. Prefer over updated_at for reconcile. */
+  roomVersion?: number
   createdAt: number
   updatedAt: number
   finishedAt: number | null
@@ -346,6 +348,7 @@ export function mapDbRowToRoom(row: Record<string, unknown>): Room {
       row.last_round_winner_identity_id != null
         ? String(row.last_round_winner_identity_id)
         : null,
+    roomVersion: row.room_version != null ? Number(row.room_version) : 0,
     createdAt,
     updatedAt,
     finishedAt,

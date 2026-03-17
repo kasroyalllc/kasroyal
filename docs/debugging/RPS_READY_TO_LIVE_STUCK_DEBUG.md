@@ -97,10 +97,11 @@
 ## 5. Logs to Check (in order)
 
 1. **Server (Node / API logs)**  
-   - `[tick Ready→Live] countdown branch` — `server_says_go`, `client_says_go`, `will_attempt_transition`, `countdown_end_ms`, `server_now_ms`, `client_time_ms`.  
+   - `[tick Ready→Live] countdown branch` — `will_attempt_transition`, `countdown_end_ms`, `server_now_ms`, `client_time_ms`.  
    - If `will_attempt_transition: false`: server thinks countdown not finished or driver null; fix server time or payload.  
-   - `[tick Ready→Live] update succeeded` — confirms update ran, `resulting_status`, `has_board_state`.  
-   - `[tick Ready→Live] update affected 0 rows` — update didn’t match; check `refetched_status` and that DB `status` is in `READY_LIKE_STATUSES`.
+   - `[tick Ready→Live] attempt` — `filters`, `payload_keys`.  
+   - `[tick Ready→Live] update succeeded` — `affected_rows: 1`, `returned_status`, `returned_updated_at`, `has_board_state`.  
+   - `[tick Ready→Live] update affected 0 rows` — `affected_rows: 0`, `refetched_status`, `refetched_updated_at`; check DB `status` is in `READY_LIKE_STATUSES`.
 
 2. **Browser console**  
    - `[R] ACCEPTED` with `source: "tick"`, `mapped_status: "Live"` → client applied Live from tick/start; if UI still Ready, something else overwrote state or render is wrong.  
@@ -133,6 +134,9 @@
 6. **getGameDriver(room.game) null**  
    e.g. DB `game_type` string doesn’t normalize to "Rock Paper Scissors". Fix: normalize in lifecycle; ensure DB and driver keys match.
 
+7. **Partial room response (no boardState)**  
+   If tick/start return a Live room **without** `boardState`, the client applies it and keeps previous (e.g. Ready) or stale board state; RPS hand-selection may not appear or may show wrong state. **Fix applied**: tick and start routes now **always** attach `boardState` from the Ready→Live payload when the mapped room has none (all games). The 0-rows path (refetch after update) also attaches `boardState` from `getReadyToLivePayload(room, new Date())` when the refetched Live row has no board_state. `ensureFullRoom` no longer copies `boardState` from fallback when the mapped room is Live (so we never overwrite with the pre-transition Ready room’s null).
+
 ---
 
 ## 7. Quick Verification Checklist
@@ -140,9 +144,28 @@
 - [ ] Server log shows `will_attempt_transition: true` when countdown should be 0.  
 - [ ] Server log shows `update succeeded` (not `update affected 0 rows`) or, if 0 rows, refetched status is `"live"`.  
 - [ ] Browser shows `[R] ACCEPTED` with `source: "tick"` and `mapped_status: "Live"` after countdown.  
-- [ ] If browser shows `[R] REJECTED` for tick: compare `incoming_updatedAt` and `current_updatedAt`.  
+- [ ] If browser shows `[R] REJECTED` for tick: compare `incoming_updatedAt` and `current_updatedAt`, or `room_version` (incoming vs current).  
 - [ ] If browser shows `[R] REJECTED` for ej with `ej_overwrote_live: true`: refetch overwrite was blocked (correct).  
 - [ ] DB row after join has `status = 'ready'` and `countdown_started_at` set.  
 - [ ] Tick request body includes `client_time_ms` when status is Ready to Start.
 
 Use this summary together with the code references and logs to narrow down whether the failure is server-side (transition never happens), client-side (reject or overwrite), or countdown/timing (ref/server time).
+
+---
+
+## 8. Verification: Room reaches Live and RPS rounds reset
+
+**Confirm Ready → Live**
+
+1. Start an RPS match (host creates, challenger joins). Wait for countdown to reach 0.  
+2. **Server**: Check logs for `[tick Ready→Live] update succeeded` with `returned_status: "live"` and `has_board_state: true`.  
+3. **Client**: Check browser for `[R] ACCEPTED` with `source: "tick"` and `mapped_status: "Live"`.  
+4. **UI**: Hand-selection screen appears (Rock / Paper / Scissors buttons); status badge shows **Live**.  
+5. **DB** (optional): `SELECT id, status, board_state->>'mode' FROM matches WHERE id = '<room_id>'` — `status = 'live'`, `mode = 'rps-live'`.
+
+**Confirm RPS next round resets (no stale hostChoice/roundExpiresAt)**
+
+1. Play at least one full RPS round (both choose; round resolves; intermission then next round).  
+2. **Server**: After intermission, logs show `[tick RPS intermission→next]` with `hostChoice: null`, `challengerChoice: null`, `roundExpiresAt` set to a future timestamp.  
+3. **Client**: UI shows both players can choose again; no prior round choice pre-filled.  
+4. **DB** (optional): `board_state` for the match has `host_choice: null`, `challenger_choice: null` and a new `round_expires_at` for the new round.
