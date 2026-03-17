@@ -284,9 +284,9 @@ export async function POST(request: NextRequest) {
           logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
           const returnedRoom = mapDbRowToRoom((intermissionData as Record<string, unknown>))
           // Client must receive full canonical room including boardState after intermission; partial responses preserve stale board on client.
-          // For RPS always send the fresh nextBoardState (no reliance on select("*") or fallback to old room).
+          // For RPS always send a fresh board: both hostChoice and challengerChoice null (no spread/merge from prior round; first-chooser must not persist).
           if (gameTypeLive === "Rock Paper Scissors" && nextBoardState != null) {
-            returnedRoom.boardState = nextBoardState
+            returnedRoom.boardState = { ...nextBoardState }
           } else if (returnedRoom.boardState == null && nextBoardState != null) {
             returnedRoom.boardState = nextBoardState
           }

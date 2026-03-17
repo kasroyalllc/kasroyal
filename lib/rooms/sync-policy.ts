@@ -69,6 +69,27 @@ export function shouldAcceptRoomUpdate(
       decision = true
     } else if (currentStatus === "Live" && incomingStatus === "Ready to Start") {
       decision = false
+    } else if (currentStatus === "Live" && incomingStatus === "Live" && incomingRoom.game === "Rock Paper Scissors") {
+      // RPS: never overwrite a fresh round (both choices null) with stale "first chooser only" state from a prior round.
+      const currentBoard = current.boardState as { hostChoice?: unknown; challengerChoice?: unknown; revealed?: boolean } | null | undefined
+      const incomingBoard = incomingRoom.boardState as { hostChoice?: unknown; challengerChoice?: unknown; revealed?: boolean } | null | undefined
+      const currentFreshRound =
+        currentBoard &&
+        typeof currentBoard === "object" &&
+        currentBoard.hostChoice == null &&
+        currentBoard.challengerChoice == null &&
+        currentBoard.revealed === false
+      const incomingOneChoiceOnly =
+        incomingBoard &&
+        typeof incomingBoard === "object" &&
+        (incomingBoard.hostChoice != null) !== (incomingBoard.challengerChoice != null)
+      if (currentFreshRound && incomingOneChoiceOnly) {
+        decision = false
+      } else if (incomingVersion !== currentVersion) {
+        decision = incomingVersion > currentVersion
+      } else {
+        decision = incomingUpdatedAt >= currentUpdatedAt
+      }
     } else if (incomingVersion !== currentVersion) {
       decision = incomingVersion > currentVersion
     } else {
