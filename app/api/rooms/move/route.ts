@@ -17,6 +17,7 @@ import {
   resolveMoveToDbUpdate,
   type MoveDbUpdate,
 } from "@/lib/rooms/move-pipeline"
+import { transitionIntermissionToNextRound } from "@/lib/rooms/lifecycle"
 import { insertMatchEvent, insertMatchRound } from "@/lib/rooms/match-events"
 
 export const dynamic = "force-dynamic"
@@ -78,6 +79,19 @@ export async function POST(request: NextRequest) {
         { ok: false, error: "Cannot move during intermission" },
         { status: 409 }
       )
+    }
+
+    // Past intermission but tick may not have run: transition to next round first so we never apply a move on stale board (e.g. RPS with prior-round hostChoice).
+    if (
+      intermissionUntil != null &&
+      typeof intermissionUntil === "number" &&
+      Date.now() >= intermissionUntil
+    ) {
+      const now = new Date()
+      const nextRoom = await transitionIntermissionToNextRound(supabase, roomId, room, now)
+      if (nextRoom) {
+        room = nextRoom
+      }
     }
 
     const isHost = room.hostIdentityId === playerIdentityId

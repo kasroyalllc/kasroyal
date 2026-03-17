@@ -4,11 +4,13 @@
  * are defined in one place.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Room } from "@/lib/engine/match/types"
 import type { GameType } from "@/lib/engine/match/types"
+import { mapDbRowToRoom } from "@/lib/engine/match/types"
 import { getGameDriver } from "@/lib/rooms/game-drivers"
 import { DB_STATUS } from "@/lib/rooms/db-status"
-import { RPS_ROUND_SECONDS } from "@/lib/engine/game-constants"
+import { getMoveSecondsForGame, RPS_ROUND_SECONDS } from "@/lib/engine/game-constants"
 import { createRpsRoundBoard } from "@/lib/rooms/game-board"
 
 /** Top-level lifecycle phases. */
@@ -154,4 +156,64 @@ export function computeReadyToLiveUpdate(
   const now = new Date(nowMs)
   const payload = getReadyToLivePayload(room, now)
   return { shouldTransition: true, payload }
+}
+
+/**
+ * Transition from intermission to the next round: clear intermission, set fresh board (RPS: both choices null).
+ * Used by tick and by move (when a move is submitted past intermission so we never apply on stale board).
+ * Returns the updated room or null if the update did not affect a row.
+ */
+export async function transitionIntermissionToNextRound(
+  supabase: SupabaseClient,
+  roomId: string,
+  room: Room,
+  now: Date
+): Promise<Room | null> {
+  const gameKey = normalizeGameForDriver(room.game)
+  const gameTypeLive = room.game as GameType
+  const driver = getGameDriver(gameKey as GameType)
+  const nowIso = now.toISOString()
+  const nowMs = now.getTime()
+
+  const roundExpiresAtMs = nowMs + RPS_ROUND_SECONDS * 1000
+  const nextBoardState =
+    gameKey === "Rock Paper Scissors"
+      ? createRpsRoundBoard(roundExpiresAtMs)
+      : driver
+        ? driver.createInitialBoardState()
+        : null
+  if (nextBoardState == null) return null
+
+  const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
+  const moveSeconds = getMoveSecondsForGame(gameTypeLive)
+  const turnExpiresAt =
+    nextTurnId != null ? new Date(nowMs + moveSeconds * 1000).toISOString() : null
+
+  const { data, error } = await supabase
+    .from("matches")
+    .update({
+      round_intermission_until: null,
+      last_round_winner_identity_id: null,
+      board_state: nextBoardState,
+      move_turn_identity_id: nextTurnId,
+      move_turn_started_at: nextTurnId != null ? nowIso : null,
+      move_turn_seconds: nextTurnId != null ? moveSeconds : null,
+      turn_expires_at: turnExpiresAt,
+      updated_at: nowIso,
+    })
+    .eq("id", roomId)
+    .in("status", ["Live", "live"])
+    .select("*")
+    .maybeSingle()
+
+  if (error || !data) return null
+
+  const returnedRoom = mapDbRowToRoom(data as Record<string, unknown>)
+  if (gameKey === "Rock Paper Scissors" && nextBoardState != null) {
+    returnedRoom.boardState = { ...(nextBoardState as object) }
+  } else if (returnedRoom.boardState == null && nextBoardState != null) {
+    returnedRoom.boardState = nextBoardState
+  }
+  returnedRoom.updatedAt = nowMs
+  return returnedRoom
 }

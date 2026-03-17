@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getRoomById } from "@/lib/rooms/rooms-service"
 import { assertTransition } from "@/lib/rooms/match-lifecycle"
-import { createInitialBoardState, createRpsRoundBoard } from "@/lib/rooms/game-board"
 import {
   getMoveSecondsForGame,
-  RPS_ROUND_SECONDS,
   TIMEOUT_STRIKES_TO_LOSE,
 } from "@/lib/engine/game-constants"
 import { mapDbRowToRoom, type GameType, type Room } from "@/lib/engine/match/types"
@@ -17,6 +15,7 @@ import {
   computeReadyToLiveUpdate,
   getReadyToLivePayload,
   READY_LIKE_STATUSES,
+  transitionIntermissionToNextRound,
 } from "@/lib/rooms/lifecycle"
 import { getGameDriver, resolveRpsRoundTimeout } from "@/lib/rooms/game-drivers"
 import {
@@ -228,103 +227,13 @@ export async function POST(request: NextRequest) {
             { headers: { "Cache-Control": "no-store" } }
           )
         }
-        const driver = getGameDriver(gameTypeLive)
-        // RPS: log old board (prior round) before creating next round so we can confirm no carry-over.
-        if (gameTypeLive === "Rock Paper Scissors" && room.boardState != null && typeof room.boardState === "object") {
-          const oldBoard = room.boardState as Record<string, unknown>
-          console.info("[tick RPS intermission→next] OLD board (prior round, before next round)", {
-            room_id: roomId,
-            hostChoice: oldBoard.hostChoice ?? null,
-            challengerChoice: oldBoard.challengerChoice ?? null,
-            revealed: oldBoard.revealed ?? null,
-          })
-        }
-        // RPS is simultaneous; next rounds must use a brand-new board_state (no spread/merge; do not preserve hostChoice/challengerChoice).
-        const roundExpiresAtMs = nowMs + RPS_ROUND_SECONDS * 1000
-        const nextBoardState =
-          gameTypeLive === "Rock Paper Scissors"
-            ? createRpsRoundBoard(roundExpiresAtMs)
-            : driver
-              ? driver.createInitialBoardState()
-              : createInitialBoardState(gameTypeLive)
-        if (gameTypeLive === "Rock Paper Scissors") {
-          const rpsBoard = nextBoardState as { hostChoice?: unknown; challengerChoice?: unknown; revealed?: unknown; winner?: unknown; roundExpiresAt?: unknown }
-          const newHostNull = rpsBoard.hostChoice == null
-          const newChallengerNull = rpsBoard.challengerChoice == null
-          console.info("[tick RPS intermission→next] NEW board (after createRpsRoundBoard, no spread)", {
-            room_id: roomId,
-            hostChoice: rpsBoard.hostChoice ?? null,
-            challengerChoice: rpsBoard.challengerChoice ?? null,
-            revealed: rpsBoard.revealed ?? null,
-            winner: rpsBoard.winner ?? null,
-            roundExpiresAt: rpsBoard.roundExpiresAt ?? null,
-            hostChoice_null_in_new_round: newHostNull,
-            challengerChoice_null_in_new_round: newChallengerNull,
-            both_null: newHostNull && newChallengerNull,
-          })
-        }
-        const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
-        const moveSeconds = getMoveSecondsForGame(gameTypeLive)
-        const turnExpiresAt =
-          nextTurnId != null
-            ? new Date(nowMs + moveSeconds * 1000).toISOString()
-            : null
-        const { data: intermissionData, error: intermissionError } = await supabase
-          .from("matches")
-          .update({
-            round_intermission_until: null,
-            last_round_winner_identity_id: null,
-            board_state: nextBoardState, // full replacement; no merging with previous board
-            move_turn_identity_id: nextTurnId,
-            move_turn_started_at: nextTurnId != null ? nowIso : null,
-            move_turn_seconds: nextTurnId != null ? moveSeconds : null,
-            turn_expires_at: turnExpiresAt,
-            updated_at: nowIso,
-          })
-          .eq("id", roomId)
-          .in("status", ["Live", "live"])
-          .select("*")
-          .maybeSingle()
-        if (!intermissionError && intermissionData) {
-          const row = intermissionData as Record<string, unknown>
-          if (gameTypeLive === "Rock Paper Scissors" && row.board_state) {
-            const written = row.board_state as Record<string, unknown>
-            console.info("[tick RPS intermission→next] DB row AFTER write", {
-              room_id: roomId,
-              hostChoice: written.hostChoice,
-              challengerChoice: written.challengerChoice,
-              revealed: written.revealed,
-              winner: written.winner,
-              roundExpiresAt: written.roundExpiresAt,
-              choices_both_null: written.hostChoice == null && written.challengerChoice == null,
-            })
-          }
+        const now = new Date(nowMs)
+        const returnedRoom = await transitionIntermissionToNextRound(supabase, roomId, room, now)
+        if (returnedRoom) {
           await insertMatchEvent(supabase, roomId, "next_round_started", {
             round_number: (room.currentRound ?? 1) + 1,
           })
           logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
-          const returnedRoom = mapDbRowToRoom((intermissionData as Record<string, unknown>))
-          // Client must receive full canonical room including boardState after intermission; partial responses preserve stale board on client.
-          // For RPS always send a fresh board: both hostChoice and challengerChoice null (no spread/merge from prior round; first-chooser must not persist).
-          if (gameTypeLive === "Rock Paper Scissors" && nextBoardState != null) {
-            returnedRoom.boardState = { ...nextBoardState }
-          } else if (returnedRoom.boardState == null && nextBoardState != null) {
-            returnedRoom.boardState = nextBoardState
-          }
-          // Force updatedAt to write time so client sync policy accepts this response over any stale refetch or older state.
-          returnedRoom.updatedAt = nowMs
-          if (gameTypeLive === "Rock Paper Scissors") {
-            const out = returnedRoom.boardState as Record<string, unknown> | null | undefined
-            console.info("[tick RPS intermission→next] response room.boardState (exact payload sent to client)", {
-              room_id: roomId,
-              hostChoice: out?.hostChoice ?? null,
-              challengerChoice: out?.challengerChoice ?? null,
-              revealed: out?.revealed ?? null,
-              winner: out?.winner ?? null,
-              roundExpiresAt: out?.roundExpiresAt ?? null,
-              live_round_seconds: RPS_ROUND_SECONDS,
-            })
-          }
           return NextResponse.json(
             {
               ok: true,
