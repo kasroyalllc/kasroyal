@@ -155,6 +155,7 @@ export function resolveMoveToDbUpdate(
   }
 
   const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
+  // Include board_state so resolved round persists (both choices + revealed + winner). Required for RPS: without it, only first chooser's choice would remain in DB and carry into next round.
   const payload: Record<string, unknown> = {
     status: DB_STATUS.LIVE,
     board_state: outcome.newBoardState,
