@@ -292,6 +292,18 @@ export async function POST(request: NextRequest) {
           }
           // Force updatedAt to write time so client sync policy accepts this response over any stale refetch or older state.
           returnedRoom.updatedAt = nowMs
+          if (gameTypeLive === "Rock Paper Scissors") {
+            const out = returnedRoom.boardState as Record<string, unknown> | null | undefined
+            console.info("[tick RPS intermission→next] response room.boardState (exact payload sent to client)", {
+              room_id: roomId,
+              hostChoice: out?.hostChoice ?? null,
+              challengerChoice: out?.challengerChoice ?? null,
+              revealed: out?.revealed ?? null,
+              winner: out?.winner ?? null,
+              roundExpiresAt: out?.roundExpiresAt ?? null,
+              live_round_seconds: RPS_ROUND_SECONDS,
+            })
+          }
           return NextResponse.json(
             {
               ok: true,

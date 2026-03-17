@@ -909,36 +909,43 @@ export default function ArenaMatchPage() {
               room.game === "Rock Paper Scissors" &&
               (room.boardState == null || typeof room.boardState !== "object")
             ) {
-              if (process.env.NODE_ENV !== "production") {
-                console.warn("[client] intermission_next_round RPS but room has no boardState; skipping apply, will refetch", { room_id: room.id })
-              }
+              console.warn("[client] intermission_next_round RPS but room has no boardState; skipping apply, will refetch", { room_id: room.id })
               if (typeof data.server_time_ms === "number") {
                 setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
               }
               void refreshRoom()
               return
             }
-            if (data.transition === "intermission_next_round" && room.game === "Rock Paper Scissors") {
-              const board = room.boardState as PersistedRpsBoardState | undefined
-              const h = board?.hostChoice ?? (room.boardState as Record<string, unknown>)?.hostChoice
-              const c = board?.challengerChoice ?? (room.boardState as Record<string, unknown>)?.challengerChoice
-              if (process.env.NODE_ENV !== "production") {
-                console.info("[client] intermission_next_round RPS: received full canonical room", {
-                  has_boardState: room.boardState != null,
-                  hostChoice: h,
-                  challengerChoice: c,
-                  both_null: h == null && c == null,
-                })
-              }
-              console.log("[client] FIRST room state AFTER intermission (from tick response)", {
-                roundIntermissionUntil: room.roundIntermissionUntil,
-                lastRoundWinnerIdentityId: (room as { lastRoundWinnerIdentityId?: unknown }).lastRoundWinnerIdentityId,
-                board_state: room.boardState,
-                hostChoice: h,
-                challengerChoice: c,
-                revealed: board?.revealed ?? (room.boardState as Record<string, unknown>)?.revealed,
-                roundExpiresAt: board?.roundExpiresAt ?? (room.boardState as Record<string, unknown>)?.roundExpiresAt,
+            // RPS next round: force-apply when we receive a fresh board (both choices null) so we never keep stale hostChoice/challengerChoice.
+            const board = room.boardState as PersistedRpsBoardState | Record<string, unknown> | undefined
+            const isRpsFreshRound =
+              data.transition === "intermission_next_round" &&
+              room.game === "Rock Paper Scissors" &&
+              board &&
+              typeof board === "object" &&
+              (board as { mode?: string }).mode === "rps-live" &&
+              (board as { hostChoice?: unknown }).hostChoice == null &&
+              (board as { challengerChoice?: unknown }).challengerChoice == null &&
+              (board as { revealed?: boolean }).revealed === false
+            if (isRpsFreshRound) {
+              const reconciled = reconcileRoom(room)
+              const applied = roomToArenaMatch(reconciled)
+              const appliedBoard = applied.boardState as PersistedRpsBoardState | undefined
+              console.info("[client] intermission_next_round RPS: FORCE-APPLY fresh round (bypass sync reject)", {
+                room_id: room.id,
+                received_hostChoice: (board as { hostChoice?: unknown }).hostChoice,
+                received_challengerChoice: (board as { challengerChoice?: unknown }).challengerChoice,
+                received_roundExpiresAt: (board as { roundExpiresAt?: number }).roundExpiresAt,
+                applied_hostChoice: appliedBoard?.hostChoice ?? null,
+                applied_challengerChoice: appliedBoard?.challengerChoice ?? null,
+                applied_roundExpiresAt: appliedBoard?.roundExpiresAt ?? null,
               })
+              setMatch(applied)
+              if (typeof data.server_time_ms === "number") {
+                setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
+              }
+              void refreshRoom()
+              return
             }
             if (data.transition === "ready_to_live") {
               room = { ...room, status: "Live" }
