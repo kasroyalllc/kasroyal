@@ -8,7 +8,7 @@ export const CONNECT4_MOVE_SECONDS = 20
 export const TTT_MOVE_SECONDS = 10
 
 /** RPS: round timer in seconds. Both choose within this time; if only one chooses, that side wins; if neither, draw. */
-export const RPS_ROUND_SECONDS = 15
+export const RPS_ROUND_SECONDS = 10
 
 export const TIMEOUT_STRIKES_TO_LOSE = 3
 
