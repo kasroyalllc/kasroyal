@@ -221,22 +221,25 @@ export async function POST(request: NextRequest) {
         }
         const driver = getGameDriver(gameTypeLive)
         // RPS is simultaneous; next rounds must rebuild board state from scratch (no spread/merge of previous board).
-        // Timer is reset each round via createRpsRoundBoard(futureTimestamp).
+        // Timer is reset each round via createRpsRoundBoard(futureTimestamp). No turn-based fields for RPS.
+        const roundExpiresAtMs = nowMs + RPS_ROUND_SECONDS * 1000
         const nextBoardState =
           gameTypeLive === "Rock Paper Scissors"
-            ? createRpsRoundBoard(Date.now() + RPS_ROUND_SECONDS * 1000)
+            ? createRpsRoundBoard(roundExpiresAtMs)
             : driver
               ? driver.createInitialBoardState()
               : createInitialBoardState(gameTypeLive)
         if (gameTypeLive === "Rock Paper Scissors") {
           const rpsBoard = nextBoardState as { hostChoice?: unknown; challengerChoice?: unknown; revealed?: unknown; winner?: unknown; roundExpiresAt?: unknown }
-          console.info("[tick RPS intermission→next] outgoing board_state", {
+          console.info("[tick RPS intermission→next] payload board_state (fresh round)", {
             room_id: roomId,
             hostChoice: rpsBoard.hostChoice,
             challengerChoice: rpsBoard.challengerChoice,
             revealed: rpsBoard.revealed,
             winner: rpsBoard.winner,
             roundExpiresAt: rpsBoard.roundExpiresAt,
+            roundExpiresAt_future: (rpsBoard.roundExpiresAt as number) > nowMs,
+            RPS_ROUND_SECONDS,
           })
         }
         const nextTurnId = driver?.hasTurnTimer ? room.hostIdentityId : null
@@ -263,17 +266,18 @@ export async function POST(request: NextRequest) {
           .maybeSingle()
         if (!intermissionError && intermissionData) {
           const row = intermissionData as Record<string, unknown>
-            if (gameTypeLive === "Rock Paper Scissors" && row.board_state) {
-              const written = row.board_state as Record<string, unknown>
-              console.info("[tick RPS intermission→next] room row AFTER write", {
-                room_id: roomId,
-                hostChoice: written.hostChoice,
-                challengerChoice: written.challengerChoice,
-                revealed: written.revealed,
-                winner: written.winner,
-                roundExpiresAt: written.roundExpiresAt,
-              })
-            }
+          if (gameTypeLive === "Rock Paper Scissors" && row.board_state) {
+            const written = row.board_state as Record<string, unknown>
+            console.info("[tick RPS intermission→next] DB row AFTER write", {
+              room_id: roomId,
+              hostChoice: written.hostChoice,
+              challengerChoice: written.challengerChoice,
+              revealed: written.revealed,
+              winner: written.winner,
+              roundExpiresAt: written.roundExpiresAt,
+              choices_both_null: written.hostChoice == null && written.challengerChoice == null,
+            })
+          }
           await insertMatchEvent(supabase, roomId, "next_round_started", {
             round_number: (room.currentRound ?? 1) + 1,
           })
@@ -286,6 +290,8 @@ export async function POST(request: NextRequest) {
           } else if (returnedRoom.boardState == null && nextBoardState != null) {
             returnedRoom.boardState = nextBoardState
           }
+          // Force updatedAt to write time so client sync policy accepts this response over any stale refetch or older state.
+          returnedRoom.updatedAt = nowMs
           return NextResponse.json(
             {
               ok: true,
