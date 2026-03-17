@@ -949,9 +949,26 @@ export default function ArenaMatchPage() {
             }
             if (data.transition === "ready_to_live") {
               room = { ...room, status: "Live" }
+              console.info("[client] ready_to_live received", {
+                room_id: room.id,
+                room_status: room.status,
+                has_boardState: room.boardState != null && typeof room.boardState === "object",
+                room_updatedAt: (room as { updatedAt?: number }).updatedAt,
+              })
             }
             const reconciled = reconcileRoom(room)
-            setMatch((prev) => acceptAndReconcile(reconciled, prev, "tick"))
+            setMatch((prev) => {
+              const next = acceptAndReconcile(reconciled, prev, "tick")
+              if (data.transition === "ready_to_live") {
+                console.info("[client] ready_to_live apply result", {
+                  accepted: next.status === "Live",
+                  next_status: next.status,
+                  had_prev: prev != null,
+                  prev_status: prev?.status ?? null,
+                })
+              }
+              return next
+            })
             if (typeof data.server_time_ms === "number") {
               setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
             }

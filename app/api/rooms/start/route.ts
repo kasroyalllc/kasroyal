@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
     if (updatedRoom.boardState == null && payloadBoardState != null) {
       updatedRoom.boardState = payloadBoardState
     }
+    updatedRoom.updatedAt = nowMs
     const fullRoom = ensureFullRoom(updatedRoom, room)
 
     return NextResponse.json(

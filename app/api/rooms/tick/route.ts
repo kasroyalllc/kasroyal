@@ -141,10 +141,19 @@ export async function POST(request: NextRequest) {
               readyRoom.boardState = payloadBoard
             }
           }
+          // Force updatedAt to write time so client sync policy accepts this response (incomingUpdatedAt >= currentUpdatedAt).
+          readyRoom.updatedAt = nowMs
+          const roomToReturn = ensureFullRoom(readyRoom, room)
+          console.info("[tick Ready→Live] response (RPS diagnostics)", {
+            room_id: roomId,
+            returned_status: roomToReturn.status,
+            has_boardState: roomToReturn.boardState != null && typeof roomToReturn.boardState === "object",
+            returned_updatedAt: roomToReturn.updatedAt,
+          })
           return NextResponse.json(
             {
               ok: true,
-              room: ensureFullRoom(readyRoom, room),
+              room: roomToReturn,
               transition: "ready_to_live",
               server_time_ms: Date.now(),
             },
