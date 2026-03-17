@@ -245,7 +245,6 @@ export async function POST(request: NextRequest) {
           nextTurnId != null
             ? new Date(nowMs + moveSeconds * 1000).toISOString()
             : null
-        const nextVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
         const { data: intermissionData, error: intermissionError } = await supabase
           .from("matches")
           .update({
@@ -257,7 +256,6 @@ export async function POST(request: NextRequest) {
             move_turn_seconds: nextTurnId != null ? moveSeconds : null,
             turn_expires_at: turnExpiresAt,
             updated_at: nowIso,
-            room_version: nextVersion,
           })
           .eq("id", roomId)
           .in("status", ["Live", "live"])
@@ -392,7 +390,6 @@ export async function POST(request: NextRequest) {
         if (pauseExpiresAtMs != null && nowMs >= pauseExpiresAtMs) {
           const moveSeconds = getMoveSecondsForGame(gameTypeLive)
           const turnExpiresAt = new Date(nowMs + moveSeconds * 1000).toISOString()
-          const resumeVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
           const { data: resumeData, error: resumeError } = await supabase
             .from("matches")
             .update({
@@ -403,7 +400,6 @@ export async function POST(request: NextRequest) {
               move_turn_started_at: nowIso,
               turn_expires_at: turnExpiresAt,
               updated_at: nowIso,
-              room_version: resumeVersion,
             })
             .eq("id", roomId)
             .in("status", ["Live", "live"])
@@ -464,7 +460,6 @@ export async function POST(request: NextRequest) {
             updated_at: nowIso,
             finished_at: nowIso,
             ended_at: nowIso,
-            room_version: (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1,
           })
           .eq("id", roomId)
           .in("status", ["Live", "live"])
@@ -510,7 +505,6 @@ export async function POST(request: NextRequest) {
             updated_at: nowIso,
             finished_at: nowIso,
             ended_at: nowIso,
-            room_version: (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1,
           })
           .eq("id", roomId)
           .in("status", ["Live", "live"])
@@ -552,7 +546,6 @@ export async function POST(request: NextRequest) {
         nowMs + nextMoveSeconds * 1000
       ).toISOString()
 
-      const strikeVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
       const { data, error } = await supabase
         .from("matches")
         .update({
@@ -563,7 +556,6 @@ export async function POST(request: NextRequest) {
           move_turn_seconds: nextMoveSeconds,
           turn_expires_at: nextTurnExpiresAt,
           updated_at: nowIso,
-          room_version: strikeVersion,
         })
         .eq("id", roomId)
         .in("status", ["Live", "live"])

@@ -92,7 +92,6 @@ export function getReadyToLivePayload(
     ? new Date(nowMs + moveSeconds * 1000).toISOString()
     : null
 
-  const currentVersion = typeof room.roomVersion === "number" ? room.roomVersion : 0
   const base: Record<string, unknown> = {
     status: DB_STATUS.LIVE,
     live_started_at: nowIso,
@@ -102,7 +101,6 @@ export function getReadyToLivePayload(
     host_score: 0,
     challenger_score: 0,
     updated_at: nowIso,
-    room_version: currentVersion + 1,
   }
   if (driver.hasTurnTimer) {
     base.move_turn_identity_id = room.hostIdentityId ?? ""

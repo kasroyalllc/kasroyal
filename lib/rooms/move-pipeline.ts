@@ -104,12 +104,10 @@ export function resolveMoveToDbUpdate(
   nowMs: number,
   driver: GameDriver
 ): MoveDbUpdate {
-  const nextVersion = (typeof room.roomVersion === "number" ? room.roomVersion : 0) + 1
   if (!outcome.roundEnded) {
     const payload: Record<string, unknown> = {
       board_state: outcome.newBoardState,
       updated_at: nowIso,
-      room_version: nextVersion,
     }
     if (driver.hasTurnTimer && outcome.nextTurnIdentityId != null) {
       const moveSeconds = driver.getMoveSeconds()
@@ -151,7 +149,6 @@ export function resolveMoveToDbUpdate(
       updated_at: nowIso,
       finished_at: nowIso,
       ended_at: nowIso,
-      room_version: nextVersion,
     }
     const logEvent = outcome.isDraw ? "series_finished_draw" : "series_finished"
     return { updateType: "series_finished", payload, releaseMatch: true, logEvent, roundRecord }
@@ -166,7 +163,6 @@ export function resolveMoveToDbUpdate(
     round_intermission_until: intermissionUntil,
     last_round_winner_identity_id: roundWinnerIdentityId,
     updated_at: nowIso,
-    room_version: nextVersion,
   }
   const roundJustEnded = series.currentRound - 1
   const logEvent = outcome.isDraw ? "round_draw_intermission" : "round_ended_intermission"
