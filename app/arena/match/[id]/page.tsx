@@ -900,12 +900,15 @@ export default function ArenaMatchPage() {
                 board_mode: r?.boardState != null && typeof r?.boardState === "object" && "mode" in (r.boardState as Record<string, unknown>) ? (r.boardState as Record<string, unknown>).mode : null,
               })
             }
-            // Never apply a tick room that lacks boardState for RPS intermission→next round (would leave stale hostChoice/challengerChoice).
+            // Never apply a tick room that lacks boardState for RPS intermission→next round (partial response would preserve stale hostChoice/challengerChoice on client).
             if (
               data.transition === "intermission_next_round" &&
               room.game === "Rock Paper Scissors" &&
               (room.boardState == null || typeof room.boardState !== "object")
             ) {
+              if (process.env.NODE_ENV !== "production") {
+                console.warn("[client] intermission_next_round RPS but room has no boardState; skipping apply, will refetch", { room_id: room.id })
+              }
               if (typeof data.server_time_ms === "number") {
                 setServerTimeSync({ serverMs: data.server_time_ms, receivedAtMs: Date.now() })
               }
@@ -914,12 +917,22 @@ export default function ArenaMatchPage() {
             }
             if (data.transition === "intermission_next_round" && room.game === "Rock Paper Scissors") {
               const board = room.boardState as PersistedRpsBoardState | undefined
+              const h = board?.hostChoice ?? (room.boardState as Record<string, unknown>)?.hostChoice
+              const c = board?.challengerChoice ?? (room.boardState as Record<string, unknown>)?.challengerChoice
+              if (process.env.NODE_ENV !== "production") {
+                console.info("[client] intermission_next_round RPS: received full canonical room", {
+                  has_boardState: room.boardState != null,
+                  hostChoice: h,
+                  challengerChoice: c,
+                  both_null: h == null && c == null,
+                })
+              }
               console.log("[client] FIRST room state AFTER intermission (from tick response)", {
                 roundIntermissionUntil: room.roundIntermissionUntil,
                 lastRoundWinnerIdentityId: (room as { lastRoundWinnerIdentityId?: unknown }).lastRoundWinnerIdentityId,
                 board_state: room.boardState,
-                hostChoice: board?.hostChoice ?? (room.boardState as Record<string, unknown>)?.hostChoice,
-                challengerChoice: board?.challengerChoice ?? (room.boardState as Record<string, unknown>)?.challengerChoice,
+                hostChoice: h,
+                challengerChoice: c,
                 revealed: board?.revealed ?? (room.boardState as Record<string, unknown>)?.revealed,
                 roundExpiresAt: board?.roundExpiresAt ?? (room.boardState as Record<string, unknown>)?.roundExpiresAt,
               })
