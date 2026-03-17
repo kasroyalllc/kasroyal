@@ -157,6 +157,7 @@ export function resolveMoveToDbUpdate(
   const intermissionUntil = new Date(nowMs + INTERMISSION_SECONDS * 1000).toISOString()
   const payload: Record<string, unknown> = {
     status: DB_STATUS.LIVE,
+    board_state: outcome.newBoardState,
     round_number: series.currentRound,
     host_score: series.hostRoundWins,
     challenger_score: series.challengerRoundWins,
