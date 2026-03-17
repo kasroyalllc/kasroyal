@@ -219,12 +219,15 @@ function CountdownOverlay({
             : "Betting is open right now. Lock your side before the market closes and the match goes live."}
         </p>
 
-        <div className="mt-6 flex items-center justify-center gap-4">
+        <div className="mt-6 flex flex-col items-center justify-center gap-2">
           <div
             className={`flex h-24 w-24 shrink-0 items-center justify-center rounded-full border text-4xl font-black shadow-[0_0_45px_rgba(255,215,0,0.18)] sm:h-28 sm:w-28 sm:text-5xl ${tone}`}
           >
-            {seconds > 0 ? seconds : "…"}
+            {seconds > 0 ? seconds : 0}
           </div>
+          {seconds === 0 && (
+            <p className="text-sm font-semibold text-white/80">Starting…</p>
+          )}
         </div>
 
         <div
