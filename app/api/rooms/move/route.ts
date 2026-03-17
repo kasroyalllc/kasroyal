@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
-    const room = await getRoomById(supabase, roomId)
+    let room = await getRoomById(supabase, roomId)
 
     if (!room) {
       return NextResponse.json(
