@@ -223,9 +223,11 @@ export async function POST(request: NextRequest) {
           )
         }
         const driver = getGameDriver(gameTypeLive)
+        // RPS is simultaneous; next rounds must rebuild board state from scratch (no spread/merge of previous board).
+        // Timer is reset each round via createRpsRoundBoard(futureTimestamp).
         const nextBoardState =
           gameTypeLive === "Rock Paper Scissors"
-            ? createRpsRoundBoard(nowMs + RPS_ROUND_SECONDS * 1000)
+            ? createRpsRoundBoard(Date.now() + RPS_ROUND_SECONDS * 1000)
             : driver
               ? driver.createInitialBoardState()
               : createInitialBoardState(gameTypeLive)
@@ -251,7 +253,7 @@ export async function POST(request: NextRequest) {
           .update({
             round_intermission_until: null,
             last_round_winner_identity_id: null,
-            board_state: nextBoardState,
+            board_state: nextBoardState, // full replacement; no merging with previous board
             move_turn_identity_id: nextTurnId,
             move_turn_started_at: nextTurnId != null ? nowIso : null,
             move_turn_seconds: nextTurnId != null ? moveSeconds : null,
@@ -280,8 +282,11 @@ export async function POST(request: NextRequest) {
           })
           logRoomAction("intermission_next_round", roomId, { game: gameTypeLive })
           const returnedRoom = mapDbRowToRoom((intermissionData as Record<string, unknown>))
-          // Ensure response always includes boardState so client never keeps stale RPS hands (tick response may omit it if row shape differs).
-          if (returnedRoom.boardState == null && nextBoardState != null) {
+          // Client must receive full canonical room including boardState after intermission; partial responses preserve stale board on client.
+          // For RPS always send the fresh nextBoardState (no reliance on select("*") or fallback to old room).
+          if (gameTypeLive === "Rock Paper Scissors" && nextBoardState != null) {
+            returnedRoom.boardState = nextBoardState
+          } else if (returnedRoom.boardState == null && nextBoardState != null) {
             returnedRoom.boardState = nextBoardState
           }
           return NextResponse.json(
