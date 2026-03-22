@@ -994,9 +994,10 @@ export default function ArenaMatchPage() {
     if (match?.status !== "Ready to Start") return
 
     const run = () => {
-      if (countdownEndMsRef.current <= 0) return
+      const end = countdownEndMsRef.current
       const now = Date.now()
-      if (now < countdownEndMsRef.current) return
+      // If end > 0, wait until server countdown has elapsed. If end === 0 (missing bettingClosesAt/countdownStartedAt on client), still call start — tick may not flip UI alone; avoids stuck overlay at "Starting…".
+      if (end > 0 && now < end) return
       const body = { room_id: matchId, client_time_ms: now }
       fetch("/api/rooms/start", {
         method: "POST",

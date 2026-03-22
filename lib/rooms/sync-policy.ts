@@ -42,7 +42,10 @@ export function shouldAcceptRoomUpdate(
   if (source === "mutation") {
     decision = true
   } else if (source === "tick") {
-    if (incomingVersion > currentVersion) decision = true
+    // Authoritative server transition: never reject Ready→Live from tick/start (fixes stuck CountdownOverlay at 0).
+    if (currentStatus === "Ready to Start" && incomingStatus === "Live") {
+      decision = true
+    } else if (incomingVersion > currentVersion) decision = true
     else if (incomingVersion < currentVersion) decision = false
     else decision = incomingUpdatedAt >= currentUpdatedAt
     // RPS host stuck: never keep old round when server sends a fresh round board (both choices null).
